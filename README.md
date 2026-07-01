@@ -11,8 +11,8 @@ CNS（通信/导航/监视）实训箱的树莓派端数据汇聚与回传节点
 ## 目标平台
 
 - 硬件：Raspberry Pi 5
-- 系统：Raspberry Pi OS 64-bit（Bookworm），ARM64
-- 语言：C++20，CMake 原生编译（不做交叉编译）
+- 系统：Raspberry Pi OS 64-bit（trixie / Debian 13），ARM64
+- 语言：C++23，CMake 原生编译（不做交叉编译）
 
 ## 开发入口
 

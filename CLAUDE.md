@@ -8,7 +8,7 @@ This repository is currently in the design phase — no source code exists yet. 
 
 ## What this repository is
 
-RPi-side (Raspberry Pi 5, Bookworm/ARM64, C++20) data node for a CNS (Communication/Navigation/Surveillance) vocational-training kit. It is one of three independently-maintained parts of the product:
+RPi-side (Raspberry Pi 5, trixie/ARM64, C++23) data node for a CNS (Communication/Navigation/Surveillance) vocational-training kit. It is one of three independently-maintained parts of the product:
 
 - **STM32F407 + FreeRTOS firmware** — separate repo (`oran9eLi/Formal_Framework`, branch `fj-lora`), maintained by the firmware architect. Not present in this working tree; treat its MAVLink message definitions and UART allocations as an external dependency, not something to modify here.
 - **This repo** — the RPi node.
