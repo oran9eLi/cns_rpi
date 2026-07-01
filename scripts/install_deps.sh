@@ -36,13 +36,16 @@ write_sources_if_changed() {
 }
 
 cat <<'BANNER'
-本脚本会在这台树莓派上做以下几件事：
-  1. 把 apt 软件源换成清华 TUNA 镜像站（国内直连官方源慢，甚至连不上）
-  2. 装 C++ 构建工具链：build-essential / cmake / git
-  3. 配置 git 全局重写，把 github.com 的访问透明转到国内可达的镜像代理
-     （RPi 直连 GitHub 实测丢包/超时，不然以后 git pull/clone 会卡住）
-  4. 打印版本信息，供你确认安装结果
-只会修改 apt 源配置和 git 全局配置这两处系统状态，不改动本仓库以外的其他文件。
+scripts/install_deps.sh — RPi 环境准备
+
+操作项：
+  [1] 切换 apt 源 -> 清华 TUNA 镜像站（原因：国内直连官方源慢/不可达）
+  [2] 安装构建依赖 -> build-essential cmake git
+  [3] 配置 git 全局 URL 重写 -> github.com 流量转发至镜像代理
+      （原因：RPi 直连 GitHub 实测丢包/超时，否则后续 git pull/clone 会卡住）
+  [4] 打印版本信息，确认安装结果
+
+影响范围：仅修改 apt 源配置和 git 全局配置，不涉及本仓库以外的其他文件。
 BANNER
 
 step 1 "切换 apt 源为清华 TUNA 镜像（原因：国内直连官方源慢/不稳定）"
