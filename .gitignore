@@ -1,0 +1,14 @@
+# CMake 构建产物
+build/
+cmake-build-*/
+
+# 本地真实配置（只提交 config/*.example.json）
+config/config.json
+
+# IDE / 编辑器本地状态
+.vscode/
+.idea/
+*.swp
+
+# Claude Code 本地助手状态
+.claude/
