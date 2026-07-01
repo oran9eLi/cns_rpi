@@ -42,6 +42,9 @@ sudo apt update
 echo "==> 安装构建依赖：build-essential cmake git"
 sudo apt install -y build-essential cmake git
 
+echo "==> 配置 git 全局 URL 重写，透明代理 github.com（国内直连 GitHub 不稳定，实测丢包/超时）"
+git config --global url."https://ghfast.top/https://github.com/".insteadOf "https://github.com/"
+
 echo "==> 完成，版本信息："
 g++ --version
 cmake --version
