@@ -6,16 +6,17 @@
 
 **Architecture:** 一个最小的 CMake 工程（`CMakeLists.txt` + `src/main.cpp`），不接入任何业务逻辑（UART/MAVLink/MQTT 留给 M2+）。配套一份幂等的环境准备脚本 `scripts/install_deps.sh`，覆盖 RPi 换国内 apt 源和装构建依赖这两步。
 
-**Tech Stack:** C++20, CMake（原生编译，不做交叉编译），目标平台 Raspberry Pi OS 64-bit（Bookworm, ARM64）。
+**Tech Stack:** C++23, CMake（原生编译，不做交叉编译），目标平台 Raspberry Pi OS 64-bit（trixie / Debian 13, ARM64）。
 
 ## Global Constraints
 
-- 语言标准：C++20（`docs/V1设计文档.md` §7）
+- 语言标准：C++23（`docs/V1设计文档.md` §7；实机确认系统是 trixie 非 Bookworm，自带 GCC 14，C++23 支持完整）
 - 构建方式：CMake，在 RPi 上原生编译，不做交叉编译（`docs/V1设计文档.md` §7）
 - 编译警告：`-Wall -Wextra`，警告需清零或有明确理由保留（`docs/协作规则.md` §6）
 - 提交信息格式：`<type>: <简短中文说明>`，type 用小写英文，说明用简短中文（`docs/协作规则.md` §2）
 - 源码注释：Doxygen 风格中文注释，文件头写职责/层级/依赖/禁止事项（`docs/协作规则.md` §3）
-- RPi 目标机：`dcdw@192.168.11.4`，Raspberry Pi OS 64-bit（Bookworm），apt 源尚未切换
+- RPi 目标机：`dcdw@192.168.11.4`，实测系统是 **trixie（Debian 13）**，apt 源已是 deb822 格式（`/etc/apt/sources.list.d/{debian,raspi}.sources`），传统 `/etc/apt/sources.list` 存在但为空、不生效
+- RPi 免密 sudo：已配置（`/etc/sudoers.d/dcdw-nopasswd`），自动化脚本里的 `sudo` 调用不会再要求密码
 - GitHub 仓库：公开（Public），账号 `oran9eLi`，仓库名 `cns_rpi`
 - apt 镜像：清华大学 TUNA 镜像站（`mirrors.tuna.tsinghua.edu.cn`）
 
@@ -36,26 +37,40 @@
 #!/usr/bin/env bash
 # scripts/install_deps.sh
 # 树莓派环境准备：切换国内 apt 源（清华 TUNA 镜像站）+ 安装构建依赖。
-# 幂等：重复执行不会破坏已有配置（会先备份旧 sources 文件）。
+# 目标系统：Raspberry Pi OS 64-bit / Debian 13 (trixie)，apt 源为 deb822 格式
+# （/etc/apt/sources.list.d/*.sources），传统 /etc/apt/sources.list 存在但为空、不生效，不动它。
+# 幂等：重复执行不会破坏已有配置（会先备份旧 .sources 文件）。
 set -euo pipefail
 
 TIMESTAMP="$(date +%Y%m%d%H%M%S)"
 
-echo "==> 备份并切换 /etc/apt/sources.list 为清华 TUNA 镜像"
-sudo cp /etc/apt/sources.list "/etc/apt/sources.list.bak.${TIMESTAMP}"
-sudo tee /etc/apt/sources.list > /dev/null <<'SOURCES'
-deb https://mirrors.tuna.tsinghua.edu.cn/debian/ bookworm main contrib non-free non-free-firmware
-deb https://mirrors.tuna.tsinghua.edu.cn/debian/ bookworm-updates main contrib non-free non-free-firmware
-deb https://mirrors.tuna.tsinghua.edu.cn/debian-security bookworm-security main contrib non-free non-free-firmware
+echo "==> 备份并切换 /etc/apt/sources.list.d/debian.sources 为清华 TUNA 镜像"
+sudo cp /etc/apt/sources.list.d/debian.sources "/etc/apt/sources.list.d/debian.sources.bak.${TIMESTAMP}"
+sudo tee /etc/apt/sources.list.d/debian.sources > /dev/null <<'SOURCES'
+Types: deb
+URIs: https://mirrors.tuna.tsinghua.edu.cn/debian/
+Suites: trixie trixie-updates
+Components: main contrib non-free non-free-firmware
+Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp
+
+Types: deb
+URIs: https://mirrors.tuna.tsinghua.edu.cn/debian-security/
+Suites: trixie-security
+Components: main contrib non-free non-free-firmware
+Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp
 SOURCES
 
-if [ -f /etc/apt/sources.list.d/raspi.list ]; then
-  echo "==> 备份并切换 /etc/apt/sources.list.d/raspi.list 为清华 TUNA 镜像"
-  sudo cp /etc/apt/sources.list.d/raspi.list "/etc/apt/sources.list.d/raspi.list.bak.${TIMESTAMP}"
-fi
-sudo tee /etc/apt/sources.list.d/raspi.list > /dev/null <<'SOURCES'
-deb https://mirrors.tuna.tsinghua.edu.cn/raspberrypi/ bookworm main
+if [ -f /etc/apt/sources.list.d/raspi.sources ]; then
+  echo "==> 备份并切换 /etc/apt/sources.list.d/raspi.sources 为清华 TUNA 镜像"
+  sudo cp /etc/apt/sources.list.d/raspi.sources "/etc/apt/sources.list.d/raspi.sources.bak.${TIMESTAMP}"
+  sudo tee /etc/apt/sources.list.d/raspi.sources > /dev/null <<'SOURCES'
+Types: deb
+URIs: https://mirrors.tuna.tsinghua.edu.cn/raspberrypi/
+Suites: trixie
+Components: main
+Signed-By: /usr/share/keyrings/raspberrypi-archive-keyring.pgp
 SOURCES
+fi
 
 echo "==> apt update"
 sudo apt update
@@ -69,6 +84,8 @@ cmake --version
 git --version
 ```
 
+**已知风险**：TUNA 镜像站是否镜像了 `raspberrypi.com` 的 `trixie` 套件不确定（`bookworm` 套件确认有）。`apt update` 如果因为 `raspi.sources` 这一行报 404/无法获取索引，`set -e` 会让脚本在这一步终止——处理方式：把 `/etc/apt/sources.list.d/raspi.sources.bak.${TIMESTAMP}` 恢复回 `raspi.sources`（即保留官方 `archive.raspberrypi.com` 源，不镜像这一个），再重跑 `apt update`。本任务实际要装的 `build-essential`/`cmake`/`git` 都是纯 Debian 包，不依赖 `raspi.sources`，所以就算这一个源保持原样也不影响本任务的验收标准。
+
 - [ ] **Step 2: 赋予可执行权限**
 
 Run: `chmod +x scripts/install_deps.sh`
@@ -81,7 +98,7 @@ scp scripts/install_deps.sh dcdw@192.168.11.4:/tmp/install_deps.sh
 ssh dcdw@192.168.11.4 'chmod +x /tmp/install_deps.sh && /tmp/install_deps.sh'
 ```
 
-Expected: 输出以 `g++ (Debian ...) 12.2.0` 左右版本号结尾（Bookworm 默认 GCC 12），`cmake version 3.2x.x`，`git version 2.x.x`，过程中 `apt update`/`apt install` 均无报错退出。
+Expected: 输出以 `g++ (Debian ...) 14.2.0` 左右版本号结尾（trixie 默认 GCC 14），`cmake version 3.3x.x`，`git version 2.x.x`；`apt update`/`apt install` 正常退出（如果只有 `raspi.sources` 那一行报错，按上面"已知风险"的处理方式恢复后重试，不算本任务失败）。`sudo` 不会再要求输入密码（免密 sudo 已配置）。
 
 - [ ] **Step 4: Commit**
 
@@ -108,7 +125,7 @@ git commit -m "chore: 新增 RPi 环境准备脚本(换源+装构建依赖)"
 cmake_minimum_required(VERSION 3.16)
 project(cns_rpi LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
