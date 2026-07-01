@@ -19,6 +19,7 @@
 - RPi 免密 sudo：已配置（`/etc/sudoers.d/dcdw-nopasswd`），自动化脚本里的 `sudo` 调用不会再要求密码
 - GitHub 仓库：公开（Public），账号 `oran9eLi`，仓库名 `cns_rpi`
 - apt 镜像：清华大学 TUNA 镜像站（`mirrors.tuna.tsinghua.edu.cn`）
+- **开发机没有 C++ 工具链**（确认无 `cmake`/`g++`/`gcc`，也无 sudo），不装——所有构建/运行验证一律通过 SSH 在 RPi 上做，不要假设或尝试本地编译
 
 ---
 
@@ -154,22 +155,32 @@ int main() {
 }
 ```
 
-- [ ] **Step 3: 本地构建验证（开发机）**
+- [ ] **Step 3: 构建验证（开发机上没有 C++ 工具链，改用 RPi 过 SSH 验证）**
+
+开发机上不装 C++ 工具链（`cmake`/`g++` 确认都没有，也没有 sudo）——按项目既定分工，"开发机写代码，RPi 编译运行"，构建验证一律通过 SSH 在 RPi 上做。用一个临时目录（不是最终的 `~/cns_rpi`，那个要等 Task 4 从 GitHub clone 才建立），避免和 Task 4 的验证混在一起。
 
 Run:
 ```bash
-cmake -B build -S .
-cmake --build build
+ssh dcdw@192.168.11.4 'rm -rf /tmp/cns_rpi_task2_check && mkdir -p /tmp/cns_rpi_task2_check/src'
+scp CMakeLists.txt dcdw@192.168.11.4:/tmp/cns_rpi_task2_check/CMakeLists.txt
+scp src/main.cpp dcdw@192.168.11.4:/tmp/cns_rpi_task2_check/src/main.cpp
+ssh dcdw@192.168.11.4 'cd /tmp/cns_rpi_task2_check && cmake -B build -S . && cmake --build build'
 ```
 
-Expected: 两条命令均以 0 退出码结束，无 `-Wall -Wextra` 警告输出，`build/` 下生成可执行文件 `cns_rpi`。
+Expected: 三条命令均以 0 退出码结束，无 `-Wall -Wextra` 警告输出，`/tmp/cns_rpi_task2_check/build/` 下生成可执行文件 `cns_rpi`。
 
 - [ ] **Step 4: 运行验证**
 
-Run: `./build/cns_rpi`
+Run: `ssh dcdw@192.168.11.4 '/tmp/cns_rpi_task2_check/build/cns_rpi'`
 Expected: 输出恰好一行 `cns_rpi starting (M1 skeleton)`
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 5: 清理临时验证目录**
+
+Run: `ssh dcdw@192.168.11.4 'rm -rf /tmp/cns_rpi_task2_check'`
+
+（这一步只是清理 RPi 上的临时验证痕迹，不影响仓库内容；本地 `CMakeLists.txt`/`src/main.cpp` 不受影响。）
+
+- [ ] **Step 6: Commit**
 
 ```bash
 git add CMakeLists.txt src/main.cpp
