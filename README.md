@@ -11,13 +11,17 @@ M1 里程碑（项目骨架）已完成：CMake 工程能在 RPi 上原生编译
 首次在新 RPi 上搭建环境：
 
 ```bash
-git clone https://github.com/oran9eLi/cns_rpi.git
+# 第一次 clone 时全局 git 镜像重写还没配置(那是 install_deps.sh 干的事，而脚本本身在仓库里)，
+# 所以必须显式带镜像前缀，不能用裸的 https://github.com/... （会因为 RPi 直连 GitHub 网络问题卡住）
+git clone https://ghfast.top/https://github.com/oran9eLi/cns_rpi.git cns_rpi
 cd cns_rpi
-./scripts/install_deps.sh   # 换清华TUNA apt源 + 装构建依赖 + 配置git镜像重写
+./scripts/install_deps.sh   # 换清华TUNA apt源 + 装构建依赖 + 配置git全局镜像重写
 cmake -B build -S .
 cmake --build build
 ./build/cns_rpi
 ```
+
+跑完 `install_deps.sh` 之后，git 全局重写已经生效，仓库的 `origin` 也可以放心设回裸的 `https://github.com/...`（`git remote set-url origin https://github.com/oran9eLi/cns_rpi.git`），后续 `git pull`/`git clone` 写裸 URL 就行，不用再带镜像前缀。
 
 ## 目标平台
 
