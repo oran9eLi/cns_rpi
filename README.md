@@ -6,7 +6,18 @@ CNS（通信/导航/监视）实训箱的树莓派端数据汇聚与回传节点
 
 ## 当前状态
 
-设计阶段，代码尚未开始。当前仓库只有设计文档，目录结构、构建方式待 M1 里程碑（CMake 工程骨架）完成后在本文件补充。
+M1 里程碑（项目骨架）已完成：CMake 工程能在 RPi 上原生编译出空壳可执行文件，"开发机写代码 → push → RPi git pull → 本地编译运行"链路已跑通。UART/MAVLink/MQTT 等业务逻辑尚未接入，从 M2 开始逐步添加。
+
+首次在新 RPi 上搭建环境：
+
+```bash
+git clone https://github.com/oran9eLi/cns_rpi.git
+cd cns_rpi
+./scripts/install_deps.sh   # 换清华TUNA apt源 + 装构建依赖 + 配置git镜像重写
+cmake -B build -S .
+cmake --build build
+./build/cns_rpi
+```
 
 ## 目标平台
 
@@ -26,3 +37,5 @@ CNS（通信/导航/监视）实训箱的树莓派端数据汇聚与回传节点
 ## 开发方式
 
 代码在开发机上写，push 到仓库，树莓派 `git pull` 后本地编译运行。树莓派不作为主开发机。
+
+**网络说明**：RPi 直连 GitHub 不稳定（实测 ping 丢包 66%、curl 连接超时），`install_deps.sh` 会给 RPi 配一条全局 git 配置，把所有 `https://github.com/` 的访问透明重写到镜像代理 `ghfast.top`（`git config --global url."https://ghfast.top/https://github.com/".insteadOf "https://github.com/"`）。这是单点依赖——如果这个镜像站失效，RPi 上的 `git pull`/`clone` 会报错，取消这条重写：`git config --global --unset url."https://ghfast.top/https://github.com/".insteadOf`。

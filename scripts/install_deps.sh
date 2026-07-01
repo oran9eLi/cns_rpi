@@ -8,9 +8,27 @@ set -euo pipefail
 
 TIMESTAMP="$(date +%Y%m%d%H%M%S)"
 
-echo "==> 备份并切换 /etc/apt/sources.list.d/debian.sources 为清华 TUNA 镜像"
-sudo cp /etc/apt/sources.list.d/debian.sources "/etc/apt/sources.list.d/debian.sources.bak.${TIMESTAMP}"
-sudo tee /etc/apt/sources.list.d/debian.sources > /dev/null <<'SOURCES'
+# 只在目标文件内容和期望内容不一致时才备份+覆盖，避免重复执行时堆积无意义的 .bak 文件。
+# 用法：write_sources_if_changed <目标文件路径> <<'SOURCES' ... SOURCES
+write_sources_if_changed() {
+  local dest="$1"
+  local tmp
+  tmp="$(mktemp)"
+  cat > "$tmp"
+  if [ -f "$dest" ] && cmp -s "$tmp" "$dest"; then
+    echo "    $dest 内容已是期望状态，跳过"
+    rm -f "$tmp"
+    return 0
+  fi
+  if [ -f "$dest" ]; then
+    sudo cp "$dest" "${dest}.bak.${TIMESTAMP}"
+  fi
+  sudo cp "$tmp" "$dest"
+  rm -f "$tmp"
+}
+
+echo "==> 切换 /etc/apt/sources.list.d/debian.sources 为清华 TUNA 镜像"
+write_sources_if_changed /etc/apt/sources.list.d/debian.sources <<'SOURCES'
 Types: deb
 URIs: https://mirrors.tuna.tsinghua.edu.cn/debian/
 Suites: trixie trixie-updates
@@ -25,9 +43,8 @@ Signed-By: /usr/share/keyrings/debian-archive-keyring.pgp
 SOURCES
 
 if [ -f /etc/apt/sources.list.d/raspi.sources ]; then
-  echo "==> 备份并切换 /etc/apt/sources.list.d/raspi.sources 为清华 TUNA 镜像"
-  sudo cp /etc/apt/sources.list.d/raspi.sources "/etc/apt/sources.list.d/raspi.sources.bak.${TIMESTAMP}"
-  sudo tee /etc/apt/sources.list.d/raspi.sources > /dev/null <<'SOURCES'
+  echo "==> 切换 /etc/apt/sources.list.d/raspi.sources 为清华 TUNA 镜像"
+  write_sources_if_changed /etc/apt/sources.list.d/raspi.sources <<'SOURCES'
 Types: deb
 URIs: https://mirrors.tuna.tsinghua.edu.cn/raspberrypi/
 Suites: trixie
