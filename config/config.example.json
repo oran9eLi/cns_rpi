@@ -1,0 +1,20 @@
+{
+  "serial": {
+    "device": "/dev/ttyUSB0",
+    "baud": 115200
+  },
+  "mqtt": {
+    "broker_host": "192.168.1.100",
+    "broker_port": 1883,
+    "client_id": "cns-rpi",
+    "username": "",
+    "password": "",
+    "topic_prefix": "cns_rpi",
+    "qos": 1,
+    "keepalive_seconds": 60
+  },
+  "logging": {
+    "level": "info",
+    "file": ""
+  }
+}
