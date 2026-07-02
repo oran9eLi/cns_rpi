@@ -12,7 +12,8 @@
 
 - 物理链路：开发板上原本用于调试输出的 miniUSB 口（板载 CH340/CH341 家族桥接芯片，跳线帽选通 UART1）现在划给 RPi 链路用，固件侧以后直接往 UART1 写数据即可。miniUSB 口通过标准 miniUSB转A 数据线直接接树莓派 USB-A 口，不需要任何跳线/杜邦线桥接。
 - 已在真实树莓派（`dcdw@192.168.11.4`）上验证：插上后 RPi 侧稳定识别为 `/dev/ttyUSB0`（驱动 `ch341-uart`，`idVendor=1a86, idProduct=7523`），且**不依赖固件应用代码**——桥接芯片本身就能枚举，固件还没写 MAVLink 部分时插拔也能在 RPi 上看到设备。
-- 固件侧真正把 HEARTBEAT 从 UART1 发出来这件事还没做（"没写/没跑通"），所以本设计里 C++ 层的验证分两条腿：不依赖硬件的单元测试，以及用现有 `tools/mavlink_sim/` 假扮 STM32 在这条已验证的物理链路上做人工验证——不等真固件也能把 M2 的软件部分做完并验证。
+- 固件侧真正把 HEARTBEAT 从 UART1 发出来这件事还没做（"没写/没跑通"），所以本设计里 C++ 层的验证分两条腿：不依赖硬件的单元测试，以及用现有 `tools/mavlink_sim/` 假扮 STM32 做人工验证——不等真固件也能把 M2 的软件部分做完并验证。
+- **人工验证阶段用的物理链路和最终板级链路不是同一条**：开发机没有 miniUSB 口，所以 `tools/mavlink_sim/send_frames.py` 暂时还是接在"两颗 CH340 + 杜邦线桥接"这条临时链路上跑（开发机侧 CH340，以后换成开发板时这颗 CH340 会被开发板的 miniUSB 直连取代；RPi 侧 CH340 就是现在已经插着的那颗测试适配器）。**这对 RPi 这端没有任何影响**——不管对面是"临时 CH340 桥接"还是"最终 miniUSB 直连"，RPi 上看到的都是同一类 `ch341-uart` 驱动的 `/dev/ttyUSBx` 设备，`config.example.json` 里的 `serial.device`/`serial.baud` 两端场景通用，代码和配置不用因为测试阶段用的是哪条物理链路而改。
 
 ## 2. 架构
 
@@ -69,7 +70,7 @@ uart/mavlink_link.hpp/.cpp  —— 包一层 serial_port，内部维护一个 ma
   - CRC 损坏帧（篡改payload或crc字节）
   - 一帧被拆成两次 `read()`（模拟串口一次读不全的情况）
   - 合法帧前混入垃圾字节（模拟上电瞬间线路噪声/半帧）
-- 物理链路人工验证（不进 CI，完成实现后手动跑一遍给用户看结果）：用现有 `tools/mavlink_sim/send_frames.py` 在已验证通的 miniUSB↔USB-A 物理链路上假扮 STM32 发送已知消息，确认新写的 C++ 接收端在真实链路上能收对；用 `receive_frames.py` 确认 C++ 发送端发出的帧能被正确解码。等固件侧 UART1 真正跑起来发 HEARTBEAT 后，这一步换成真实固件做一次端到端复核。
+- 物理链路人工验证（不进 CI，完成实现后手动跑一遍给用户看结果）：用现有 `tools/mavlink_sim/send_frames.py` 在"两颗 CH340 + 杜邦线桥接"这条临时链路上假扮 STM32 发送已知消息（开发机没有 miniUSB 口，暂时用这条临时链路，见第1节说明），确认新写的 C++ 接收端在真实链路上能收对；用 `receive_frames.py` 确认 C++ 发送端发出的帧能被正确解码。等固件侧 UART1 真正跑起来发 HEARTBEAT 后，这一步换成真实开发板通过 miniUSB 直连 RPi 做一次端到端复核。
 
 ## 6. 影响范围 / 后续同步
 
