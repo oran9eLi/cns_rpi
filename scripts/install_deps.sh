@@ -40,7 +40,9 @@ scripts/install_deps.sh — RPi 环境准备
 
 操作项：
   [1] 切换 apt 源 -> 清华 TUNA 镜像站（原因：国内直连官方源慢/不可达）
-  [2] 安装构建依赖 -> build-essential cmake git
+  [2] 安装构建依赖 -> build-essential cmake git nlohmann-json3-dev doctest-dev
+      （nlohmann-json3-dev 是配置文件解析用的头文件库；doctest-dev 是单元测试框架，只在开发机/CI需要，
+      不影响 systemd 部署的运行时依赖）
   [3] 配置 git 全局 URL 重写 -> github.com 流量转发至镜像代理
       （原因：RPi 直连 GitHub 实测丢包/超时，否则后续 git pull/clone 会卡住）
   [4] 打印版本信息，确认安装结果
@@ -78,7 +80,7 @@ fi
 
 step 2 "安装构建依赖：build-essential cmake git（先 apt update 刷新索引）"
 sudo apt update
-sudo apt install -y build-essential cmake git
+sudo apt install -y build-essential cmake git nlohmann-json3-dev doctest-dev
 
 step 3 "配置 git 全局镜像重写（原因：RPi 直连 GitHub 网络不通/不稳定）"
 git config --global url."https://ghfast.top/https://github.com/".insteadOf "https://github.com/"
