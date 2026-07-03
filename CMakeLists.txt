@@ -18,6 +18,7 @@ add_library(cns_rpi_core
     src/uart/mavlink_link.cpp
     src/config/app_config.cpp
     src/state/state_store.cpp
+    src/protocol/telemetry_decoder.cpp
 )
 target_include_directories(cns_rpi_core PUBLIC src)
 # src/mavlink 是从固件仓库 Third_Party/mavlink/ 原样同步的官方生成头文件（common/standard/minimal），
@@ -39,3 +40,7 @@ add_test(NAME app_config COMMAND test_app_config)
 add_executable(test_state_store tests/test_state_store.cpp)
 target_link_libraries(test_state_store PRIVATE cns_rpi_core)
 add_test(NAME state_store COMMAND test_state_store)
+
+add_executable(test_telemetry_decoder tests/test_telemetry_decoder.cpp)
+target_link_libraries(test_telemetry_decoder PRIVATE cns_rpi_core)
+add_test(NAME telemetry_decoder COMMAND test_telemetry_decoder)
