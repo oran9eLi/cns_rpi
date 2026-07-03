@@ -3,9 +3,9 @@
  * @brief 程序入口，组合根。
  *
  * @details
- * M2 阶段接入 UART/MAVLink 收发帧层的最小闭环：
- * 读配置 -> 打开 mavlink_link -> 循环收帧打日志 + 周期发送本机 HEARTBEAT。
- * 不解析帧内容（M3 的事），不接 MQTT（M5 的事）。
+ * M3a 阶段在 M2 双向收发闭环基础上接入遥测解码：
+ * 收到帧 -> protocol::DecodeAndStore 写入 state::StateStore -> 打印解码后的
+ * 有意义字段做人工验证。不接 MQTT（M5 的事），不处理扩展帧/身份帧（M3b/M3c 的事）。
  */
 
 #include <chrono>
@@ -15,6 +15,8 @@
 
 #include "common/mavlink.h"
 #include "config/app_config.hpp"
+#include "protocol/telemetry_decoder.hpp"
+#include "state/state_store.hpp"
 #include "uart/mavlink_link.hpp"
 
 namespace {
@@ -30,6 +32,63 @@ mavlink_message_t BuildHeartbeat() {
                               MAV_AUTOPILOT_INVALID, /*base_mode=*/0, /*custom_mode=*/0,
                               MAV_STATE_ACTIVE);
   return msg;
+}
+
+/// 按刚解出来的这条帧的 msgid，打印 state_store 里对应字段的最新值——
+/// 只是给人看的调试日志，不是解码逻辑本身（解码逻辑在 protocol::DecodeAndStore 里）。
+void LogTelemetry(std::uint32_t msgid, const state::TelemetryState& snapshot) {
+  switch (msgid) {
+    case MAVLINK_MSG_ID_HEARTBEAT:
+      if (snapshot.heartbeat) {
+        std::cout << "HEARTBEAT: type=" << static_cast<int>(snapshot.heartbeat->type)
+                  << " system_status=" << static_cast<int>(snapshot.heartbeat->system_status)
+                  << std::endl;
+      }
+      break;
+    case MAVLINK_MSG_ID_GPS_RAW_INT:
+      if (snapshot.gps_raw_int) {
+        std::cout << "GPS_RAW_INT: fix_type=" << static_cast<int>(snapshot.gps_raw_int->fix_type)
+                  << " lat=" << snapshot.gps_raw_int->lat
+                  << " lon=" << snapshot.gps_raw_int->lon << std::endl;
+      }
+      break;
+    case MAVLINK_MSG_ID_ATTITUDE:
+      if (snapshot.attitude) {
+        std::cout << "ATTITUDE: roll=" << snapshot.attitude->roll
+                  << " pitch=" << snapshot.attitude->pitch
+                  << " yaw=" << snapshot.attitude->yaw << std::endl;
+      }
+      break;
+    case MAVLINK_MSG_ID_GLOBAL_POSITION_INT:
+      if (snapshot.global_position_int) {
+        std::cout << "GLOBAL_POSITION_INT: lat=" << snapshot.global_position_int->lat
+                  << " lon=" << snapshot.global_position_int->lon
+                  << " relative_alt=" << snapshot.global_position_int->relative_alt << std::endl;
+      }
+      break;
+    case MAVLINK_MSG_ID_SYS_STATUS:
+      if (snapshot.sys_status) {
+        std::cout << "SYS_STATUS: voltage_battery=" << snapshot.sys_status->voltage_battery
+                  << " battery_remaining="
+                  << static_cast<int>(snapshot.sys_status->battery_remaining) << std::endl;
+      }
+      break;
+    case MAVLINK_MSG_ID_BATTERY_STATUS:
+      if (snapshot.battery_status) {
+        std::cout << "BATTERY_STATUS: voltages[0]=" << snapshot.battery_status->voltages[0]
+                  << " battery_remaining="
+                  << static_cast<int>(snapshot.battery_status->battery_remaining) << std::endl;
+      }
+      break;
+    case MAVLINK_MSG_ID_SCALED_PRESSURE:
+      if (snapshot.scaled_pressure) {
+        std::cout << "SCALED_PRESSURE: press_abs=" << snapshot.scaled_pressure->press_abs
+                  << " temperature=" << snapshot.scaled_pressure->temperature << std::endl;
+      }
+      break;
+    default:
+      break;
+  }
 }
 
 }  // namespace
@@ -49,15 +108,16 @@ int main(int argc, char** argv) {
     return EXIT_FAILURE;
   }
 
-  std::cout << "cns_rpi M2 启动，串口=" << app_config->serial.device
+  std::cout << "cns_rpi M3a 启动，串口=" << app_config->serial.device
             << " 波特率=" << app_config->serial.baud << std::endl;
 
+  state::StateStore state_store;
   auto last_heartbeat = std::chrono::steady_clock::now();
   while (true) {
     if (auto msg = link->ReceiveMessage()) {
-      std::cout << "收到帧 msgid=" << static_cast<int>(msg->msgid)
-                << " len=" << static_cast<int>(msg->len)
-                << " sysid=" << static_cast<int>(msg->sysid) << std::endl;
+      if (protocol::DecodeAndStore(*msg, state_store)) {
+        LogTelemetry(msg->msgid, state_store.Snapshot());
+      }
     }
 
     auto now = std::chrono::steady_clock::now();
