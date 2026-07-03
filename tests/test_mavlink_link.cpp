@@ -30,7 +30,10 @@ TEST_CASE("完整合法帧一次性喂入能被正确解出") {
   auto result = assembler.Feed(bytes);
 
   REQUIRE(result.has_value());
-  CHECK(result->msgid == MAVLINK_MSG_ID_HEARTBEAT);
+  // msgid 是 mavlink_message_t 里的位域(uint32_t:24)，doctest 的 CHECK 展开需要绑定
+  // 一个普通引用，位域绑不了引用——GCC 15(开发机)没触发，GCC 14(RPi 真机)会编译报错，
+  // static_cast 成普通 uint32_t 值就没有这个问题。
+  CHECK(static_cast<std::uint32_t>(result->msgid) == MAVLINK_MSG_ID_HEARTBEAT);
 
   mavlink_heartbeat_t decoded{};
   mavlink_msg_heartbeat_decode(&*result, &decoded);
@@ -62,7 +65,7 @@ TEST_CASE("一帧被拆成两次读取仍能拼出完整帧") {
 
   auto second_result = assembler.Feed(second_half);
   REQUIRE(second_result.has_value());
-  CHECK(second_result->msgid == MAVLINK_MSG_ID_HEARTBEAT);
+  CHECK(static_cast<std::uint32_t>(second_result->msgid) == MAVLINK_MSG_ID_HEARTBEAT);
 }
 
 TEST_CASE("合法帧前混入垃圾字节不影响帧被正确解出") {
@@ -74,5 +77,5 @@ TEST_CASE("合法帧前混入垃圾字节不影响帧被正确解出") {
   auto result = assembler.Feed(bytes);
 
   REQUIRE(result.has_value());
-  CHECK(result->msgid == MAVLINK_MSG_ID_HEARTBEAT);
+  CHECK(static_cast<std::uint32_t>(result->msgid) == MAVLINK_MSG_ID_HEARTBEAT);
 }
