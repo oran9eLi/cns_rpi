@@ -1,0 +1,127 @@
+/**
+ * @file serial_port.cpp
+ * @brief serial_port.hpp 的实现。
+ */
+
+#include "uart/serial_port.hpp"
+
+#include <fcntl.h>
+#include <termios.h>
+#include <unistd.h>
+
+#include <cerrno>
+#include <utility>
+
+namespace uart {
+
+namespace {
+
+/// 把 config.json 里的整数波特率映射成 termios 的 speed_t 常量。
+/// 只收 config.example.json 和现有硬件实测会用到的几档，不做穷举——多了也用不上。
+std::expected<speed_t, UartError> ToSpeed(int baud) {
+  switch (baud) {
+    case 9600:
+      return B9600;
+    case 19200:
+      return B19200;
+    case 38400:
+      return B38400;
+    case 57600:
+      return B57600;
+    case 115200:
+      return B115200;
+    case 230400:
+      return B230400;
+    default:
+      return std::unexpected(UartError::kConfigFailed);
+  }
+}
+
+}  // namespace
+
+std::expected<SerialPort, UartError> SerialPort::Open(const std::string& device, int baud) {
+  auto speed = ToSpeed(baud);
+  if (!speed) {
+    return std::unexpected(speed.error());
+  }
+
+  int fd = ::open(device.c_str(), O_RDWR | O_NOCTTY);
+  if (fd < 0) {
+    switch (errno) {
+      case ENOENT:
+      case ENXIO:
+        return std::unexpected(UartError::kDeviceNotFound);
+      case EACCES:
+      case EPERM:
+        return std::unexpected(UartError::kPermissionDenied);
+      default:
+        return std::unexpected(UartError::kConfigFailed);
+    }
+  }
+
+  termios tio{};
+  if (::tcgetattr(fd, &tio) != 0) {
+    ::close(fd);
+    return std::unexpected(UartError::kConfigFailed);
+  }
+
+  ::cfmakeraw(&tio);
+  ::cfsetispeed(&tio, *speed);
+  ::cfsetospeed(&tio, *speed);
+  // VMIN=0/VTIME=1：最多等 100ms，没数据也返回，不无限阻塞。
+  tio.c_cc[VMIN] = 0;
+  tio.c_cc[VTIME] = 1;
+
+  if (::tcsetattr(fd, TCSANOW, &tio) != 0) {
+    ::close(fd);
+    return std::unexpected(UartError::kConfigFailed);
+  }
+
+  return SerialPort(fd);
+}
+
+SerialPort::SerialPort(SerialPort&& other) noexcept : fd_(std::exchange(other.fd_, -1)) {}
+
+SerialPort& SerialPort::operator=(SerialPort&& other) noexcept {
+  if (this != &other) {
+    if (fd_ >= 0) {
+      ::close(fd_);
+    }
+    fd_ = std::exchange(other.fd_, -1);
+  }
+  return *this;
+}
+
+SerialPort::~SerialPort() {
+  if (fd_ >= 0) {
+    ::close(fd_);
+  }
+}
+
+std::expected<std::size_t, UartError> SerialPort::Read(std::span<std::uint8_t> buffer) {
+  ssize_t n = ::read(fd_, buffer.data(), buffer.size());
+  if (n < 0) {
+    if (errno == EINTR) {
+      return std::size_t{0};
+    }
+    return std::unexpected(UartError::kReadError);
+  }
+  return static_cast<std::size_t>(n);
+}
+
+std::expected<std::size_t, UartError> SerialPort::Write(std::span<const std::uint8_t> data) {
+  std::size_t total = 0;
+  while (total < data.size()) {
+    ssize_t n = ::write(fd_, data.data() + total, data.size() - total);
+    if (n < 0) {
+      if (errno == EINTR) {
+        continue;
+      }
+      return std::unexpected(UartError::kWriteError);
+    }
+    total += static_cast<std::size_t>(n);
+  }
+  return total;
+}
+
+}  // namespace uart
