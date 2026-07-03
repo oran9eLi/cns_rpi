@@ -7,6 +7,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 add_compile_options(-Wall -Wextra)
 
+find_package(nlohmann_json 3.2.0 REQUIRED)
+
+enable_testing()
+
 add_executable(cns_rpi src/main.cpp)
 
 # src/mavlink 是从固件仓库 Third_Party/mavlink/ 原样同步的官方生成头文件（common/standard/minimal），
