@@ -61,3 +61,29 @@ TEST_CASE("缺少必需字段时返回kMissingField") {
   REQUIRE_FALSE(result.has_value());
   CHECK(result.error() == config::ConfigError::kMissingField);
 }
+
+TEST_CASE("字段存在但类型不对时返回kInvalidValue") {
+  auto path = WriteTempConfig(R"({
+    "serial": {"device": "/dev/ttyUSB0", "baud": "fast"},
+    "mqtt": {"broker_host": "192.168.1.100", "broker_port": 1883, "client_id": "cns-rpi",
+             "username": "", "password": "", "topic_prefix": "cns_rpi", "qos": 1, "keepalive_seconds": 60},
+    "logging": {"level": "info", "file": ""}
+  })");
+
+  auto result = config::LoadAppConfig(path);
+
+  REQUIRE_FALSE(result.has_value());
+  CHECK(result.error() == config::ConfigError::kInvalidValue);
+}
+
+TEST_CASE("serial有效但mqtt整节缺失时返回kMissingField") {
+  auto path = WriteTempConfig(R"({
+    "serial": {"device": "/dev/ttyUSB0", "baud": 115200},
+    "logging": {"level": "info", "file": ""}
+  })");
+
+  auto result = config::LoadAppConfig(path);
+
+  REQUIRE_FALSE(result.has_value());
+  CHECK(result.error() == config::ConfigError::kMissingField);
+}

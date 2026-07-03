@@ -64,8 +64,9 @@ class MavlinkLink {
    * @brief 读取串口当前可用字节并尝试凑出一条完整帧。
    * @details 单次调用最多阻塞 100ms（见 SerialPort::Read 的 VTIME 配置），
    * 不会无限阻塞，调用方可以在循环里穿插做周期性发送。
-   * @return 凑出帧就返回；没有则 std::nullopt。串口读失败时也返回 std::nullopt
-   * （M2 阶段不做断线重连，那是 M7 的事）。
+   * @return 凑出帧就返回；没有则 std::nullopt。串口读失败/读到0字节时本次不会喂入
+   * 新字节，但内部 assembler_ 若还有之前调用剩下、尚未取走的帧，仍会被返回——
+   * 不能简单认为"读失败就一定返回 std::nullopt"（M2 阶段不做断线重连，那是 M7 的事）。
    */
   std::optional<mavlink_message_t> ReceiveMessage();
 

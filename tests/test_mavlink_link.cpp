@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 #include "common/mavlink.h"
@@ -78,4 +79,23 @@ TEST_CASE("合法帧前混入垃圾字节不影响帧被正确解出") {
 
   REQUIRE(result.has_value());
   CHECK(static_cast<std::uint32_t>(result->msgid) == MAVLINK_MSG_ID_HEARTBEAT);
+}
+
+TEST_CASE("单次Feed喂入两帧时第二帧在后续空Feed调用中被取出") {
+  uart::MavlinkFrameAssembler assembler;
+  auto first = PackHeartbeatBytes();
+  auto second = PackHeartbeatBytes();
+  std::vector<std::uint8_t> bytes = first;
+  bytes.insert(bytes.end(), second.begin(), second.end());
+
+  // 一次 Feed 内部凑出两条完整帧，但按队列语义只弹出并返回第一条。
+  auto first_result = assembler.Feed(bytes);
+  REQUIRE(first_result.has_value());
+  CHECK(static_cast<std::uint32_t>(first_result->msgid) == MAVLINK_MSG_ID_HEARTBEAT);
+
+  // 这次调用没有喂入任何新字节，但内部队列里还有上次凑出的第二帧，
+  // 依然要被返回——验证"队列跨调用存活"这一关键不变量。
+  auto second_result = assembler.Feed(std::span<const std::uint8_t>{});
+  REQUIRE(second_result.has_value());
+  CHECK(static_cast<std::uint32_t>(second_result->msgid) == MAVLINK_MSG_ID_HEARTBEAT);
 }
