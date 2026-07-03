@@ -15,6 +15,7 @@ enable_testing()
 # 这样 tests/ 下的单测能直接链接这些代码，不用把 main() 也一起拖进测试二进制。
 add_library(cns_rpi_core
     src/uart/serial_port.cpp
+    src/uart/mavlink_link.cpp
 )
 target_include_directories(cns_rpi_core PUBLIC src)
 # src/mavlink 是从固件仓库 Third_Party/mavlink/ 原样同步的官方生成头文件（common/standard/minimal），
@@ -24,3 +25,7 @@ target_link_libraries(cns_rpi_core PUBLIC nlohmann_json::nlohmann_json)
 
 add_executable(cns_rpi src/main.cpp)
 target_link_libraries(cns_rpi PRIVATE cns_rpi_core)
+
+add_executable(test_mavlink_link tests/test_mavlink_link.cpp)
+target_link_libraries(test_mavlink_link PRIVATE cns_rpi_core)
+add_test(NAME mavlink_link COMMAND test_mavlink_link)
