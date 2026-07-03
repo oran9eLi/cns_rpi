@@ -44,8 +44,11 @@ TEST_CASE("GPS_RAW_INT解码写入store") {
   auto snapshot = store.Snapshot();
   REQUIRE(snapshot.gps_raw_int.has_value());
   CHECK(snapshot.gps_raw_int->fix_type == 3);
-  CHECK(snapshot.gps_raw_int->lat == 396890000);
-  CHECK(snapshot.gps_raw_int->lon == 1164050000);
+  // mavlink_gps_raw_int_t 是 packed 结构体，lat/lon 是多字节字段、地址未对齐；
+  // GCC 14(RPi真机)不允许把它们绑定到 CHECK 宏内部用的引用上，GCC 15(开发机)未触发，
+  // 是编译器版本差异——static_cast 成普通值就没有这个问题（跟之前 msgid 位域是同一类问题）。
+  CHECK(static_cast<std::int32_t>(snapshot.gps_raw_int->lat) == 396890000);
+  CHECK(static_cast<std::int32_t>(snapshot.gps_raw_int->lon) == 1164050000);
   CHECK(snapshot.gps_raw_int->satellites_visible == 12);
 }
 
@@ -104,7 +107,9 @@ TEST_CASE("SYS_STATUS解码写入store") {
   CHECK(handled);
   auto snapshot = store.Snapshot();
   REQUIRE(snapshot.sys_status.has_value());
-  CHECK(snapshot.sys_status->voltage_battery == 12600);
+  // mavlink_sys_status_t 是 packed 结构体，voltage_battery 是未对齐的多字节字段，
+  // 同上：static_cast 规避 GCC 14 下 CHECK 宏的引用绑定问题。
+  CHECK(static_cast<std::uint16_t>(snapshot.sys_status->voltage_battery) == 12600);
   CHECK(snapshot.sys_status->battery_remaining == 80);
 }
 
@@ -125,7 +130,9 @@ TEST_CASE("BATTERY_STATUS解码写入store") {
   CHECK(handled);
   auto snapshot = store.Snapshot();
   REQUIRE(snapshot.battery_status.has_value());
-  CHECK(snapshot.battery_status->voltages[0] == 4200);
+  // mavlink_battery_status_t 是 packed 结构体，voltages[] 数组元素是未对齐的多字节
+  // 字段，同上：static_cast 规避 GCC 14 下 CHECK 宏的引用绑定问题。
+  CHECK(static_cast<std::uint16_t>(snapshot.battery_status->voltages[0]) == 4200);
   CHECK(snapshot.battery_status->battery_remaining == 80);
 }
 
