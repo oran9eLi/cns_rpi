@@ -12,3 +12,6 @@ config/config.json
 
 # Claude Code 本地助手状态
 .claude/
+
+# git worktree 隔离工作区（本地临时，不进仓库）
+.worktrees/
