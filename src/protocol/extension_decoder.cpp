@@ -5,13 +5,88 @@
 
 #include "protocol/extension_decoder.hpp"
 
+#include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cstring>
 #include <string_view>
 
 namespace protocol {
 
 namespace {
+
+constexpr std::uint16_t kAlarmTablePayloadType = 0x8001;
+constexpr std::size_t kAlarmHeaderSize = 2;
+constexpr std::size_t kAlarmRowSize = 7;
+constexpr std::size_t kAlarmMaxRows = 14;
+
+constexpr std::uint16_t kMessageLogPayloadType = 0x8002;
+constexpr std::size_t kLogHeaderSize = 3;
+constexpr std::size_t kLogEntrySize = 8;
+constexpr std::size_t kLogMaxEntries = 9;
+
+/// 从裸字节数组按小端读一个 uint16_t，TUNNEL payload 里的多字节字段都是这个格式。
+std::uint16_t ReadU16LE(const std::uint8_t* data, std::size_t offset) {
+  return static_cast<std::uint16_t>(data[offset] | (static_cast<std::uint16_t>(data[offset + 1]) << 8));
+}
+
+bool DecodeAlarmTable(const mavlink_tunnel_t& value, state::StateStore& store) {
+  if (value.payload_length < kAlarmHeaderSize) {
+    return false;
+  }
+  state::AlarmTable table{};
+  table.ver = value.payload[0];
+  const std::uint8_t declared_count = value.payload[1];
+  const std::size_t capacity_rows = (value.payload_length - kAlarmHeaderSize) / kAlarmRowSize;
+  table.active_count = std::min({static_cast<std::size_t>(declared_count), kAlarmMaxRows, capacity_rows});
+
+  for (std::size_t i = 0; i < table.active_count; ++i) {
+    const std::size_t offset = kAlarmHeaderSize + i * kAlarmRowSize;
+    state::AlarmEntry& entry = table.entries[i];
+    entry.source_id = value.payload[offset];
+    entry.fault_code = ReadU16LE(value.payload, offset + 1);
+    entry.severity = value.payload[offset + 3];
+    entry.active = value.payload[offset + 4] != 0;
+    entry.age_s = ReadU16LE(value.payload, offset + 5);
+  }
+  store.UpdateAlarmTable(table);
+  return true;
+}
+
+bool DecodeMessageLog(const mavlink_tunnel_t& value, state::StateStore& store) {
+  if (value.payload_length < kLogHeaderSize) {
+    return false;
+  }
+  state::MessageLog log{};
+  log.latest_seq = ReadU16LE(value.payload, 0);
+  const std::uint8_t declared_count = value.payload[2];
+  const std::size_t capacity_entries = (value.payload_length - kLogHeaderSize) / kLogEntrySize;
+  log.count = std::min({static_cast<std::size_t>(declared_count), kLogMaxEntries, capacity_entries});
+
+  for (std::size_t i = 0; i < log.count; ++i) {
+    const std::size_t offset = kLogHeaderSize + i * kLogEntrySize;
+    state::LogEntry& entry = log.entries[i];
+    entry.sequence = ReadU16LE(value.payload, offset);
+    entry.message_id = ReadU16LE(value.payload, offset + 2);
+    entry.time_hhmmss[0] = value.payload[offset + 4];
+    entry.time_hhmmss[1] = value.payload[offset + 5];
+    entry.time_hhmmss[2] = value.payload[offset + 6];
+    entry.severity = value.payload[offset + 7];
+  }
+  store.UpdateMessageLog(log);
+  return true;
+}
+
+bool DecodeTunnel(const mavlink_tunnel_t& value, state::StateStore& store) {
+  switch (value.payload_type) {
+    case kAlarmTablePayloadType:
+      return DecodeAlarmTable(value, store);
+    case kMessageLogPayloadType:
+      return DecodeMessageLog(value, store);
+    default:
+      return false;
+  }
+}
 
 /// name 字段是 char[10]，不保证有'\0'，用 strnlen 限长取值再比较，避免越界读。
 bool DecodeNamedValueInt(const mavlink_named_value_int_t& value, state::StateStore& store) {
@@ -76,6 +151,11 @@ bool DecodeExtensionAndStore(const mavlink_message_t& msg, state::StateStore& st
       mavlink_named_value_int_t decoded{};
       mavlink_msg_named_value_int_decode(&msg, &decoded);
       return DecodeNamedValueInt(decoded, store);
+    }
+    case MAVLINK_MSG_ID_TUNNEL: {
+      mavlink_tunnel_t decoded{};
+      mavlink_msg_tunnel_decode(&msg, &decoded);
+      return DecodeTunnel(decoded, store);
     }
     default:
       return false;
