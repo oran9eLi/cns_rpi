@@ -12,12 +12,75 @@
  * 等模块头文件。
  */
 
+#include <array>
+#include <cstddef>
+#include <cstdint>
 #include <mutex>
 #include <optional>
 
 #include "common/mavlink.h"
 
 namespace state {
+
+/// 固件端模块总数（`Px4Lite_ModuleId_t`，见 V1设计文档.md §4.1），
+/// MODSTAT0 覆盖 0-7 号，MODSTAT1 覆盖 8-13 号。
+constexpr std::size_t kModuleCount = 14;
+
+/// BAT2STAT 拆包结果：电压(mV)/电量(%)/低电压标志，原始刻度，不做单位换算。
+struct Battery2Status {
+  std::uint16_t voltage_mv;
+  std::uint8_t percent;
+  bool low_voltage;
+};
+
+/// MOTORPWM 拆包结果：最多 4 个电机的占空比(%)。
+struct MotorPwm {
+  std::array<std::uint8_t, 4> duty_percent;
+};
+
+/// GNSS_SAT 拆包结果：GPS/北斗可见数与使用数。
+struct GnssSat {
+  std::uint8_t gps_visible;
+  std::uint8_t beidou_visible;
+  std::uint8_t gps_used;
+  std::uint8_t beidou_used;
+};
+
+/// ENVHUM 拆包结果：相对湿度 x10（原始刻度，535 表示 53.5%，不做单位换算）。
+struct EnvHumidity {
+  std::uint16_t relative_humidity_x10;
+};
+
+/// TUNNEL 告警表(payload_type=0x8001)单行。
+struct AlarmEntry {
+  std::uint8_t source_id;
+  std::uint16_t fault_code;
+  std::uint8_t severity;
+  bool active;
+  std::uint16_t age_s;
+};
+
+/// TUNNEL 告警表(payload_type=0x8001)整帧，最多 14 行。
+struct AlarmTable {
+  std::uint8_t ver;
+  std::array<AlarmEntry, 14> entries;
+  std::size_t active_count;  ///< entries 中前 active_count 项有效，其余是默认值。
+};
+
+/// TUNNEL 日志增量(payload_type=0x8002)单条。
+struct LogEntry {
+  std::uint16_t sequence;
+  std::uint16_t message_id;
+  std::array<std::uint8_t, 3> time_hhmmss;
+  std::uint8_t severity;
+};
+
+/// TUNNEL 日志增量(payload_type=0x8002)整帧，最多 9 条；count=0 表示只有心跳。
+struct MessageLog {
+  std::uint16_t latest_seq;
+  std::array<LogEntry, 9> entries;
+  std::size_t count;  ///< entries 中前 count 项有效，其余是默认值。
+};
 
 /// 一份遥测快照：每个字段在对应消息从未被解码过之前是 std::nullopt。
 struct TelemetryState {
@@ -28,6 +91,16 @@ struct TelemetryState {
   std::optional<mavlink_sys_status_t> sys_status;
   std::optional<mavlink_battery_status_t> battery_status;
   std::optional<mavlink_scaled_pressure_t> scaled_pressure;
+
+  /// 14 个模块的状态(0-6，含义见 V1设计文档.md §4.1"模块状态枚举")，
+  /// MODSTAT0 只写 0-7 号，MODSTAT1 只写 8-13 号，两条帧合并成一份数据。
+  std::optional<std::array<std::uint8_t, kModuleCount>> module_status;
+  std::optional<Battery2Status> battery2_status;
+  std::optional<MotorPwm> motor_pwm;
+  std::optional<GnssSat> gnss_sat;
+  std::optional<EnvHumidity> env_humidity;
+  std::optional<AlarmTable> alarm_table;
+  std::optional<MessageLog> message_log;
 };
 
 /**
@@ -45,6 +118,19 @@ class StateStore {
   void UpdateSysStatus(const mavlink_sys_status_t& value);
   void UpdateBatteryStatus(const mavlink_battery_status_t& value);
   void UpdateScaledPressure(const mavlink_scaled_pressure_t& value);
+
+  /// 只写 module_status 的 0-7 号元素(来自 MODSTAT0)。若 module_status 之前
+  /// 还没有值(两条帧都还没收到过)，先把整个 14 元素数组零初始化，
+  /// 再写入自己负责的这一半；8-13 号元素(若已收到过 MODSTAT1)保持不变。
+  void UpdateModStatusLow(const std::array<std::uint8_t, 8>& modules0to7);
+  /// 只写 module_status 的 8-13 号元素(来自 MODSTAT1)，语义同上。
+  void UpdateModStatusHigh(const std::array<std::uint8_t, 6>& modules8to13);
+  void UpdateBattery2Status(const Battery2Status& value);
+  void UpdateMotorPwm(const MotorPwm& value);
+  void UpdateGnssSat(const GnssSat& value);
+  void UpdateEnvHumidity(const EnvHumidity& value);
+  void UpdateAlarmTable(const AlarmTable& value);
+  void UpdateMessageLog(const MessageLog& value);
 
   /// 加锁拷贝当前状态并返回，调用方拿到的是独立副本。
   TelemetryState Snapshot() const;
