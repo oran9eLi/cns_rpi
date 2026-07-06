@@ -15,6 +15,7 @@
 
 #include "common/mavlink.h"
 #include "config/app_config.hpp"
+#include "protocol/extension_decoder.hpp"
 #include "protocol/telemetry_decoder.hpp"
 #include "state/state_store.hpp"
 #include "uart/mavlink_link.hpp"
@@ -91,6 +92,49 @@ void LogTelemetry(std::uint32_t msgid, const state::TelemetryState& snapshot) {
   }
 }
 
+/// 跟 LogTelemetry 同样的定位：按扩展帧的 msgid/内部语义打印 state_store 里
+/// 对应字段的最新值，供真机人工验证；解码逻辑本身在
+/// protocol::DecodeExtensionAndStore 里，这里只打印。
+void LogExtension(std::uint32_t msgid, const state::TelemetryState& snapshot) {
+  switch (msgid) {
+    case MAVLINK_MSG_ID_NAMED_VALUE_INT:
+      if (snapshot.module_status) {
+        std::cout << "MODSTAT: [0]=" << static_cast<int>((*snapshot.module_status)[0])
+                  << " [13]=" << static_cast<int>((*snapshot.module_status)[13]) << std::endl;
+      }
+      if (snapshot.battery2_status) {
+        std::cout << "BAT2STAT: voltage_mv=" << snapshot.battery2_status->voltage_mv
+                  << " percent=" << static_cast<int>(snapshot.battery2_status->percent)
+                  << " low_voltage=" << snapshot.battery2_status->low_voltage << std::endl;
+      }
+      if (snapshot.motor_pwm) {
+        std::cout << "MOTORPWM: [0]=" << static_cast<int>(snapshot.motor_pwm->duty_percent[0])
+                  << std::endl;
+      }
+      if (snapshot.gnss_sat) {
+        std::cout << "GNSS_SAT: gps_visible=" << static_cast<int>(snapshot.gnss_sat->gps_visible)
+                  << " gps_used=" << static_cast<int>(snapshot.gnss_sat->gps_used) << std::endl;
+      }
+      if (snapshot.env_humidity) {
+        std::cout << "ENVHUM: relative_humidity_x10=" << snapshot.env_humidity->relative_humidity_x10
+                  << std::endl;
+      }
+      break;
+    case MAVLINK_MSG_ID_TUNNEL:
+      if (snapshot.alarm_table) {
+        std::cout << "ALARM_TABLE: active_count=" << snapshot.alarm_table->active_count
+                  << std::endl;
+      }
+      if (snapshot.message_log) {
+        std::cout << "MESSAGE_LOG: latest_seq=" << snapshot.message_log->latest_seq
+                  << " count=" << snapshot.message_log->count << std::endl;
+      }
+      break;
+    default:
+      break;
+  }
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -117,6 +161,8 @@ int main(int argc, char** argv) {
     if (auto msg = link->ReceiveMessage()) {
       if (protocol::DecodeAndStore(*msg, state_store)) {
         LogTelemetry(msg->msgid, state_store.Snapshot());
+      } else if (protocol::DecodeExtensionAndStore(*msg, state_store)) {
+        LogExtension(msg->msgid, state_store.Snapshot());
       }
     }
 
