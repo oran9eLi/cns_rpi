@@ -3,9 +3,11 @@
  * @brief 程序入口，组合根。
  *
  * @details
- * M3a 阶段在 M2 双向收发闭环基础上接入遥测解码：
- * 收到帧 -> protocol::DecodeAndStore 写入 state::StateStore -> 打印解码后的
- * 有意义字段做人工验证。不接 MQTT（M5 的事），不处理扩展帧/身份帧（M3b/M3c 的事）。
+ * M3a 阶段在 M2 双向收发闭环基础上接入遥测解码，M3b 阶段接入扩展帧解码：
+ * 收到帧依次尝试 protocol::DecodeAndStore（标准遥测）和
+ * protocol::DecodeExtensionAndStore（NAMED_VALUE_INT/TUNNEL扩展帧），
+ * 写入 state::StateStore -> 打印解码后的有意义字段做人工验证。
+ * 不接 MQTT（M5 的事），不处理身份帧（M3c 的事）。
  */
 
 #include <chrono>
@@ -152,7 +154,7 @@ int main(int argc, char** argv) {
     return EXIT_FAILURE;
   }
 
-  std::cout << "cns_rpi M3a 启动，串口=" << app_config->serial.device
+  std::cout << "cns_rpi M3b 启动，串口=" << app_config->serial.device
             << " 波特率=" << app_config->serial.baud << std::endl;
 
   state::StateStore state_store;
