@@ -31,7 +31,7 @@
   - `state::MotorPwm` 新增字段 `run_state`(bool)、`speed_level`(uint8_t)。
   - 新增 `state::LoraStatus{loss_rate_x10, node_id, present, link_state}`、`state::RemoteIdStatus{location_count, error_count, last_success_ms}`。
   - `TelemetryState` 新增 `lora_status`/`remote_id_status` 两个 optional 字段。
-  - `StateStore` 新增 `UpdateMotorPwmLow(duty0, duty1, run_state, speed_level)`、`UpdateMotorPwmHigh(duty2, duty3, run_state, speed_level)`、`UpdateLoraStatus`、`UpdateRemoteIdStatus`；**删除** `UpdateMotorPwm`——供 Task 2（`extension_decoder.cpp`）调用。
+  - `StateStore` 新增 `UpdateMotorPwmLow(duty0, duty1, run_state, speed_level)`、`UpdateMotorPwmHigh(duty2, duty3, run_state, speed_level)`、`UpdateLoraStatus`、`UpdateRemoteIdStatus`——供 Task 2（`extension_decoder.cpp`）调用。**本任务暂不删除 `UpdateMotorPwm`**：`src/protocol/extension_decoder.cpp` 现在还在调用它（`MOTORPWM` 分支），要等 Task 2 把那个分支删掉之后，`UpdateMotorPwm` 才没有调用方，届时在 Task 2 里一并删除——否则本任务改完后整个仓库编译不过，违反"每个任务都要能独立编译通过"的要求。
 
 - [ ] **Step 1: 修改 `state_store.hpp` 的 struct 定义**
 
@@ -92,13 +92,13 @@ struct RemoteIdStatus {
   std::optional<AlarmTable> alarm_table;
 ```
 
-在 `class StateStore` 里，把：
+在 `class StateStore` 里，紧跟着已有的：
 
 ```cpp
   void UpdateMotorPwm(const MotorPwm& value);
 ```
 
-改成：
+这一行**保留不动**（Task 2 才会删除它），在它之后加：
 
 ```cpp
   /// 只写 duty_percent 的 0-1 号索引(来自 MOTOR12)。若 motor_pwm 之前还没有值
@@ -120,7 +120,7 @@ struct RemoteIdStatus {
 
 - [ ] **Step 2: 修改 `state_store.cpp` 的实现**
 
-打开 `src/state/state_store.cpp`，把：
+打开 `src/state/state_store.cpp`，找到已有的：
 
 ```cpp
 void StateStore::UpdateMotorPwm(const MotorPwm& value) {
@@ -129,7 +129,7 @@ void StateStore::UpdateMotorPwm(const MotorPwm& value) {
 }
 ```
 
-改成：
+**这段保留不动**（Task 2 才会删除），在它之后加：
 
 ```cpp
 void StateStore::UpdateMotorPwmLow(std::uint8_t duty0, std::uint8_t duty1, bool run_state,
@@ -322,6 +322,23 @@ git commit -m "feat: state_store同步固件字段变更(MotorPwm扩展+LoraStat
 
 ```cpp
   if (name == "HUMIDITY") {
+```
+
+**同时删除 `state_store.hpp`/`.cpp` 里的 `UpdateMotorPwm`**：Task 1 保留了这个方法（因为当时这里的 `MOTORPWM` 分支还在调用它），现在这个分支被删除了，`UpdateMotorPwm` 没有调用方了，一并删除。
+
+打开 `src/state/state_store.hpp`，删除这一行（在 `UpdateMotorPwmLow`/`UpdateMotorPwmHigh` 声明之前）：
+
+```cpp
+  void UpdateMotorPwm(const MotorPwm& value);
+```
+
+打开 `src/state/state_store.cpp`，删除这一段（在 `UpdateMotorPwmLow` 实现之前）：
+
+```cpp
+void StateStore::UpdateMotorPwm(const MotorPwm& value) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  state_.motor_pwm = value;
+}
 ```
 
 （这个分支内部逻辑不变，只改字符串。）
