@@ -112,7 +112,12 @@ void LogExtension(std::uint32_t msgid, const state::TelemetryState& snapshot) {
                   << " low_voltage=" << snapshot.battery2_status->low_voltage << std::endl;
       }
       if (snapshot.motor_pwm) {
-        std::cout << "MOTORPWM: [0]=" << static_cast<int>(snapshot.motor_pwm->duty_percent[0])
+        std::cout << "MOTOR: duty=[" << static_cast<int>(snapshot.motor_pwm->duty_percent[0])
+                  << "," << static_cast<int>(snapshot.motor_pwm->duty_percent[1]) << ","
+                  << static_cast<int>(snapshot.motor_pwm->duty_percent[2]) << ","
+                  << static_cast<int>(snapshot.motor_pwm->duty_percent[3])
+                  << "] run_state=" << snapshot.motor_pwm->run_state
+                  << " speed_level=" << static_cast<int>(snapshot.motor_pwm->speed_level)
                   << std::endl;
       }
       if (snapshot.gnss_sat) {
@@ -120,7 +125,20 @@ void LogExtension(std::uint32_t msgid, const state::TelemetryState& snapshot) {
                   << " gps_used=" << static_cast<int>(snapshot.gnss_sat->gps_used) << std::endl;
       }
       if (snapshot.env_humidity) {
-        std::cout << "ENVHUM: relative_humidity_x10=" << snapshot.env_humidity->relative_humidity_x10
+        std::cout << "HUMIDITY: relative_humidity_x10=" << snapshot.env_humidity->relative_humidity_x10
+                  << std::endl;
+      }
+      if (snapshot.lora_status) {
+        std::cout << "LORASTAT: loss_rate_x10=" << snapshot.lora_status->loss_rate_x10
+                  << " node_id=" << static_cast<int>(snapshot.lora_status->node_id)
+                  << " present=" << snapshot.lora_status->present
+                  << " link_state=" << static_cast<int>(snapshot.lora_status->link_state)
+                  << std::endl;
+      }
+      if (snapshot.remote_id_status) {
+        std::cout << "RIDSTAT: location_count=" << snapshot.remote_id_status->location_count
+                  << " error_count=" << snapshot.remote_id_status->error_count
+                  << " last_success_ms=" << snapshot.remote_id_status->last_success_ms
                   << std::endl;
       }
       break;
