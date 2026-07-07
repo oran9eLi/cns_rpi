@@ -70,7 +70,7 @@ struct GnssSat {
   std::uint8_t beidou_used;
 };
 
-/// ENVHUM 拆包结果：相对湿度 x10（原始刻度，535 表示 53.5%，不做单位换算）。
+/// HUMIDITY 拆包结果：相对湿度 x10（原始刻度，535 表示 53.5%，不做单位换算）。
 struct EnvHumidity {
   std::uint16_t relative_humidity_x10;
 };
