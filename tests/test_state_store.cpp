@@ -75,12 +75,11 @@ TEST_CASE("UpdateModStatusLow只影响0-7号模块,UpdateModStatusHigh只影响8
 TEST_CASE("扩展遥测字段的Update各自独立,不影响其他字段") {
   state::StateStore store;
   state::Battery2Status bat2{12600, 80, false};
-  state::MotorPwm pwm{{10, 20, 30, 40}};
   state::GnssSat sat{12, 8, 10, 6};
   state::EnvHumidity hum{535};
 
   store.UpdateBattery2Status(bat2);
-  store.UpdateMotorPwm(pwm);
+  store.UpdateMotorPwmLow(10, 20, true, 50);
   store.UpdateGnssSat(sat);
   store.UpdateEnvHumidity(hum);
   auto snapshot = store.Snapshot();
@@ -91,7 +90,10 @@ TEST_CASE("扩展遥测字段的Update各自独立,不影响其他字段") {
   CHECK_FALSE(snapshot.battery2_status->low_voltage);
 
   REQUIRE(snapshot.motor_pwm.has_value());
-  CHECK(snapshot.motor_pwm->duty_percent[3] == 40);
+  CHECK(snapshot.motor_pwm->duty_percent[0] == 10);
+  CHECK(snapshot.motor_pwm->duty_percent[1] == 20);
+  CHECK(snapshot.motor_pwm->run_state);
+  CHECK(snapshot.motor_pwm->speed_level == 50);
 
   REQUIRE(snapshot.gnss_sat.has_value());
   CHECK(snapshot.gnss_sat->beidou_used == 6);
@@ -129,4 +131,48 @@ TEST_CASE("身份类字段各自独立更新,不影响其他字段") {
   CHECK_FALSE(snapshot.open_drone_id_system.has_value());
   CHECK_FALSE(snapshot.open_drone_id_operator_id.has_value());
   CHECK_FALSE(snapshot.open_drone_id_self_id.has_value());
+}
+
+TEST_CASE("UpdateMotorPwmLow只影响duty_percent的0-1号,UpdateMotorPwmHigh只影响2-3号,run_state/speed_level以最新一帧为准") {
+  state::StateStore store;
+
+  store.UpdateMotorPwmLow(10, 20, true, 50);
+  auto after_low = store.Snapshot();
+  REQUIRE(after_low.motor_pwm.has_value());
+  CHECK(after_low.motor_pwm->duty_percent[0] == 10);
+  CHECK(after_low.motor_pwm->duty_percent[1] == 20);
+  CHECK(after_low.motor_pwm->duty_percent[2] == 0);  // MOTOR34还没到，零初始化占位
+  CHECK(after_low.motor_pwm->run_state);
+  CHECK(after_low.motor_pwm->speed_level == 50);
+
+  store.UpdateMotorPwmHigh(30, 40, false, 60);
+  auto after_high = store.Snapshot();
+  REQUIRE(after_high.motor_pwm.has_value());
+  CHECK(after_high.motor_pwm->duty_percent[0] == 10);  // 0-1号仍是UpdateMotorPwmLow写入的值
+  CHECK(after_high.motor_pwm->duty_percent[1] == 20);
+  CHECK(after_high.motor_pwm->duty_percent[2] == 30);
+  CHECK(after_high.motor_pwm->duty_percent[3] == 40);
+  CHECK_FALSE(after_high.motor_pwm->run_state);  // 两帧冗余拷贝,以最新一帧为准
+  CHECK(after_high.motor_pwm->speed_level == 60);
+}
+
+TEST_CASE("UpdateLoraStatus和UpdateRemoteIdStatus各自独立写入") {
+  state::StateStore store;
+  state::LoraStatus lora{100, 7, true, 2};
+  state::RemoteIdStatus rid{50, 3, 123456};
+
+  store.UpdateLoraStatus(lora);
+  store.UpdateRemoteIdStatus(rid);
+  auto snapshot = store.Snapshot();
+
+  REQUIRE(snapshot.lora_status.has_value());
+  CHECK(snapshot.lora_status->loss_rate_x10 == 100);
+  CHECK(snapshot.lora_status->node_id == 7);
+  CHECK(snapshot.lora_status->present);
+  CHECK(snapshot.lora_status->link_state == 2);
+
+  REQUIRE(snapshot.remote_id_status.has_value());
+  CHECK(snapshot.remote_id_status->location_count == 50);
+  CHECK(snapshot.remote_id_status->error_count == 3);
+  CHECK(snapshot.remote_id_status->last_success_ms == 123456);
 }

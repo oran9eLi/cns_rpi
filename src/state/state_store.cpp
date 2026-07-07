@@ -72,6 +72,30 @@ void StateStore::UpdateMotorPwm(const MotorPwm& value) {
   state_.motor_pwm = value;
 }
 
+void StateStore::UpdateMotorPwmLow(std::uint8_t duty0, std::uint8_t duty1, bool run_state,
+                                     std::uint8_t speed_level) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!state_.motor_pwm.has_value()) {
+    state_.motor_pwm = MotorPwm{};
+  }
+  state_.motor_pwm->duty_percent[0] = duty0;
+  state_.motor_pwm->duty_percent[1] = duty1;
+  state_.motor_pwm->run_state = run_state;
+  state_.motor_pwm->speed_level = speed_level;
+}
+
+void StateStore::UpdateMotorPwmHigh(std::uint8_t duty2, std::uint8_t duty3, bool run_state,
+                                      std::uint8_t speed_level) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!state_.motor_pwm.has_value()) {
+    state_.motor_pwm = MotorPwm{};
+  }
+  state_.motor_pwm->duty_percent[2] = duty2;
+  state_.motor_pwm->duty_percent[3] = duty3;
+  state_.motor_pwm->run_state = run_state;
+  state_.motor_pwm->speed_level = speed_level;
+}
+
 void StateStore::UpdateGnssSat(const GnssSat& value) {
   std::lock_guard<std::mutex> lock(mutex_);
   state_.gnss_sat = value;
@@ -80,6 +104,16 @@ void StateStore::UpdateGnssSat(const GnssSat& value) {
 void StateStore::UpdateEnvHumidity(const EnvHumidity& value) {
   std::lock_guard<std::mutex> lock(mutex_);
   state_.env_humidity = value;
+}
+
+void StateStore::UpdateLoraStatus(const LoraStatus& value) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  state_.lora_status = value;
+}
+
+void StateStore::UpdateRemoteIdStatus(const RemoteIdStatus& value) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  state_.remote_id_status = value;
 }
 
 void StateStore::UpdateAlarmTable(const AlarmTable& value) {

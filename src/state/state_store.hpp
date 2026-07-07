@@ -34,9 +34,32 @@ struct Battery2Status {
   bool low_voltage;
 };
 
-/// MOTORPWM 拆包结果：最多 4 个电机的占空比(%)。
+/// MOTOR12/MOTOR34 拆包结果：4 个电机的占空比(%)，外加两帧共同携带的
+/// run_state/speed_level(整机状态的冗余拷贝，两帧值相同，直接覆盖式更新，
+/// 不像 duty_percent 那样需要区分"自己负责哪一半")。
 struct MotorPwm {
   std::array<std::uint8_t, 4> duty_percent;
+  bool run_state;
+  std::uint8_t speed_level;
+};
+
+/// LORASTAT 拆包结果：LoRa 链路状态(RPi 专属，只发 USART1，不上 LoRa)。
+/// link_state 跟 module_status[4](LORA 模块的粗粒度状态)语义重复，但两条帧
+/// 来自不同的固件消息、独立更新，不做一致性校验——state_store 存固件发的
+/// 数据原样，不做二次加工。
+struct LoraStatus {
+  std::uint16_t loss_rate_x10;
+  std::uint8_t node_id;
+  bool present;
+  std::uint8_t link_state;
+};
+
+/// RIDSTAT 拆包结果：RemoteID 广播状态(RPi 专属，只发 USART1)。
+/// location_count/error_count 是增量语义的计数器低16位，不是绝对值。
+struct RemoteIdStatus {
+  std::uint16_t location_count;
+  std::uint16_t error_count;
+  std::uint32_t last_success_ms;
 };
 
 /// GNSS_SAT 拆包结果：GPS/北斗可见数与使用数。
@@ -100,6 +123,8 @@ struct TelemetryState {
   std::optional<MotorPwm> motor_pwm;
   std::optional<GnssSat> gnss_sat;
   std::optional<EnvHumidity> env_humidity;
+  std::optional<LoraStatus> lora_status;
+  std::optional<RemoteIdStatus> remote_id_status;
   std::optional<AlarmTable> alarm_table;
   std::optional<MessageLog> message_log;
 
@@ -142,8 +167,18 @@ class StateStore {
   void UpdateModStatusHigh(const std::array<std::uint8_t, 6>& modules8to13);
   void UpdateBattery2Status(const Battery2Status& value);
   void UpdateMotorPwm(const MotorPwm& value);
+  /// 只写 duty_percent 的 0-1 号索引(来自 MOTOR12)。若 motor_pwm 之前还没有值
+  /// (两帧都还没收到过)，先把整个 struct 零初始化；run_state/speed_level 是
+  /// 两帧共同的冗余拷贝，每次都直接覆盖(不需要判断"谁负责哪部分")。
+  void UpdateMotorPwmLow(std::uint8_t duty0, std::uint8_t duty1, bool run_state,
+                          std::uint8_t speed_level);
+  /// 只写 duty_percent 的 2-3 号索引(来自 MOTOR34)，语义同上。
+  void UpdateMotorPwmHigh(std::uint8_t duty2, std::uint8_t duty3, bool run_state,
+                           std::uint8_t speed_level);
   void UpdateGnssSat(const GnssSat& value);
   void UpdateEnvHumidity(const EnvHumidity& value);
+  void UpdateLoraStatus(const LoraStatus& value);
+  void UpdateRemoteIdStatus(const RemoteIdStatus& value);
   void UpdateAlarmTable(const AlarmTable& value);
   void UpdateMessageLog(const MessageLog& value);
   void UpdateOpenDroneIdBasicId(const mavlink_open_drone_id_basic_id_t& value);
