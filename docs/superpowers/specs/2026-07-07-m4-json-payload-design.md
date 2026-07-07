@@ -96,8 +96,11 @@ M3a/M3b/M3c 已经把 STM32 发来的所有 MAVLink 帧解码进 `state::Telemet
 |---|---|---|---|
 | `gps.lat/lon`、`global_position.lat/lon`、`drone_id.location.latitude/longitude`、`drone_id.system.operator_latitude/longitude` | degE7 (int32) | 度 (double) | `/1e7` |
 | `gps.alt`、`global_position.alt/relative_alt` | mm (int32) | 米 (double) | `/1000.0` |
+| `gps.alt_ellipsoid`、`gps.h_acc`、`gps.v_acc` | mm (int32/uint32) | 米 (double) | `/1000.0`（同 `gps.alt` 一样是 mm 刻度） |
 | `gps.vel`、`global_position.vx/vy/vz` | cm/s | m/s (double) | `/100.0` |
+| `gps.vel_acc` | mm/s (uint32) | m/s (double) | `/1000.0`（注意跟 `gps.vel` 的 cm/s 不是同一个刻度，官方注释写的是 mm/s） |
 | `gps.cog`、`global_position.hdg`、`gps.yaw`、`drone_id.location.direction` | cdeg | 度 (double) | `/100.0` |
+| `gps.hdg_acc` | degE5 (uint32) | 度 (double) | `/1e5`（注意刻度比 `cog`/`hdg` 精细，不是 cdeg） |
 | `drone_id.location.speed_horizontal/speed_vertical` | cm/s | m/s (double) | `/100.0` |
 | `attitude.roll/pitch/yaw`（含对应的 `*speed`） | rad (float) | 度 (double) | `*180/π` |
 | `pressure.press_abs/press_diff` | hPa (float) | hPa（已是人类单位） | 直接透传 |
@@ -113,23 +116,49 @@ M3a/M3b/M3c 已经把 STM32 发来的所有 MAVLink 帧解码进 `state::Telemet
 | `drone_id.location.altitude_barometric/altitude_geodetic/height`、`drone_id.system.area_ceiling/area_floor/operator_altitude_geo` | 已是米 (float) | 原样 | 无（哨兵值见下） |
 | `remote_id.last_success_ms` | ms（开机时刻） | 原样 | 无（没有更合适的单位） |
 
+`gps.eph`/`gps.epv`（GPS HDOP/VDOP，无量纲×100 的数值，不是物理量）**不换算，保持原始整数**，跟其它标量字段不同——按官方注释这两个是"unitless * 100"，除以100后也谈不上"物理单位"，直接透传更符合"存原样、不换算无意义数字"的原则；哨兵规则见下。
+
 **哨兵值 → `null`**：MAVLink 用特殊值表示"未提供"，换算前先判断是否命中哨兵值，命中则该字段输出 `null`（不换算出无意义的数字）：
 - `gps.eph/epv/vel/cog` = `UINT16_MAX`
 - `sys_status.current_battery`/`battery.current_battery`/`battery.battery_remaining` = `-1`
 - `battery.voltages[]`/`voltages_ext[]` 里等于 `UINT16_MAX`（或 `voltages_ext` 里等于 `0`，按官方注释是"不支持"）的槽位
 - `drone_id.location`/`drone_id.system` 里等于 `-1000.0f` 的高度类字段、`direction`=`36100`、`speed_horizontal`=`25500`、`speed_vertical`=`6300`
 
-## 6. `drone_id`/`alarms`/`logs` 细节
+## 6. 自定义扩展字段的 JSON key 名对照
+
+`telemetry.battery2/motor/gnss_sat/humidity/lora/remote_id` 来自 `state_store.hpp` 里的自定义 struct（不是官方 MAVLink 消息，字段名可以自己定），具体 key 名和含义：
+
+- **`battery2`**（对应 `Battery2Status`）：
+  - `voltage_v`：电压，伏特 (double)，原始字段 `voltage_mv`(mV) `/1000.0`
+  - `percent`：电量百分比 (uint8)，原样透传
+  - `low_voltage`：是否低电压告警 (bool)，原样透传
+- **`motor`**（对应 `MotorPwm`）：
+  - `duty_percent`：4 路电机占空比数组 `[m1,m2,m3,m4]`(uint8 0-100)，已经是百分比，原样透传
+  - `run_state`：整机运行状态 (bool)，原样透传（`MOTOR12`/`MOTOR34` 两帧的冗余拷贝，取最新一帧的值）
+  - `speed_level`：整机速度档位 (uint8)，已经是百分比，原样透传（同上，冗余拷贝取最新值）
+- **`gnss_sat`**（对应 `GnssSat`）：`gps_visible`/`beidou_visible`/`gps_used`/`beidou_used`，均为可见/使用卫星数 (uint8)，原样透传，字段名跟 struct 一致
+- **`humidity`**（对应 `EnvHumidity`）：
+  - `humidity_percent`：相对湿度百分比 (double)，原始字段 `relative_humidity_x10` `/10.0`
+- **`lora`**（对应 `LoraStatus`）：
+  - `loss_rate_percent`：估算丢包率百分比 (double)，原始字段 `loss_rate_x10` `/10.0`
+  - `node_id`：LoRa 节点 ID (uint8)，原样透传
+  - `present`：LoRa 模块是否在位 (bool)，原样透传
+  - `link_state`：LoRa 链路状态字符串（第4节的模块状态枚举字符串表）
+- **`remote_id`**（对应 `RemoteIdStatus`）：
+  - `location_count`/`error_count`：位置广播成功/编码错误计数（增量语义，不是绝对值），原样透传
+  - `last_success_ms`：RemoteID 最近一次成功提交时间（STM32 开机毫秒数），原样透传，没有更合适的单位可换算
+
+## 7. `drone_id`/`alarms`/`logs` 细节
 
 - `drone_id.basic_id/location/system/operator_id/self_id`：按第4、5节规则做枚举保留/单位换算。`uas_id`/`operator_id`/`description` 这几个 `char[]` 字段转成去除尾部空字符的字符串；`id_or_mac`（我们自己广播时恒为全零，字段本身是"仅用于接收其他飞行器数据时"）转成十六进制字符串——20字节对应40个十六进制字符，全零时为40个`'0'`组成的字符串。
 - `alarms` = `{"ver": ..., "entries": [{"source_id","fault_code","severity","active","age_s"}, ...]}`，按 `active_count` 截断（`fault_code`/`source_id`/`severity` 业务含义未知，文档已注明，保持原始数字）。
 - `logs` = `{"latest_seq": ..., "entries": [{"sequence","message_id","time":"HH:MM:SS","severity"}, ...]}`，按 `count` 截断；`time` 由 `time_hhmmss` 三元组拼成 `"HH:MM:SS"` 字符串。
 
-## 7. main.cpp 集成
+## 8. main.cpp 集成
 
 新增 `LogJsonPayload(const state::TelemetryState& state, const std::string& school_name)`，跟现有 `LogTelemetry`/`LogExtension` 同一个调用点（每处理完一帧调用一次），内部调用 `payload::ToJson(...).dump(2)` 打印到控制台，方便真机演示时人工核对。
 
-## 8. 测试范围
+## 9. 测试范围
 
 `tests/test_json_serializer.cpp`：
 - 空 `TelemetryState` → 输出只剩 `identity.school_name`，其余顶层 key 全部不存在。
@@ -140,7 +169,7 @@ M3a/M3b/M3c 已经把 STM32 发来的所有 MAVLink 帧解码进 `state::Telemet
 - `alarms.entries`/`logs.entries` 数组按 `active_count`/`count` 截断，含 0 条、中间值、满 14/9 条三种边界。
 - `uas_id`/`operator_id`/`description` 去除尾部空字符后的字符串正确；`id_or_mac` 十六进制字符串格式正确。
 
-## 9. 全局约束（供实施计划引用）
+## 10. 全局约束（供实施计划引用）
 
 - `state_store` 层"存原样不做单位换算"的既定原则不变——所有单位换算只发生在 `payload/json_serializer` 这一层。
 - 标准 MAVLink/ODID 官方枚举保持原始数字，不维护枚举名映射表；仅本项目自定义的模块状态枚举（含 `LORASTAT.link_state` 复用的同一枚举）转字符串。
