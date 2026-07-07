@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <mutex>
 #include <optional>
+#include <string>
 
 #include "common/mavlink.h"
 
@@ -101,6 +102,20 @@ struct TelemetryState {
   std::optional<EnvHumidity> env_humidity;
   std::optional<AlarmTable> alarm_table;
   std::optional<MessageLog> message_log;
+
+  /// OPEN_DRONE_ID_* 身份帧(M3c)，官方 struct 原样存储，不做单位换算/校验。
+  std::optional<mavlink_open_drone_id_basic_id_t> open_drone_id_basic_id;
+  std::optional<mavlink_open_drone_id_location_t> open_drone_id_location;
+  std::optional<mavlink_open_drone_id_system_t> open_drone_id_system;
+  std::optional<mavlink_open_drone_id_operator_id_t> open_drone_id_operator_id;
+  std::optional<mavlink_open_drone_id_self_id_t> open_drone_id_self_id;
+
+  /// 从 OPEN_DRONE_ID_BASIC_ID.uas_id 提取的厂商唯一产品识别码，RPi 不校验/不重新计算。
+  std::optional<std::string> vendor_id;
+  /// 从 MAVLink 帧头 sysid 格式化的 DCDW-XXX 角色号，帧头字段，不是 payload 字段。
+  std::optional<std::string> dcdw_label;
+  /// RPi 本机硬件序列号(/proc/cpuinfo)，V1 过渡期权威键，跟 MAVLink 帧无关。
+  std::optional<std::string> rpi_serial;
 };
 
 /**
@@ -131,6 +146,14 @@ class StateStore {
   void UpdateEnvHumidity(const EnvHumidity& value);
   void UpdateAlarmTable(const AlarmTable& value);
   void UpdateMessageLog(const MessageLog& value);
+  void UpdateOpenDroneIdBasicId(const mavlink_open_drone_id_basic_id_t& value);
+  void UpdateOpenDroneIdLocation(const mavlink_open_drone_id_location_t& value);
+  void UpdateOpenDroneIdSystem(const mavlink_open_drone_id_system_t& value);
+  void UpdateOpenDroneIdOperatorId(const mavlink_open_drone_id_operator_id_t& value);
+  void UpdateOpenDroneIdSelfId(const mavlink_open_drone_id_self_id_t& value);
+  void UpdateVendorId(const std::string& value);
+  void UpdateDcdwLabel(const std::string& value);
+  void UpdateRpiSerial(const std::string& value);
 
   /// 加锁拷贝当前状态并返回，调用方拿到的是独立副本。
   TelemetryState Snapshot() const;

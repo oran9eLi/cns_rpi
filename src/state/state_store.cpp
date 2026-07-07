@@ -92,6 +92,46 @@ void StateStore::UpdateMessageLog(const MessageLog& value) {
   state_.message_log = value;
 }
 
+void StateStore::UpdateOpenDroneIdBasicId(const mavlink_open_drone_id_basic_id_t& value) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  state_.open_drone_id_basic_id = value;
+}
+
+void StateStore::UpdateOpenDroneIdLocation(const mavlink_open_drone_id_location_t& value) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  state_.open_drone_id_location = value;
+}
+
+void StateStore::UpdateOpenDroneIdSystem(const mavlink_open_drone_id_system_t& value) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  state_.open_drone_id_system = value;
+}
+
+void StateStore::UpdateOpenDroneIdOperatorId(const mavlink_open_drone_id_operator_id_t& value) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  state_.open_drone_id_operator_id = value;
+}
+
+void StateStore::UpdateOpenDroneIdSelfId(const mavlink_open_drone_id_self_id_t& value) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  state_.open_drone_id_self_id = value;
+}
+
+void StateStore::UpdateVendorId(const std::string& value) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  state_.vendor_id = value;
+}
+
+void StateStore::UpdateDcdwLabel(const std::string& value) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  state_.dcdw_label = value;
+}
+
+void StateStore::UpdateRpiSerial(const std::string& value) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  state_.rpi_serial = value;
+}
+
 TelemetryState StateStore::Snapshot() const {
   std::lock_guard<std::mutex> lock(mutex_);
   return state_;

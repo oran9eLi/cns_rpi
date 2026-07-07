@@ -2,6 +2,7 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <cstring>
 
 #include "state/state_store.hpp"
 
@@ -100,4 +101,32 @@ TEST_CASE("扩展遥测字段的Update各自独立,不影响其他字段") {
 
   CHECK_FALSE(snapshot.alarm_table.has_value());
   CHECK_FALSE(snapshot.message_log.has_value());
+}
+
+TEST_CASE("身份类字段各自独立更新,不影响其他字段") {
+  state::StateStore store;
+  mavlink_open_drone_id_basic_id_t basic_id{};
+  basic_id.id_type = 1;
+  basic_id.ua_type = 2;
+  std::memcpy(basic_id.uas_id, "DCDWCNS1ABCDEFGHIJKL", 20);
+
+  store.UpdateOpenDroneIdBasicId(basic_id);
+  store.UpdateVendorId("DCDWCNS1ABCDEFGHIJKL");
+  store.UpdateDcdwLabel("DCDW-007");
+  store.UpdateRpiSerial("100000001234abcd");
+
+  auto snapshot = store.Snapshot();
+  REQUIRE(snapshot.open_drone_id_basic_id.has_value());
+  CHECK(snapshot.open_drone_id_basic_id->id_type == 1);
+  CHECK(snapshot.open_drone_id_basic_id->ua_type == 2);
+  REQUIRE(snapshot.vendor_id.has_value());
+  CHECK(*snapshot.vendor_id == "DCDWCNS1ABCDEFGHIJKL");
+  REQUIRE(snapshot.dcdw_label.has_value());
+  CHECK(*snapshot.dcdw_label == "DCDW-007");
+  REQUIRE(snapshot.rpi_serial.has_value());
+  CHECK(*snapshot.rpi_serial == "100000001234abcd");
+  CHECK_FALSE(snapshot.open_drone_id_location.has_value());
+  CHECK_FALSE(snapshot.open_drone_id_system.has_value());
+  CHECK_FALSE(snapshot.open_drone_id_operator_id.has_value());
+  CHECK_FALSE(snapshot.open_drone_id_self_id.has_value());
 }
