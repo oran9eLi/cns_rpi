@@ -4,6 +4,8 @@
 #include <cstdint>
 
 #include <array>
+#include <cstring>
+#include <string_view>
 
 #include "common/mavlink.h"
 #include "protocol/extension_decoder.hpp"
@@ -24,6 +26,59 @@ mavlink_message_t PackTunnel(std::uint16_t payload_type, std::uint8_t payload_le
   mavlink_message_t msg{};
   mavlink_msg_tunnel_pack(kSystemId, kComponentId, &msg, /*target_system=*/0,
                            /*target_component=*/0, payload_type, payload_length, payload.data());
+  return msg;
+}
+
+mavlink_message_t PackBasicId(std::uint8_t id_type, std::uint8_t ua_type,
+                                const std::uint8_t (&uas_id)[20]) {
+  mavlink_message_t msg{};
+  std::uint8_t id_or_mac[20] = {};
+  mavlink_msg_open_drone_id_basic_id_pack(kSystemId, kComponentId, &msg,
+                                            /*target_system=*/0, /*target_component=*/0,
+                                            id_or_mac, id_type, ua_type, uas_id);
+  return msg;
+}
+
+mavlink_message_t PackLocation() {
+  mavlink_message_t msg{};
+  std::uint8_t id_or_mac[20] = {};
+  mavlink_msg_open_drone_id_location_pack(
+      kSystemId, kComponentId, &msg, /*target_system=*/0, /*target_component=*/0, id_or_mac,
+      /*status=*/1, /*direction=*/100, /*speed_horizontal=*/200, /*speed_vertical=*/-50,
+      /*latitude=*/313000000, /*longitude=*/1213000000, /*altitude_barometric=*/10.5F,
+      /*altitude_geodetic=*/11.5F, /*height_reference=*/0, /*height=*/5.0F,
+      /*horizontal_accuracy=*/1, /*vertical_accuracy=*/1, /*barometer_accuracy=*/1,
+      /*speed_accuracy=*/1, /*timestamp=*/123.0F, /*timestamp_accuracy=*/1);
+  return msg;
+}
+
+mavlink_message_t PackSystem() {
+  mavlink_message_t msg{};
+  std::uint8_t id_or_mac[20] = {};
+  mavlink_msg_open_drone_id_system_pack(
+      kSystemId, kComponentId, &msg, /*target_system=*/0, /*target_component=*/0, id_or_mac,
+      /*operator_location_type=*/0, /*classification_type=*/0, /*operator_latitude=*/313000000,
+      /*operator_longitude=*/1213000000, /*area_count=*/1, /*area_radius=*/0,
+      /*area_ceiling=*/-1000.0F, /*area_floor=*/-1000.0F, /*category_eu=*/0, /*class_eu=*/0,
+      /*operator_altitude_geo=*/-1000.0F, /*timestamp=*/1700000000U);
+  return msg;
+}
+
+mavlink_message_t PackOperatorId(const char* operator_id) {
+  mavlink_message_t msg{};
+  std::uint8_t id_or_mac[20] = {};
+  mavlink_msg_open_drone_id_operator_id_pack(kSystemId, kComponentId, &msg,
+                                               /*target_system=*/0, /*target_component=*/0,
+                                               id_or_mac, /*operator_id_type=*/0, operator_id);
+  return msg;
+}
+
+mavlink_message_t PackSelfId(const char* description) {
+  mavlink_message_t msg{};
+  std::uint8_t id_or_mac[20] = {};
+  mavlink_msg_open_drone_id_self_id_pack(kSystemId, kComponentId, &msg, /*target_system=*/0,
+                                           /*target_component=*/0, id_or_mac,
+                                           /*description_type=*/0, description);
   return msg;
 }
 }  // namespace
@@ -365,4 +420,90 @@ TEST_CASE("不认识的payload_type被安静忽略") {
   bool handled = protocol::DecodeExtensionAndStore(msg, store);
 
   CHECK_FALSE(handled);
+}
+
+TEST_CASE("OPEN_DRONE_ID_BASIC_ID解码存储原始struct并提取vendor_id") {
+  std::uint8_t uas_id[20] = {'D', 'C', 'D', 'W', 'C', 'N', 'S', '1', 'A', 'B',
+                              'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M'};
+  mavlink_message_t msg = PackBasicId(/*id_type=*/1, /*ua_type=*/2, uas_id);
+  state::StateStore store;
+
+  bool handled = protocol::DecodeExtensionAndStore(msg, store);
+
+  CHECK(handled);
+  auto snapshot = store.Snapshot();
+  REQUIRE(snapshot.open_drone_id_basic_id.has_value());
+  CHECK(snapshot.open_drone_id_basic_id->id_type == 1);
+  CHECK(snapshot.open_drone_id_basic_id->ua_type == 2);
+  REQUIRE(snapshot.vendor_id.has_value());
+  CHECK(*snapshot.vendor_id == "DCDWCNS1ABCDEFGHJKLM");
+}
+
+TEST_CASE("OPEN_DRONE_ID_BASIC_ID的uas_id中间有null时vendor_id按strnlen截断") {
+  std::uint8_t uas_id[20] = {'D', 'C', 'D', 'W', 'C', 'N', 'S', '1', 0, 0,
+                              0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+  mavlink_message_t msg = PackBasicId(/*id_type=*/1, /*ua_type=*/0, uas_id);
+  state::StateStore store;
+
+  bool handled = protocol::DecodeExtensionAndStore(msg, store);
+
+  CHECK(handled);
+  auto snapshot = store.Snapshot();
+  REQUIRE(snapshot.vendor_id.has_value());
+  CHECK(*snapshot.vendor_id == "DCDWCNS1");
+}
+
+TEST_CASE("OPEN_DRONE_ID_LOCATION解码存储原始struct") {
+  mavlink_message_t msg = PackLocation();
+  state::StateStore store;
+
+  bool handled = protocol::DecodeExtensionAndStore(msg, store);
+
+  CHECK(handled);
+  auto snapshot = store.Snapshot();
+  REQUIRE(snapshot.open_drone_id_location.has_value());
+  CHECK(snapshot.open_drone_id_location->latitude == 313000000);
+  CHECK(snapshot.open_drone_id_location->longitude == 1213000000);
+  CHECK(snapshot.open_drone_id_location->speed_vertical == -50);
+}
+
+TEST_CASE("OPEN_DRONE_ID_SYSTEM解码存储原始struct") {
+  mavlink_message_t msg = PackSystem();
+  state::StateStore store;
+
+  bool handled = protocol::DecodeExtensionAndStore(msg, store);
+
+  CHECK(handled);
+  auto snapshot = store.Snapshot();
+  REQUIRE(snapshot.open_drone_id_system.has_value());
+  CHECK(snapshot.open_drone_id_system->operator_latitude == 313000000);
+  CHECK(snapshot.open_drone_id_system->timestamp == 1700000000U);
+}
+
+TEST_CASE("OPEN_DRONE_ID_OPERATOR_ID解码存储原始struct") {
+  mavlink_message_t msg = PackOperatorId("CAA123456");
+  state::StateStore store;
+
+  bool handled = protocol::DecodeExtensionAndStore(msg, store);
+
+  CHECK(handled);
+  auto snapshot = store.Snapshot();
+  REQUIRE(snapshot.open_drone_id_operator_id.has_value());
+  CHECK(std::string_view(snapshot.open_drone_id_operator_id->operator_id,
+                          strnlen(snapshot.open_drone_id_operator_id->operator_id, 20)) ==
+        "CAA123456");
+}
+
+TEST_CASE("OPEN_DRONE_ID_SELF_ID解码存储原始struct") {
+  mavlink_message_t msg = PackSelfId("training kit demo");
+  state::StateStore store;
+
+  bool handled = protocol::DecodeExtensionAndStore(msg, store);
+
+  CHECK(handled);
+  auto snapshot = store.Snapshot();
+  REQUIRE(snapshot.open_drone_id_self_id.has_value());
+  CHECK(std::string_view(snapshot.open_drone_id_self_id->description,
+                          strnlen(snapshot.open_drone_id_self_id->description, 23)) ==
+        "training kit demo");
 }

@@ -5,9 +5,10 @@
  * @brief M3b 范围内 NAMED_VALUE_INT/TUNNEL 扩展帧的解码入口。
  *
  * @details
- * 只负责"认出 M3b 关心的扩展帧语义(MODSTAT0/MODSTAT1/BAT2STAT/MOTORPWM/
- * GNSS_SAT/ENVHUM 六种 NAMED_VALUE_INT + 告警表/日志增量两种 TUNNEL)、拆包、
- * 写入 state_store"，不做单位换算(留给 M4 payload/json_serializer)，
+ * 只负责"认出本模块关心的扩展帧语义(M3b: MODSTAT0/MODSTAT1/BAT2STAT/MOTORPWM/
+ * GNSS_SAT/ENVHUM 六种 NAMED_VALUE_INT + 告警表/日志增量两种 TUNNEL；
+ * M3c: OPEN_DRONE_ID_BASIC_ID/LOCATION/SYSTEM/OPERATOR_ID/SELF_ID 五种身份帧)、
+ * 解码、写入 state_store"，不做单位换算(留给 M4 payload/json_serializer)，
  * 不关心帧从哪来(uart/mavlink_link 的事)、被谁读(state/ 下游消费者的事)。
  * M3b 范围外的消息类型/name/payload_type，以及 payload_length 不足以容纳
  * 表头的畸形 TUNNEL 帧，一律安静忽略，不是错误。

@@ -5,6 +5,8 @@
 
 #include "protocol/extension_decoder.hpp"
 
+#include "protocol/identity.hpp"
+
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -88,6 +90,12 @@ bool DecodeTunnel(const mavlink_tunnel_t& value, state::StateStore& store) {
   }
 }
 
+bool DecodeBasicId(const mavlink_open_drone_id_basic_id_t& value, state::StateStore& store) {
+  store.UpdateOpenDroneIdBasicId(value);
+  store.UpdateVendorId(ExtractVendorId(value.uas_id));
+  return true;
+}
+
 /// name 字段是 char[10]，不保证有'\0'，用 strnlen 限长取值再比较，避免越界读。
 bool DecodeNamedValueInt(const mavlink_named_value_int_t& value, state::StateStore& store) {
   const std::string_view name(value.name, strnlen(value.name, sizeof(value.name)));
@@ -156,6 +164,35 @@ bool DecodeExtensionAndStore(const mavlink_message_t& msg, state::StateStore& st
       mavlink_tunnel_t decoded{};
       mavlink_msg_tunnel_decode(&msg, &decoded);
       return DecodeTunnel(decoded, store);
+    }
+    case MAVLINK_MSG_ID_OPEN_DRONE_ID_BASIC_ID: {
+      mavlink_open_drone_id_basic_id_t decoded{};
+      mavlink_msg_open_drone_id_basic_id_decode(&msg, &decoded);
+      return DecodeBasicId(decoded, store);
+    }
+    case MAVLINK_MSG_ID_OPEN_DRONE_ID_LOCATION: {
+      mavlink_open_drone_id_location_t decoded{};
+      mavlink_msg_open_drone_id_location_decode(&msg, &decoded);
+      store.UpdateOpenDroneIdLocation(decoded);
+      return true;
+    }
+    case MAVLINK_MSG_ID_OPEN_DRONE_ID_SYSTEM: {
+      mavlink_open_drone_id_system_t decoded{};
+      mavlink_msg_open_drone_id_system_decode(&msg, &decoded);
+      store.UpdateOpenDroneIdSystem(decoded);
+      return true;
+    }
+    case MAVLINK_MSG_ID_OPEN_DRONE_ID_OPERATOR_ID: {
+      mavlink_open_drone_id_operator_id_t decoded{};
+      mavlink_msg_open_drone_id_operator_id_decode(&msg, &decoded);
+      store.UpdateOpenDroneIdOperatorId(decoded);
+      return true;
+    }
+    case MAVLINK_MSG_ID_OPEN_DRONE_ID_SELF_ID: {
+      mavlink_open_drone_id_self_id_t decoded{};
+      mavlink_msg_open_drone_id_self_id_decode(&msg, &decoded);
+      store.UpdateOpenDroneIdSelfId(decoded);
+      return true;
     }
     default:
       return false;
