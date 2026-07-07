@@ -3,11 +3,12 @@
  * @brief 程序入口，组合根。
  *
  * @details
- * M3a 阶段在 M2 双向收发闭环基础上接入遥测解码，M3b 阶段接入扩展帧解码：
- * 收到帧依次尝试 protocol::DecodeAndStore（标准遥测）和
- * protocol::DecodeExtensionAndStore（NAMED_VALUE_INT/TUNNEL扩展帧），
+ * M3a 阶段在 M2 双向收发闭环基础上接入遥测解码，M3b 阶段接入扩展帧解码，
+ * M3c 阶段接入身份帧解码：收到帧先更新 DCDW 角色号(帧头 sysid)，再依次尝试
+ * protocol::DecodeAndStore（标准遥测）和 protocol::DecodeExtensionAndStore
+ * （NAMED_VALUE_INT/TUNNEL 扩展帧 + OPEN_DRONE_ID_* 身份帧），
  * 写入 state::StateStore -> 打印解码后的有意义字段做人工验证。
- * 不接 MQTT（M5 的事），不处理身份帧（M3c 的事）。
+ * 启动时读一次 RPi 本机序列号(V1 过渡期权威键)。不接 MQTT（M5 的事）。
  */
 
 #include <chrono>
@@ -18,6 +19,7 @@
 #include "common/mavlink.h"
 #include "config/app_config.hpp"
 #include "protocol/extension_decoder.hpp"
+#include "protocol/identity.hpp"
 #include "protocol/telemetry_decoder.hpp"
 #include "state/state_store.hpp"
 #include "uart/mavlink_link.hpp"
@@ -94,8 +96,8 @@ void LogTelemetry(std::uint32_t msgid, const state::TelemetryState& snapshot) {
   }
 }
 
-/// 跟 LogTelemetry 同样的定位：按扩展帧的 msgid/内部语义打印 state_store 里
-/// 对应字段的最新值，供真机人工验证；解码逻辑本身在
+/// 跟 LogTelemetry 同样的定位：按扩展帧(M3b)/身份帧(M3c)的 msgid/内部语义
+/// 打印 state_store 里对应字段的最新值，供真机人工验证；解码逻辑本身在
 /// protocol::DecodeExtensionAndStore 里，这里只打印。
 void LogExtension(std::uint32_t msgid, const state::TelemetryState& snapshot) {
   switch (msgid) {
@@ -132,6 +134,43 @@ void LogExtension(std::uint32_t msgid, const state::TelemetryState& snapshot) {
                   << " count=" << snapshot.message_log->count << std::endl;
       }
       break;
+    case MAVLINK_MSG_ID_OPEN_DRONE_ID_BASIC_ID:
+      if (snapshot.open_drone_id_basic_id) {
+        std::cout << "OPEN_DRONE_ID_BASIC_ID: id_type="
+                  << static_cast<int>(snapshot.open_drone_id_basic_id->id_type)
+                  << " ua_type=" << static_cast<int>(snapshot.open_drone_id_basic_id->ua_type)
+                  << std::endl;
+      }
+      if (snapshot.vendor_id) {
+        std::cout << "vendor_id=" << *snapshot.vendor_id << std::endl;
+      }
+      break;
+    case MAVLINK_MSG_ID_OPEN_DRONE_ID_LOCATION:
+      if (snapshot.open_drone_id_location) {
+        std::cout << "OPEN_DRONE_ID_LOCATION: lat=" << snapshot.open_drone_id_location->latitude
+                  << " lon=" << snapshot.open_drone_id_location->longitude << std::endl;
+      }
+      break;
+    case MAVLINK_MSG_ID_OPEN_DRONE_ID_SYSTEM:
+      if (snapshot.open_drone_id_system) {
+        std::cout << "OPEN_DRONE_ID_SYSTEM: operator_lat="
+                  << snapshot.open_drone_id_system->operator_latitude << std::endl;
+      }
+      break;
+    case MAVLINK_MSG_ID_OPEN_DRONE_ID_OPERATOR_ID:
+      if (snapshot.open_drone_id_operator_id) {
+        std::cout << "OPEN_DRONE_ID_OPERATOR_ID: operator_id_type="
+                  << static_cast<int>(snapshot.open_drone_id_operator_id->operator_id_type)
+                  << std::endl;
+      }
+      break;
+    case MAVLINK_MSG_ID_OPEN_DRONE_ID_SELF_ID:
+      if (snapshot.open_drone_id_self_id) {
+        std::cout << "OPEN_DRONE_ID_SELF_ID: description_type="
+                  << static_cast<int>(snapshot.open_drone_id_self_id->description_type)
+                  << std::endl;
+      }
+      break;
     default:
       break;
   }
@@ -154,13 +193,17 @@ int main(int argc, char** argv) {
     return EXIT_FAILURE;
   }
 
-  std::cout << "cns_rpi M3b 启动，串口=" << app_config->serial.device
+  std::cout << "cns_rpi M3c 启动，串口=" << app_config->serial.device
             << " 波特率=" << app_config->serial.baud << std::endl;
 
   state::StateStore state_store;
+  if (auto serial = protocol::ReadRpiSerial()) {
+    state_store.UpdateRpiSerial(*serial);
+  }
   auto last_heartbeat = std::chrono::steady_clock::now();
   while (true) {
     if (auto msg = link->ReceiveMessage()) {
+      state_store.UpdateDcdwLabel(protocol::FormatDcdwLabel(msg->sysid));
       if (protocol::DecodeAndStore(*msg, state_store)) {
         LogTelemetry(msg->msgid, state_store.Snapshot());
       } else if (protocol::DecodeExtensionAndStore(*msg, state_store)) {
