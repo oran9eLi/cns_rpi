@@ -32,9 +32,11 @@
 |---|---|---|
 | `MODSTAT0` / `MODSTAT1` | 各 0.125 Hz（8000ms），两者交替发送 | 14 个模块的状态位图（4bit/模块） |
 | `BAT2STAT` | 0.125 Hz（8000ms） | 电压(mV)/电量(%)/低电压标志 |
-| `MOTORPWM` | 0.2 Hz（5000ms） | 4 个电机占空比(%) |
+| `MOTOR12` / `MOTOR34` | 各 0.2 Hz（5000ms），两者交替发送（替代原单条 `MOTORPWM`） | 每帧2路电机占空比(%)+run_state+speed_level |
 | `GNSS_SAT` | 0.1 Hz（10000ms） | GPS/北斗可见数与使用数 |
-| `ENVHUM` | 0.125 Hz（8000ms） | 相对湿度 |
+| `HUMIDITY` | 0.125 Hz（8000ms） | 相对湿度（此前叫 `ENVHUM`，已按固件实际改名） |
+| `LORASTAT` | 1000ms，RPi 专属 | LoRa 链路状态（丢包率/节点ID/在位/链路状态） |
+| `RIDSTAT` | 1000ms，RPi 专属 | RemoteID 广播状态（位置/错误计数、最近成功提交时间） |
 | `TUNNEL`（告警表，`payload_type=0x8001`） | 0.125 Hz（8000ms） | 当前活动告警表（最多14行） |
 | `TUNNEL`（日志增量，`payload_type=0x8002`） | 0.125 Hz（8000ms）增量，每 30000ms 全量重发一次 | 结构化日志条目（最多9条/帧） |
 | `LORASUM` | 1 Hz（1000ms） | LoRa 远程查看租约摘要——**LoRa 主从机专用，不建议接入 RPi** |
