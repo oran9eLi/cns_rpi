@@ -54,3 +54,7 @@ add_test(NAME extension_decoder COMMAND test_extension_decoder)
 add_executable(test_identity tests/test_identity.cpp)
 target_link_libraries(test_identity PRIVATE cns_rpi_core)
 add_test(NAME identity COMMAND test_identity)
+# ctest 默认工作目录固定为构建目录（build/），与调用 ctest 时的 CWD 无关；
+# test_identity.cpp 里的 fixture 用的是相对路径 tests/fixtures/...，必须显式
+# 指回仓库根目录，否则不管从哪里调用 ctest 都会因为找不到 fixture 文件而失败。
+set_tests_properties(identity PROPERTIES WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
