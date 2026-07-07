@@ -12,6 +12,10 @@ STM32 通过串口向 RPi 发送数据，验证串口物理链路和帧内容，
 字段字典依据：固件源码 Framework/Src/px4lite_mavlink_tx.c、
 Framework/Inc/px4lite_remote_tunnel.h、Framework/Inc/px4lite_types.h
 （不是猜的，逐字段核对过），详见 docs/V1设计文档.md §4.1/4.2。
+
+2026-07-07 跟固件 Formal_Framework PR#1 同步：`ENVHUM`→`HUMIDITY`、单条
+`MOTORPWM`→`MOTOR12`/`MOTOR34` 双帧，新增 `LORASTAT`/`RIDSTAT`（RPi 专属）
+和 `OPEN_DRONE_ID_*` 身份帧（M3c），字段布局详见 docs/固件对接-数据格式.md。
 """
 
 import argparse
@@ -35,6 +39,11 @@ SEVERITY_WARNING = 1
 
 TUNNEL_PT_ALARM_TABLE = 0x8001
 TUNNEL_PT_MESSAGE_LOG = 0x8002
+
+# 演示用厂商唯一产品识别码（DCDWCNS1 + 12 字符 SN，GB/T 41300 字符集，不代表真实设备）
+DEMO_VENDOR_ID = b"DCDWCNS1ABCDEFGH1234"
+# id_or_mac[20]：只用于转发别的无人机身份数据，自己广播自己的身份时不适用，填全零
+ID_OR_MAC_UNUSED = b"\x00" * 20
 
 
 def build_connection(port: str, baud: int, source_system: int):
@@ -125,12 +134,19 @@ def send_bat2stat(conn, now_ms: int, voltage_mv: int, percent: int, low_voltage:
     _named_value_int(conn, now_ms, "BAT2STAT", packed)
 
 
-def send_motorpwm(conn, now_ms: int, duty_percent: list[int]):
-    """最多4个电机，每个1字节占空比。"""
-    packed = 0
-    for i, duty in enumerate(duty_percent[:4]):
-        packed |= (duty & 0xFF) << (i * 8)
-    _named_value_int(conn, now_ms, "MOTORPWM", packed)
+def send_motor12(conn, now_ms: int, duty1: int, duty2: int, run_state: bool, speed_level: int):
+    """电机1/2占空比，替代原单条MOTORPWM。run_state/speed_level跟MOTOR34帧携带同一份
+    整机状态的冗余拷贝，两帧值应保持一致。"""
+    packed = ((duty1 & 0xFF) | ((duty2 & 0xFF) << 8) | ((1 if run_state else 0) << 16) |
+              ((speed_level & 0xFF) << 24))
+    _named_value_int(conn, now_ms, "MOTOR12", packed)
+
+
+def send_motor34(conn, now_ms: int, duty3: int, duty4: int, run_state: bool, speed_level: int):
+    """电机3/4占空比，布局同 send_motor12。"""
+    packed = ((duty3 & 0xFF) | ((duty4 & 0xFF) << 8) | ((1 if run_state else 0) << 16) |
+              ((speed_level & 0xFF) << 24))
+    _named_value_int(conn, now_ms, "MOTOR34", packed)
 
 
 def send_gnss_sat(conn, now_ms: int, gps_visible: int, bds_visible: int, gps_used: int, bds_used: int):
@@ -138,9 +154,104 @@ def send_gnss_sat(conn, now_ms: int, gps_visible: int, bds_visible: int, gps_use
     _named_value_int(conn, now_ms, "GNSS_SAT", packed)
 
 
-def send_envhum(conn, now_ms: int, humidity_pct_x10: int):
-    """humidity_pct_x10=535 表示 53.5% 相对湿度。"""
-    _named_value_int(conn, now_ms, "ENVHUM", humidity_pct_x10)
+def send_humidity(conn, now_ms: int, humidity_pct_x10: int):
+    """humidity_pct_x10=535 表示 53.5% 相对湿度。此前固件发的 name 是 ENVHUM，已按
+    Formal_Framework PR#1 改名为 HUMIDITY，布局不变。"""
+    _named_value_int(conn, now_ms, "HUMIDITY", humidity_pct_x10)
+
+
+def send_lorastat(conn, now_ms: int, loss_rate_x10: int, node_id: int, present: bool, link_state: int):
+    """RPi 专属，只发 USART1，不上 LoRa。link_state 跟 MODSTAT0/1 里 LORA 模块(索引4)
+    的状态语义重复，但两条帧独立发送、不做一致性校验。"""
+    packed = ((loss_rate_x10 & 0xFFFF) | ((node_id & 0xFF) << 16) |
+              ((1 if present else 0) << 24) | ((link_state & 0x07) << 25))
+    _named_value_int(conn, now_ms, "LORASTAT", packed)
+
+
+def send_ridstat(conn, now_ms: int, location_count: int, error_count: int):
+    """RPi 专属，只发 USART1。location_count/error_count 是增量语义的计数器低16位。
+    time_boot_ms 按固件约定应为"RemoteID最近一次成功提交时间"，这里演示直接用当前时刻。"""
+    packed = (location_count & 0xFFFF) | ((error_count & 0xFFFF) << 16)
+    _named_value_int(conn, now_ms, "RIDSTAT", packed)
+
+
+def send_open_drone_id_basic_id(conn):
+    """身份帧(M3c)：厂商唯一产品识别码通过 uas_id 携带，RPi 用 strnlen 提取，
+    不做格式校验，这里用 DEMO_VENDOR_ID 演示值，不是真实 SN。"""
+    conn.mav.open_drone_id_basic_id_send(
+        target_system=0,
+        target_component=0,
+        id_or_mac=ID_OR_MAC_UNUSED,
+        id_type=mavutil.mavlink.MAV_ODID_ID_TYPE_SERIAL_NUMBER,
+        ua_type=mavutil.mavlink.MAV_ODID_UA_TYPE_HELICOPTER_OR_MULTIROTOR,
+        uas_id=DEMO_VENDOR_ID,
+    )
+
+
+def send_open_drone_id_location(conn):
+    conn.mav.open_drone_id_location_send(
+        target_system=0,
+        target_component=0,
+        id_or_mac=ID_OR_MAC_UNUSED,
+        status=mavutil.mavlink.MAV_ODID_STATUS_AIRBORNE,
+        direction=0,
+        speed_horizontal=0,
+        speed_vertical=0,
+        latitude=int(31.2304 * 1e7),
+        longitude=int(121.4737 * 1e7),
+        altitude_barometric=50.0,
+        altitude_geodetic=50.0,
+        height_reference=mavutil.mavlink.MAV_ODID_HEIGHT_REF_OVER_TAKEOFF,
+        height=0.0,
+        horizontal_accuracy=mavutil.mavlink.MAV_ODID_HOR_ACC_UNKNOWN,
+        vertical_accuracy=mavutil.mavlink.MAV_ODID_VER_ACC_UNKNOWN,
+        barometer_accuracy=mavutil.mavlink.MAV_ODID_VER_ACC_UNKNOWN,
+        speed_accuracy=mavutil.mavlink.MAV_ODID_SPEED_ACC_UNKNOWN,
+        timestamp=0.0,
+        timestamp_accuracy=mavutil.mavlink.MAV_ODID_TIME_ACC_UNKNOWN,
+    )
+
+
+def send_open_drone_id_system(conn, now_ms: int):
+    conn.mav.open_drone_id_system_send(
+        target_system=0,
+        target_component=0,
+        id_or_mac=ID_OR_MAC_UNUSED,
+        operator_location_type=mavutil.mavlink.MAV_ODID_OPERATOR_LOCATION_TYPE_TAKEOFF,
+        classification_type=mavutil.mavlink.MAV_ODID_CLASSIFICATION_TYPE_UNDECLARED,
+        operator_latitude=int(31.2304 * 1e7),
+        operator_longitude=int(121.4737 * 1e7),
+        area_count=1,
+        area_radius=0,
+        area_ceiling=-1000.0,
+        area_floor=-1000.0,
+        category_eu=mavutil.mavlink.MAV_ODID_CATEGORY_EU_UNDECLARED,
+        class_eu=mavutil.mavlink.MAV_ODID_CLASS_EU_UNDECLARED,
+        operator_altitude_geo=-1000.0,
+        timestamp=now_ms // 1000,
+    )
+
+
+def send_open_drone_id_operator_id(conn):
+    """operator_id 目前没有真实 CAA 登记号，用占位文本演示（对应固件对接文档§3.4的开放问题）。"""
+    conn.mav.open_drone_id_operator_id_send(
+        target_system=0,
+        target_component=0,
+        id_or_mac=ID_OR_MAC_UNUSED,
+        operator_id_type=mavutil.mavlink.MAV_ODID_OPERATOR_ID_TYPE_CAA,
+        operator_id=b"DEMO-OPERATOR",
+    )
+
+
+def send_open_drone_id_self_id(conn):
+    """description 目前没有真实飞行目的描述，用占位文本演示。"""
+    conn.mav.open_drone_id_self_id_send(
+        target_system=0,
+        target_component=0,
+        id_or_mac=ID_OR_MAC_UNUSED,
+        description_type=mavutil.mavlink.MAV_ODID_DESC_TYPE_TEXT,
+        description=b"CNS training kit demo",
+    )
 
 
 def _tunnel(conn, payload_type: int, payload: bytes):
@@ -207,15 +318,24 @@ def main():
             send_modstat(conn, now_ms, 0, module_states); time.sleep(msg_gap_s)
             send_modstat(conn, now_ms, 1, module_states); time.sleep(msg_gap_s)
             send_bat2stat(conn, now_ms, voltage_mv=11800, percent=75, low_voltage=False); time.sleep(msg_gap_s)
-            send_motorpwm(conn, now_ms, duty_percent=[50, 50, 48, 52]); time.sleep(msg_gap_s)
+            send_motor12(conn, now_ms, duty1=50, duty2=50, run_state=True, speed_level=60); time.sleep(msg_gap_s)
+            send_motor34(conn, now_ms, duty3=48, duty4=52, run_state=True, speed_level=60); time.sleep(msg_gap_s)
             send_gnss_sat(conn, now_ms, gps_visible=8, bds_visible=6, gps_used=6, bds_used=4); time.sleep(msg_gap_s)
-            send_envhum(conn, now_ms, humidity_pct_x10=535); time.sleep(msg_gap_s)
+            send_humidity(conn, now_ms, humidity_pct_x10=535); time.sleep(msg_gap_s)
+            send_lorastat(conn, now_ms, loss_rate_x10=15, node_id=args.sysid, present=True, link_state=STATE_ONLINE); time.sleep(msg_gap_s)
+            send_ridstat(conn, now_ms, location_count=sent_rounds, error_count=0); time.sleep(msg_gap_s)
             send_tunnel_alarm_table(conn, records=[(3, 101, SEVERITY_WARNING, True, 12)]); time.sleep(msg_gap_s)  # source_id=3(BATTERY)
-            send_tunnel_message_log(conn, latest_seq=sent_rounds, entries=[])  # 只发心跳，不带日志条目
+            send_tunnel_message_log(conn, latest_seq=sent_rounds, entries=[]); time.sleep(msg_gap_s)  # 只发心跳，不带日志条目
+            send_open_drone_id_basic_id(conn); time.sleep(msg_gap_s)
+            send_open_drone_id_location(conn); time.sleep(msg_gap_s)
+            send_open_drone_id_system(conn, now_ms); time.sleep(msg_gap_s)
+            send_open_drone_id_operator_id(conn); time.sleep(msg_gap_s)
+            send_open_drone_id_self_id(conn)
 
             sent_rounds += 1
             print(f"[{sent_rounds}] 已发送一轮：HEARTBEAT/GPS_RAW_INT/ATTITUDE/SYS_STATUS/"
-                  f"MODSTAT0/MODSTAT1/BAT2STAT/MOTORPWM/GNSS_SAT/ENVHUM/TUNNEL(告警表+日志心跳)")
+                  f"MODSTAT0/MODSTAT1/BAT2STAT/MOTOR12/MOTOR34/GNSS_SAT/HUMIDITY/"
+                  f"LORASTAT/RIDSTAT/TUNNEL(告警表+日志心跳)/OPEN_DRONE_ID_*(5种身份帧)")
 
             if args.count and sent_rounds >= args.count:
                 break
