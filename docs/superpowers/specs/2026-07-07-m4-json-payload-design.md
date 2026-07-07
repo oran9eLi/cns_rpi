@@ -176,3 +176,234 @@ M3a/M3b/M3c 已经把 STM32 发来的所有 MAVLink 帧解码进 `state::Telemet
 - 未收到过的字段省略 JSON key，不输出 `null`；`null` 只用于"消息收到过，但该字段命中协议定义的哨兵值(表示未知/不支持)"这一种情况。
 - key 一律 snake_case。
 - 每个任务完成后运行对应测试，全绿才算完成；任务结束提交一次。
+
+## 11. 完整示例（全部字段有值，附逐字段含义）
+
+真机上不会所有字段同时有值（`alarms` 没告警就不存在、`drone_id.*` 要等身份帧到达才有），下面这份是为了让每个字段的含义一次性过一遍，假装全部消息都收到过。用 `jsonc`（带注释）格式，注释是给人看的，实际序列化输出是纯 JSON、不含注释。
+
+```jsonc
+{
+  "identity": {
+    "vendor_id": "DCDWCNS1AB12CD34EF56",  // 厂商唯一产品识别码：全局唯一设备键，GB/T 41300结构(DCDWCNS1固定8位厂商代码 + 12位SN)
+    "dcdw_label": "DCDW-001",              // 学校内部角色号：仅校内唯一，来自MAVLink帧头sysid，不能跨校当全局键用
+    "rpi_serial": "10000000abcdef12",      // RPi本机硬件序列号(/proc/cpuinfo)：V1过渡期权威键，跟MAVLink帧无关
+    "school_name": "NNUTC"                 // 学校名称：本机静态配置(config.json)，不是STM32解码出来的
+  },
+  "telemetry": {
+    "heartbeat": {
+      "custom_mode": 0,        // 自动驾驶仪自定义模式位域，含义由固件自己定义
+      "type": 2,               // 飞行器/组件类型(MAV_TYPE，官方枚举，保持原始数字)
+      "autopilot": 12,         // 自动驾驶仪类型(MAV_AUTOPILOT，官方枚举，保持原始数字)
+      "base_mode": 81,         // 系统模式位图(官方定义，保持原始数字)
+      "system_status": 4,      // 系统状态(MAV_STATE，官方枚举，保持原始数字)
+      "mavlink_version": 3    // MAVLink协议版本号
+    },
+    "gps": {
+      "time_usec": 1720000000000000,  // 时间戳(微秒)，UNIX纪元或开机以来，具体看数值量级
+      "lat": 39.9042,                  // 纬度(度，WGS84)
+      "lon": 116.4074,                 // 经度(度，WGS84)
+      "alt": 43.5,                     // 海拔高度(米，MSL平均海平面基准)
+      "alt_ellipsoid": 21.2,           // 椭球高度(米，WGS84椭球基准，跟alt的基准面不同)
+      "eph": 120,                      // 水平精度衰减因子HDOP(无量纲×100，不换算，越小定位越准)
+      "epv": 150,                      // 垂直精度衰减因子VDOP(无量纲×100，不换算)
+      "vel": 0.35,                     // 地速(米/秒)
+      "cog": 87.5,                     // 航迹方向(度，是移动方向，不是机头朝向，0-360)
+      "yaw": 87.5,                     // GPS测得的偏航角(度，需双天线等设备支持，0表示不提供)
+      "fix_type": 3,                   // GPS定位状态(官方枚举，如3=3D定位，保持原始数字)
+      "satellites_visible": 14,        // 可见卫星数
+      "h_acc": 1.1,                    // 水平位置不确定度(米)
+      "v_acc": 1.8,                    // 垂直位置不确定度(米)
+      "vel_acc": 0.05,                 // 速度不确定度(米/秒)
+      "hdg_acc": 0.5                   // 航向不确定度(度)
+    },
+    "gnss_sat": {
+      "gps_visible": 9,      // GPS可见卫星数
+      "beidou_visible": 8,   // 北斗可见卫星数
+      "gps_used": 7,         // GPS参与定位解算的卫星数
+      "beidou_used": 6       // 北斗参与定位解算的卫星数
+    },
+    "attitude": {
+      "time_boot_ms": 123456,  // 开机以来的时间戳(毫秒)
+      "roll": 1.2,              // 横滚角(度，-180~180)
+      "pitch": -0.8,            // 俯仰角(度)
+      "yaw": 45.0,              // 偏航角(度)
+      "rollspeed": 0.5,         // 横滚角速度(度/秒)
+      "pitchspeed": -0.3,       // 俯仰角速度(度/秒)
+      "yawspeed": 0.1           // 偏航角速度(度/秒)
+    },
+    "global_position": {
+      "time_boot_ms": 123456,  // 开机以来的时间戳(毫秒)
+      "lat": 39.9042,           // 纬度(度)
+      "lon": 116.4074,          // 经度(度)
+      "alt": 43.5,              // 海拔高度(米，MSL)
+      "relative_alt": 12.3,     // 相对起飞点高度(米)
+      "vx": 1.2,                // 地面坐标系北向速度(米/秒)
+      "vy": -0.5,               // 地面坐标系东向速度(米/秒)
+      "vz": 0.0,                // 地面坐标系垂直速度(米/秒，向下为正)
+      "hdg": 87.5               // 机头朝向(度，区别于gps.cog的"移动方向")
+    },
+    "sys_status": {
+      "onboard_control_sensors_present": 1483,           // 机载传感器/控制器"存在"位图(官方定义，每一位代表一种传感器，保持原始数字)
+      "onboard_control_sensors_enabled": 1483,           // 同上，"启用"位图
+      "onboard_control_sensors_health": 1483,            // 同上，"健康"位图
+      "load": 23.5,                                       // 主循环CPU占用率(百分比)
+      "voltage_battery": 12.6,                            // 电池电压(伏特)
+      "current_battery": 3.25,                            // 电池电流(安培)
+      "drop_rate_comm": 0.1,                              // 通信丢包率(百分比)
+      "errors_comm": 0,                                   // 通信错误计数
+      "errors_count1": 0,                                 // 自动驾驶仪自定义错误计数1(含义由固件自己定义)
+      "errors_count2": 0,                                 // 自定义错误计数2
+      "errors_count3": 0,                                 // 自定义错误计数3
+      "errors_count4": 0,                                 // 自定义错误计数4
+      "battery_remaining": 78,                            // 剩余电量(百分比)
+      "onboard_control_sensors_present_extended": 0,      // 扩展传感器"存在"位图(用于超过32个传感器的场景)
+      "onboard_control_sensors_enabled_extended": 0,      // 扩展"启用"位图
+      "onboard_control_sensors_health_extended": 0        // 扩展"健康"位图
+    },
+    "battery": {
+      "current_consumed": 1520,                                              // 已消耗电荷(毫安时)
+      "energy_consumed": 18500.0,                                            // 已消耗能量(焦耳)
+      "temperature": 28.5,                                                   // 电池温度(摄氏度)
+      "voltages": [4.15, 4.14, 4.15, 4.13, null, null, null, null, null, null], // 1-10节电芯电压(伏特，未使用槽位为null)
+      "current_battery": 3.25,                                               // 电池电流(安培)
+      "id": 0,                                                                // 电池编号
+      "battery_function": 1,                                                 // 电池用途类型(官方枚举，保持原始数字)
+      "type": 1,                                                              // 电池化学类型(官方枚举，保持原始数字)
+      "battery_remaining": 78,                                               // 剩余电量(百分比)
+      "time_remaining": 3600,                                                // 预计剩余可用时间(秒)
+      "charge_state": 2,                                                     // 电量状态告警等级(官方枚举，保持原始数字)
+      "voltages_ext": [null, null, null, null],                              // 11-14节电芯电压(伏特，未使用为null)
+      "mode": 0,                                                              // 电池模式(官方枚举，保持原始数字)
+      "fault_bitmask": 0                                                     // 故障/健康位图(官方定义，保持原始数字)
+    },
+    "battery2": {
+      "voltage_v": 12.6,       // 电压(伏特)——第二路电池，state_store里的Battery2Status
+      "percent": 82,           // 电量百分比
+      "low_voltage": false     // 是否触发低电压告警
+    },
+    "pressure": {
+      "time_boot_ms": 123456,       // 开机以来的时间戳(毫秒)
+      "press_abs": 1013.25,         // 绝对气压(百帕)
+      "press_diff": 0.02,           // 差压(百帕，如空速管测量值)
+      "temperature": 26.5,          // 气压计温度(摄氏度)
+      "temperature_press_diff": 26.5 // 差压传感器温度(摄氏度)
+    },
+    "humidity": {
+      "humidity_percent": 53.5   // 相对湿度(百分比)
+    },
+    "motor": {
+      "duty_percent": [45, 45, 50, 50],  // 4路电机占空比(百分比数组，顺序对应电机1-4)
+      "run_state": true,                  // 整机运行状态(true=运行中；MOTOR12/MOTOR34两帧的冗余拷贝，取最新一帧)
+      "speed_level": 60                   // 整机速度档位(百分比，同上取最新一帧)
+    },
+    "lora": {
+      "loss_rate_percent": 1.5,  // 估算丢包率(百分比)
+      "node_id": 9,               // LoRa节点编号
+      "present": true,            // LoRa模块是否在位
+      "link_state": "ONLINE"      // LoRa链路状态(字符串；跟modules里LORA模块状态语义相同但独立更新，不做一致性校验)
+    },
+    "remote_id": {
+      "location_count": 120,      // 位置广播成功计数(增量语义，不是累计总数)
+      "error_count": 0,            // 编码/提交错误计数(增量语义)
+      "last_success_ms": 987654    // RemoteID最近一次成功提交时间(STM32开机毫秒数)
+    }
+  },
+  "modules": [
+    // 14个模块的健康状态；status取值:UNINITIALIZED/STARTING/ONLINE/DEGRADED/OFFLINE/FAILED/DISABLED
+    { "name": "GNSS", "status": "ONLINE" },
+    { "name": "IMU", "status": "ONLINE" },
+    { "name": "BARO", "status": "ONLINE" },
+    { "name": "BATTERY", "status": "ONLINE" },
+    { "name": "LORA", "status": "DEGRADED" },
+    { "name": "5G", "status": "OFFLINE" },
+    { "name": "STORAGE", "status": "ONLINE" },
+    { "name": "REMOTE_ID", "status": "ONLINE" },
+    { "name": "DISPLAY", "status": "DISABLED" },
+    { "name": "CONTROL", "status": "ONLINE" },
+    { "name": "ALARM", "status": "ONLINE" },
+    { "name": "SYSTEM", "status": "ONLINE" },
+    { "name": "ESTIMATOR", "status": "STARTING" },
+    { "name": "BUSINESS", "status": "ONLINE" }
+  ],
+  "alarms": {
+    "ver": 1,   // 告警表版本号
+    "entries": [
+      // source_id=告警来源模块编号；fault_code=故障代码(业务含义待固件侧文档，RPi只透传)；
+      // severity=严重等级(原始数字)；active=是否仍然有效；age_s=告警已持续时间(秒)
+      { "source_id": 4, "fault_code": 1032, "severity": 2, "active": true, "age_s": 15 },
+      { "source_id": 9, "fault_code": 2004, "severity": 1, "active": false, "age_s": 320 }
+    ]
+  },
+  "logs": {
+    "latest_seq": 458,  // 最新日志序号
+    "entries": [
+      // sequence=日志序号；message_id=日志消息ID(含义待固件侧文档)；time=HH:MM:SS；severity=严重等级(原始数字)
+      { "sequence": 456, "message_id": 12, "time": "14:23:07", "severity": 1 },
+      { "sequence": 457, "message_id": 45, "time": "14:23:09", "severity": 2 },
+      { "sequence": 458, "message_id": 3, "time": "14:23:11", "severity": 0 }
+    ]
+  },
+  "drone_id": {
+    "basic_id": {
+      "target_system": 0,       // 目标系统ID(0=广播)
+      "target_component": 0,    // 目标组件ID(0=广播)
+      "id_or_mac": "0000000000000000000000000000000000000000",  // 仅用于接收其他飞行器数据时的MAC/ID；我们自己广播时恒为全零
+      "id_type": 1,              // UAS ID格式类型(官方枚举，保持原始数字)
+      "ua_type": 2,              // 无人机类型(官方枚举，保持原始数字)
+      "uas_id": "DCDWCNS1AB12CD34EF56"  // 无人机唯一识别码，即厂商唯一产品识别码，同identity.vendor_id
+    },
+    "location": {
+      "latitude": 39.9042,           // 无人机当前纬度(度)
+      "longitude": 116.4074,         // 无人机当前经度(度)
+      "altitude_barometric": 45.2,   // 气压高度(米)
+      "altitude_geodetic": 44.8,     // WGS84大地高度(米)
+      "height": 12.3,                // 相对高度(米，基准见height_reference)
+      "timestamp": 1234.5,           // UTC整点后的秒数
+      "direction": 87.5,             // 移动方向(度，非机头朝向)
+      "speed_horizontal": 3.5,       // 水平速度(米/秒)
+      "speed_vertical": 0.0,         // 垂直速度(米/秒)
+      "target_system": 0,
+      "target_component": 0,
+      "id_or_mac": "0000000000000000000000000000000000000000",
+      "status": 2,                    // 飞行器地面/空中状态(官方枚举，保持原始数字)
+      "height_reference": 0,          // height字段的基准点(官方枚举，保持原始数字)
+      "horizontal_accuracy": 4,       // 水平位置精度等级(官方枚举，保持原始数字)
+      "vertical_accuracy": 4,         // 垂直位置精度等级(官方枚举，保持原始数字)
+      "barometer_accuracy": 3,        // 气压高度精度等级(官方枚举，保持原始数字)
+      "speed_accuracy": 3,            // 速度精度等级(官方枚举，保持原始数字)
+      "timestamp_accuracy": 2         // 时间戳精度等级(官方枚举，保持原始数字)
+    },
+    "system": {
+      "operator_latitude": 39.905,    // 操作员纬度(度)
+      "operator_longitude": 116.408,  // 操作员经度(度)
+      "area_ceiling": 120.0,          // 编队活动区域高度上限(米)
+      "area_floor": 0.0,              // 编队活动区域高度下限(米)
+      "operator_altitude_geo": 45.0,  // 操作员大地高度(米)
+      "timestamp": 233366400,         // UNIX时间戳(秒，2019-01-01 00:00:00起)
+      "area_count": 1,                 // 编队飞行器数量(默认1，无编队)
+      "area_radius": 0,                // 编队活动区域半径(米)
+      "target_system": 0,
+      "target_component": 0,
+      "id_or_mac": "0000000000000000000000000000000000000000",
+      "operator_location_type": 0,    // 操作员位置类型(官方枚举，保持原始数字)
+      "classification_type": 0,       // 无人机分类类型(官方枚举，保持原始数字)
+      "category_eu": 0,               // 欧盟分类下的类别(官方枚举，保持原始数字)
+      "class_eu": 0                   // 欧盟分类下的级别(官方枚举，保持原始数字)
+    },
+    "operator_id": {
+      "target_system": 0,
+      "target_component": 0,
+      "id_or_mac": "0000000000000000000000000000000000000000",
+      "operator_id_type": 0,           // operator_id字段的格式类型(官方枚举，保持原始数字)
+      "operator_id": "CAAB1234567890"  // 操作员执照编号等文本(去除尾部空字符)
+    },
+    "self_id": {
+      "target_system": 0,
+      "target_component": 0,
+      "id_or_mac": "0000000000000000000000000000000000000000",
+      "description_type": 0,               // description字段的格式类型(官方枚举，保持原始数字)
+      "description": "CNS-RPI training kit" // 自由文本描述(去除尾部空字符)
+    }
+  }
+}
+```
