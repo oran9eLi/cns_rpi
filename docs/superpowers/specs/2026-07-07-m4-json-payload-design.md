@@ -10,6 +10,14 @@ M3a/M3b/M3c 已经把 STM32 发来的所有 MAVLink 帧解码进 `state::Telemet
 
 用户提供的草稿 `/home/oran9e/test.json` 给出了大致形状（`identity` 块 + 模块数组），但草稿里的 `school_name` 字段在 `state_store` 里没有对应数据来源（那是本机静态配置，不是 STM32 解码出来的），`modules` 数组把状态简化成了 `"active"/"inactive"`，跟实际的 0-6 枚举、14个模块不一致——这些差异已经跟用户逐条确认过，本文档是确认后的完整设计。
 
+**重要背景**：这套实训箱是**固定不动的教学用主控箱**，不是真实飞行的无人机——不会飞、没有人驾驶。MAVLink/OPEN_DRONE_ID 协议里大量"飞行运动学"字段（速度、编队区域等）对这个箱子没有实际意义，因此本设计里 JSON 输出**不包含**以下几类字段（`state_store` 解码层不受影响，仍然原样存储官方结构体的全部字段——这是消费层/M4 一层的取舍，不改解码层）：
+- `global_position` 的 `vx`/`vy`/`vz`（速度分量）、`relative_alt`（相对起飞点高度——箱子没有"起飞"这回事）
+- `gps` 的 `vel`/`cog`/`yaw`（地速/航迹方向/GPS偏航角）及其对应的不确定度 `vel_acc`/`hdg_acc`
+- `drone_id.location` 的 `speed_horizontal`/`speed_vertical`/`direction`/`height`，以及描述这几个字段的"孤儿元数据" `height_reference`/`speed_accuracy`
+- `drone_id.system` 的 `area_ceiling`/`area_floor`/`area_count`/`area_radius`（编队/多机场景专用，这个箱子是单机）
+
+`attitude`（姿态角/角速度）保留——这个字段来自箱子上真实的 MPU6050 传感器，箱体本身会有姿态变化（如倾斜/震动），不是摆设。
+
 ## 2. 文件布局与接口
 
 - 新增 `src/payload/json_serializer.hpp/.cpp`（文件树已在 `docs/V1设计文档.md` 里预留这个位置）。
@@ -86,7 +94,7 @@ M3a/M3b/M3c 已经把 STM32 发来的所有 MAVLink 帧解码进 `state::Telemet
 - 模块状态（0-6，`Px4Lite_State_t`，V1设计文档§4.1）→ 字符串：`UNINITIALIZED`/`STARTING`/`ONLINE`/`DEGRADED`/`OFFLINE`/`FAILED`/`DISABLED`。
 - 模块编号（0-13，`Px4Lite_ModuleId_t`）→ 名称：`GNSS`/`IMU`/`BARO`/`BATTERY`/`LORA`/`5G`/`STORAGE`/`REMOTE_ID`/`DISPLAY`/`CONTROL`/`ALARM`/`SYSTEM`/`ESTIMATOR`/`BUSINESS`。
 - `lora.link_state`（跟模块状态复用同一个 `Px4Lite_State_t` 枚举，见 `state_store.hpp` 里 `LoraStatus` 的注释）→ 复用上面同一张字符串表。
-- **标准 MAVLink 官方枚举/位图字段保持原始数字，不转字符串**：`heartbeat.type/autopilot/base_mode/system_status`、`gps.fix_type`、`battery.type/mode/charge_state/battery_function/fault_bitmask`、`sys_status` 的三组传感器位图、以及所有 `OPEN_DRONE_ID_*` 里的 `id_type/ua_type/status/height_reference/*_accuracy/classification_type/category_eu/class_eu/operator_location_type` 等 ODID 官方枚举。
+- **标准 MAVLink 官方枚举/位图字段保持原始数字，不转字符串**：`heartbeat.type/autopilot/base_mode/system_status`、`gps.fix_type`、`battery.type/mode/charge_state/battery_function/fault_bitmask`、`sys_status` 的三组传感器位图、以及所有 `OPEN_DRONE_ID_*` 里的 `id_type/ua_type/status/*_accuracy/classification_type/category_eu/class_eu/operator_location_type` 等 ODID 官方枚举（`height_reference` 随 `height` 字段一起删除，见第1节）。
 
   理由：这些是上游协议自带的几十种取值/位标志，翻译成字符串需要维护一整套独立的 `MAV_STATE`/`MAV_TYPE`/`MAV_AUTOPILOT`/`GPS_FIX_TYPE`/`MAV_BATTERY_*`/`MAV_ODID_*` 映射表，属于比 M4 验收范围（人工核对自定义字段的可读性）明显更大的独立工作；且这些是标准协议代码本身可查，跟只有本仓库知道含义的 0-6 模块枚举性质不同。
 
@@ -95,13 +103,9 @@ M3a/M3b/M3c 已经把 STM32 发来的所有 MAVLink 帧解码进 `state::Telemet
 | 字段 | 原始刻度 | 换算后 | 公式 |
 |---|---|---|---|
 | `gps.lat/lon`、`global_position.lat/lon`、`drone_id.location.latitude/longitude`、`drone_id.system.operator_latitude/longitude` | degE7 (int32) | 度 (double) | `/1e7` |
-| `gps.alt`、`global_position.alt/relative_alt` | mm (int32) | 米 (double) | `/1000.0` |
+| `gps.alt`、`global_position.alt` | mm (int32) | 米 (double) | `/1000.0` |
 | `gps.alt_ellipsoid`、`gps.h_acc`、`gps.v_acc` | mm (int32/uint32) | 米 (double) | `/1000.0`（同 `gps.alt` 一样是 mm 刻度） |
-| `gps.vel`、`global_position.vx/vy/vz` | cm/s | m/s (double) | `/100.0` |
-| `gps.vel_acc` | mm/s (uint32) | m/s (double) | `/1000.0`（注意跟 `gps.vel` 的 cm/s 不是同一个刻度，官方注释写的是 mm/s） |
-| `gps.cog`、`global_position.hdg`、`gps.yaw`、`drone_id.location.direction` | cdeg | 度 (double) | `/100.0` |
-| `gps.hdg_acc` | degE5 (uint32) | 度 (double) | `/1e5`（注意刻度比 `cog`/`hdg` 精细，不是 cdeg） |
-| `drone_id.location.speed_horizontal/speed_vertical` | cm/s | m/s (double) | `/100.0` |
+| `global_position.hdg` | cdeg | 度 (double) | `/100.0` |
 | `attitude.roll/pitch/yaw`（含对应的 `*speed`） | rad (float) | 度 (double) | `*180/π` |
 | `pressure.press_abs/press_diff` | hPa (float) | hPa（已是人类单位） | 直接透传 |
 | `pressure.temperature`、`pressure.temperature_press_diff`、`battery.temperature` | cdegC | °C (double) | `/100.0` |
@@ -113,16 +117,16 @@ M3a/M3b/M3c 已经把 STM32 发来的所有 MAVLink 帧解码进 `state::Telemet
 | `battery.current_consumed`/`time_remaining`/`battery_remaining` | mAh/s/% | 原样 | 无需换算（已是人类单位） |
 | `lora.loss_rate_x10`、`humidity.relative_humidity_x10` | ×10 | % (double) | `/10.0` |
 | `motor.duty_percent[]`/`speed_level` | 已是 % | 原样 | 无 |
-| `drone_id.location.altitude_barometric/altitude_geodetic/height`、`drone_id.system.area_ceiling/area_floor/operator_altitude_geo` | 已是米 (float) | 原样 | 无（哨兵值见下） |
+| `drone_id.location.altitude_barometric/altitude_geodetic`、`drone_id.system.operator_altitude_geo` | 已是米 (float) | 原样 | 无（哨兵值见下） |
 | `remote_id.last_success_ms` | ms（开机时刻） | 原样 | 无（没有更合适的单位） |
 
 `gps.eph`/`gps.epv`（GPS HDOP/VDOP，无量纲×100 的数值，不是物理量）**不换算，保持原始整数**，跟其它标量字段不同——按官方注释这两个是"unitless * 100"，除以100后也谈不上"物理单位"，直接透传更符合"存原样、不换算无意义数字"的原则；哨兵规则见下。
 
 **哨兵值 → `null`**：MAVLink 用特殊值表示"未提供"，换算前先判断是否命中哨兵值，命中则该字段输出 `null`（不换算出无意义的数字）：
-- `gps.eph/epv/vel/cog` = `UINT16_MAX`
+- `gps.eph/epv` = `UINT16_MAX`
 - `sys_status.current_battery`/`battery.current_battery`/`battery.battery_remaining` = `-1`
 - `battery.voltages[]`/`voltages_ext[]` 里等于 `UINT16_MAX`（或 `voltages_ext` 里等于 `0`，按官方注释是"不支持"）的槽位
-- `drone_id.location`/`drone_id.system` 里等于 `-1000.0f` 的高度类字段、`direction`=`36100`、`speed_horizontal`=`25500`、`speed_vertical`=`6300`
+- `drone_id.location.altitude_barometric/altitude_geodetic`、`drone_id.system.operator_altitude_geo` 等于 `-1000.0f`
 
 ## 6. 自定义扩展字段的 JSON key 名对照
 
@@ -151,6 +155,7 @@ M3a/M3b/M3c 已经把 STM32 发来的所有 MAVLink 帧解码进 `state::Telemet
 ## 7. `drone_id`/`alarms`/`logs` 细节
 
 - `drone_id.basic_id/location/system/operator_id/self_id`：按第4、5节规则做枚举保留/单位换算。`uas_id`/`operator_id`/`description` 这几个 `char[]` 字段转成去除尾部空字符的字符串；`id_or_mac`（我们自己广播时恒为全零，字段本身是"仅用于接收其他飞行器数据时"）转成十六进制字符串——20字节对应40个十六进制字符，全零时为40个`'0'`组成的字符串。
+- `drone_id.location`/`drone_id.system` 各自省略了几个官方消息字段（`speed_horizontal`/`speed_vertical`/`direction`/`height`/`height_reference`/`speed_accuracy`、`area_ceiling`/`area_floor`/`area_count`/`area_radius`），理由和完整清单见第1节——这个箱子固定不动、不编队，这些字段永远是没有意义的默认值。
 - `alarms` = `{"ver": ..., "entries": [{"source_id","fault_code","severity","active","age_s"}, ...]}`，按 `active_count` 截断（`fault_code`/`source_id`/`severity` 业务含义未知，文档已注明，保持原始数字）。
 - `logs` = `{"latest_seq": ..., "entries": [{"sequence","message_id","time":"HH:MM:SS","severity"}, ...]}`，按 `count` 截断；`time` 由 `time_hhmmss` 三元组拼成 `"HH:MM:SS"` 字符串。
 
@@ -164,7 +169,7 @@ M3a/M3b/M3c 已经把 STM32 发来的所有 MAVLink 帧解码进 `state::Telemet
 - 空 `TelemetryState` → 输出只剩 `identity.school_name`，其余顶层 key 全部不存在。
 - 每组字段（`telemetry.*`/`modules`/`alarms`/`logs`/`drone_id.*`）独立填充后，对应 key 存在且数值正确；未填充的字段仍然不存在。
 - 单位换算抽样核对：`gps.lat/lon`、`attitude.roll`（弧度转角度）、`pressure.temperature`、`sys_status.voltage_battery`。
-- 哨兵值 → `null`：至少覆盖 `gps.eph=UINT16_MAX`、`sys_status.current_battery=-1`、`drone_id.location.height=-1000.0f` 三种情况。
+- 哨兵值 → `null`：至少覆盖 `gps.eph=UINT16_MAX`、`sys_status.current_battery=-1`、`drone_id.location.altitude_barometric=-1000.0f` 三种情况。
 - 模块状态：14 项都输出正确的 `name`/`status` 字符串，含未收到过状态的模块（值为0，应显示 `UNINITIALIZED`，这是零初始化后的合法语义，不是异常）。
 - `alarms.entries`/`logs.entries` 数组按 `active_count`/`count` 截断，含 0 条、中间值、满 14/9 条三种边界。
 - `uas_id`/`operator_id`/`description` 去除尾部空字符后的字符串正确；`id_or_mac` 十六进制字符串格式正确。
@@ -176,6 +181,7 @@ M3a/M3b/M3c 已经把 STM32 发来的所有 MAVLink 帧解码进 `state::Telemet
 - 未收到过的字段省略 JSON key，不输出 `null`；`null` 只用于"消息收到过，但该字段命中协议定义的哨兵值(表示未知/不支持)"这一种情况。
 - key 一律 snake_case。
 - 每个任务完成后运行对应测试，全绿才算完成；任务结束提交一次。
+- 这套实训箱固定不动、不飞、不编队：`global_position.vx/vy/vz/relative_alt`、`gps.vel/cog/yaw/vel_acc/hdg_acc`、`drone_id.location.speed_horizontal/speed_vertical/direction/height/height_reference/speed_accuracy`、`drone_id.system.area_ceiling/area_floor/area_count/area_radius` 这些字段是无意义的飞行运动学量，**JSON里不输出**（`state_store`解码层不受影响，仍然原样存储官方结构体全部字段，只是`json_serializer`转换时跳过这些字段）；`attitude`（姿态角/角速度）保留，因为来自箱体上真实的MPU6050传感器。
 
 ## 11. 完整示例（全部字段有值，附逐字段含义）
 
@@ -206,15 +212,11 @@ M3a/M3b/M3c 已经把 STM32 发来的所有 MAVLink 帧解码进 `state::Telemet
       "alt_ellipsoid": 21.2,           // 椭球高度(米，WGS84椭球基准，跟alt的基准面不同)
       "eph": 120,                      // 水平精度衰减因子HDOP(无量纲×100，不换算，越小定位越准)
       "epv": 150,                      // 垂直精度衰减因子VDOP(无量纲×100，不换算)
-      "vel": 0.35,                     // 地速(米/秒)
-      "cog": 87.5,                     // 航迹方向(度，是移动方向，不是机头朝向，0-360)
-      "yaw": 87.5,                     // GPS测得的偏航角(度，需双天线等设备支持，0表示不提供)
       "fix_type": 3,                   // GPS定位状态(官方枚举，如3=3D定位，保持原始数字)
       "satellites_visible": 14,        // 可见卫星数
       "h_acc": 1.1,                    // 水平位置不确定度(米)
-      "v_acc": 1.8,                    // 垂直位置不确定度(米)
-      "vel_acc": 0.05,                 // 速度不确定度(米/秒)
-      "hdg_acc": 0.5                   // 航向不确定度(度)
+      "v_acc": 1.8                     // 垂直位置不确定度(米)
+      // vel/cog/yaw/vel_acc/hdg_acc(地速/航迹方向/GPS偏航角及其不确定度)不输出：箱子固定不动，见第1节
     },
     "gnss_sat": {
       "gps_visible": 9,      // GPS可见卫星数
@@ -236,11 +238,8 @@ M3a/M3b/M3c 已经把 STM32 发来的所有 MAVLink 帧解码进 `state::Telemet
       "lat": 39.9042,           // 纬度(度)
       "lon": 116.4074,          // 经度(度)
       "alt": 43.5,              // 海拔高度(米，MSL)
-      "relative_alt": 12.3,     // 相对起飞点高度(米)
-      "vx": 1.2,                // 地面坐标系北向速度(米/秒)
-      "vy": -0.5,               // 地面坐标系东向速度(米/秒)
-      "vz": 0.0,                // 地面坐标系垂直速度(米/秒，向下为正)
-      "hdg": 87.5               // 机头朝向(度，区别于gps.cog的"移动方向")
+      "hdg": 87.5               // 机头朝向(度)
+      // vx/vy/vz(速度分量)、relative_alt(相对起飞点高度)不输出：箱子固定不动、没有"起飞"，见第1节
     },
     "sys_status": {
       "onboard_control_sensors_present": 1483,           // 机载传感器/控制器"存在"位图(官方定义，每一位代表一种传感器，保持原始数字)
@@ -357,31 +356,23 @@ M3a/M3b/M3c 已经把 STM32 发来的所有 MAVLink 帧解码进 `state::Telemet
       "longitude": 116.4074,         // 无人机当前经度(度)
       "altitude_barometric": 45.2,   // 气压高度(米)
       "altitude_geodetic": 44.8,     // WGS84大地高度(米)
-      "height": 12.3,                // 相对高度(米，基准见height_reference)
       "timestamp": 1234.5,           // UTC整点后的秒数
-      "direction": 87.5,             // 移动方向(度，非机头朝向)
-      "speed_horizontal": 3.5,       // 水平速度(米/秒)
-      "speed_vertical": 0.0,         // 垂直速度(米/秒)
       "target_system": 0,
       "target_component": 0,
       "id_or_mac": "0000000000000000000000000000000000000000",
       "status": 2,                    // 飞行器地面/空中状态(官方枚举，保持原始数字)
-      "height_reference": 0,          // height字段的基准点(官方枚举，保持原始数字)
       "horizontal_accuracy": 4,       // 水平位置精度等级(官方枚举，保持原始数字)
       "vertical_accuracy": 4,         // 垂直位置精度等级(官方枚举，保持原始数字)
       "barometer_accuracy": 3,        // 气压高度精度等级(官方枚举，保持原始数字)
-      "speed_accuracy": 3,            // 速度精度等级(官方枚举，保持原始数字)
       "timestamp_accuracy": 2         // 时间戳精度等级(官方枚举，保持原始数字)
+      // speed_horizontal/speed_vertical/direction/height/height_reference/speed_accuracy
+      // 不输出：箱子固定不动，速度/相对高度类字段没有意义，见第1节
     },
     "system": {
       "operator_latitude": 39.905,    // 操作员纬度(度)
       "operator_longitude": 116.408,  // 操作员经度(度)
-      "area_ceiling": 120.0,          // 编队活动区域高度上限(米)
-      "area_floor": 0.0,              // 编队活动区域高度下限(米)
       "operator_altitude_geo": 45.0,  // 操作员大地高度(米)
       "timestamp": 233366400,         // UNIX时间戳(秒，2019-01-01 00:00:00起)
-      "area_count": 1,                 // 编队飞行器数量(默认1，无编队)
-      "area_radius": 0,                // 编队活动区域半径(米)
       "target_system": 0,
       "target_component": 0,
       "id_or_mac": "0000000000000000000000000000000000000000",
@@ -389,6 +380,7 @@ M3a/M3b/M3c 已经把 STM32 发来的所有 MAVLink 帧解码进 `state::Telemet
       "classification_type": 0,       // 无人机分类类型(官方枚举，保持原始数字)
       "category_eu": 0,               // 欧盟分类下的类别(官方枚举，保持原始数字)
       "class_eu": 0                   // 欧盟分类下的级别(官方枚举，保持原始数字)
+      // area_ceiling/area_floor/area_count/area_radius 不输出：编队/多机场景专用字段，这个箱子是单机，见第1节
     },
     "operator_id": {
       "target_system": 0,
