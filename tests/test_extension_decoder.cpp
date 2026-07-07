@@ -135,23 +135,6 @@ TEST_CASE("BAT2STAT解码拆出电压/电量/低电压标志") {
   CHECK(snapshot.battery2_status->low_voltage);
 }
 
-TEST_CASE("MOTORPWM解码拆出4个电机占空比") {
-  constexpr std::int32_t kValue =
-      static_cast<std::int32_t>(10u | (20u << 8) | (30u << 16) | (40u << 24));
-  mavlink_message_t msg = PackNamedValueInt("MOTORPWM", kValue);
-  state::StateStore store;
-
-  bool handled = protocol::DecodeExtensionAndStore(msg, store);
-
-  CHECK(handled);
-  auto snapshot = store.Snapshot();
-  REQUIRE(snapshot.motor_pwm.has_value());
-  CHECK(snapshot.motor_pwm->duty_percent[0] == 10);
-  CHECK(snapshot.motor_pwm->duty_percent[1] == 20);
-  CHECK(snapshot.motor_pwm->duty_percent[2] == 30);
-  CHECK(snapshot.motor_pwm->duty_percent[3] == 40);
-}
-
 TEST_CASE("GNSS_SAT解码拆出GPS/北斗可见数与使用数") {
   constexpr std::int32_t kValue =
       static_cast<std::int32_t>(12u | (8u << 8) | (10u << 16) | (6u << 24));
@@ -169,8 +152,8 @@ TEST_CASE("GNSS_SAT解码拆出GPS/北斗可见数与使用数") {
   CHECK(snapshot.gnss_sat->beidou_used == 6);
 }
 
-TEST_CASE("ENVHUM解码保持原始x10刻度,不做单位换算") {
-  mavlink_message_t msg = PackNamedValueInt("ENVHUM", /*value=*/535);
+TEST_CASE("HUMIDITY解码保持原始x10刻度,不做单位换算") {
+  mavlink_message_t msg = PackNamedValueInt("HUMIDITY", /*value=*/535);
   state::StateStore store;
 
   bool handled = protocol::DecodeExtensionAndStore(msg, store);
@@ -506,4 +489,76 @@ TEST_CASE("OPEN_DRONE_ID_SELF_ID解码存储原始struct") {
   CHECK(std::string_view(snapshot.open_drone_id_self_id->description,
                           strnlen(snapshot.open_drone_id_self_id->description, 23)) ==
         "training kit demo");
+}
+
+TEST_CASE("MOTOR12解码写入duty_percent的0-1号,run_state/speed_level一并写入") {
+  constexpr std::int32_t kValue =
+      static_cast<std::int32_t>(10u | (20u << 8) | (1u << 16) | (50u << 24));
+  mavlink_message_t msg = PackNamedValueInt("MOTOR12", kValue);
+  state::StateStore store;
+
+  bool handled = protocol::DecodeExtensionAndStore(msg, store);
+
+  CHECK(handled);
+  auto snapshot = store.Snapshot();
+  REQUIRE(snapshot.motor_pwm.has_value());
+  CHECK(snapshot.motor_pwm->duty_percent[0] == 10);
+  CHECK(snapshot.motor_pwm->duty_percent[1] == 20);
+  CHECK(snapshot.motor_pwm->run_state);
+  CHECK(snapshot.motor_pwm->speed_level == 50);
+}
+
+TEST_CASE("MOTOR34解码写入duty_percent的2-3号,不影响MOTOR12已写入的0-1号") {
+  constexpr std::int32_t kLowValue =
+      static_cast<std::int32_t>(10u | (20u << 8) | (1u << 16) | (50u << 24));
+  constexpr std::int32_t kHighValue =
+      static_cast<std::int32_t>(30u | (40u << 8) | (0u << 16) | (60u << 24));
+  state::StateStore store;
+  protocol::DecodeExtensionAndStore(PackNamedValueInt("MOTOR12", kLowValue), store);
+
+  bool handled = protocol::DecodeExtensionAndStore(PackNamedValueInt("MOTOR34", kHighValue), store);
+
+  CHECK(handled);
+  auto snapshot = store.Snapshot();
+  REQUIRE(snapshot.motor_pwm.has_value());
+  CHECK(snapshot.motor_pwm->duty_percent[0] == 10);  // 0-1号仍是MOTOR12写入的值
+  CHECK(snapshot.motor_pwm->duty_percent[1] == 20);
+  CHECK(snapshot.motor_pwm->duty_percent[2] == 30);
+  CHECK(snapshot.motor_pwm->duty_percent[3] == 40);
+  CHECK_FALSE(snapshot.motor_pwm->run_state);  // 两帧冗余拷贝,以最新一帧为准
+  CHECK(snapshot.motor_pwm->speed_level == 60);
+}
+
+TEST_CASE("LORASTAT解码拆出丢包率/节点ID/在位标志/链路状态") {
+  constexpr std::int32_t kValue =
+      static_cast<std::int32_t>(100u | (7u << 16) | (1u << 24) | (2u << 25));
+  mavlink_message_t msg = PackNamedValueInt("LORASTAT", kValue);
+  state::StateStore store;
+
+  bool handled = protocol::DecodeExtensionAndStore(msg, store);
+
+  CHECK(handled);
+  auto snapshot = store.Snapshot();
+  REQUIRE(snapshot.lora_status.has_value());
+  CHECK(snapshot.lora_status->loss_rate_x10 == 100);
+  CHECK(snapshot.lora_status->node_id == 7);
+  CHECK(snapshot.lora_status->present);
+  CHECK(snapshot.lora_status->link_state == 2);
+}
+
+TEST_CASE("RIDSTAT解码拆出位置广播成功计数/错误计数,time_boot_ms存入last_success_ms") {
+  mavlink_message_t msg{};
+  constexpr std::int32_t kValue = static_cast<std::int32_t>(50u | (3u << 16));
+  mavlink_msg_named_value_int_pack(kSystemId, kComponentId, &msg, /*time_boot_ms=*/123456,
+                                    "RIDSTAT", kValue);
+  state::StateStore store;
+
+  bool handled = protocol::DecodeExtensionAndStore(msg, store);
+
+  CHECK(handled);
+  auto snapshot = store.Snapshot();
+  REQUIRE(snapshot.remote_id_status.has_value());
+  CHECK(snapshot.remote_id_status->location_count == 50);
+  CHECK(snapshot.remote_id_status->error_count == 3);
+  CHECK(snapshot.remote_id_status->last_success_ms == 123456);
 }

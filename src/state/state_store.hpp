@@ -166,7 +166,6 @@ class StateStore {
   /// 只写 module_status 的 8-13 号元素(来自 MODSTAT1)，语义同上。
   void UpdateModStatusHigh(const std::array<std::uint8_t, 6>& modules8to13);
   void UpdateBattery2Status(const Battery2Status& value);
-  void UpdateMotorPwm(const MotorPwm& value);
   /// 只写 duty_percent 的 0-1 号索引(来自 MOTOR12)。若 motor_pwm 之前还没有值
   /// (两帧都还没收到过)，先把整个 struct 零初始化；run_state/speed_level 是
   /// 两帧共同的冗余拷贝，每次都直接覆盖(不需要判断"谁负责哪部分")。

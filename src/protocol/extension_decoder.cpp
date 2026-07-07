@@ -125,14 +125,6 @@ bool DecodeNamedValueInt(const mavlink_named_value_int_t& value, state::StateSto
     store.UpdateBattery2Status(status);
     return true;
   }
-  if (name == "MOTORPWM") {
-    state::MotorPwm pwm{};
-    for (std::size_t i = 0; i < pwm.duty_percent.size(); ++i) {
-      pwm.duty_percent[i] = static_cast<std::uint8_t>((bits >> (i * 8)) & 0xFF);
-    }
-    store.UpdateMotorPwm(pwm);
-    return true;
-  }
   if (name == "GNSS_SAT") {
     state::GnssSat sat{};
     sat.gps_visible = static_cast<std::uint8_t>(bits & 0xFF);
@@ -142,10 +134,39 @@ bool DecodeNamedValueInt(const mavlink_named_value_int_t& value, state::StateSto
     store.UpdateGnssSat(sat);
     return true;
   }
-  if (name == "ENVHUM") {
+  if (name == "HUMIDITY") {
     state::EnvHumidity hum{};
     hum.relative_humidity_x10 = static_cast<std::uint16_t>(bits);
     store.UpdateEnvHumidity(hum);
+    return true;
+  }
+  if (name == "MOTOR12" || name == "MOTOR34") {
+    const auto duty0 = static_cast<std::uint8_t>(bits & 0xFF);
+    const auto duty1 = static_cast<std::uint8_t>((bits >> 8) & 0xFF);
+    const bool run_state = ((bits >> 16) & 0x1) != 0;
+    const auto speed_level = static_cast<std::uint8_t>((bits >> 24) & 0xFF);
+    if (name == "MOTOR12") {
+      store.UpdateMotorPwmLow(duty0, duty1, run_state, speed_level);
+    } else {
+      store.UpdateMotorPwmHigh(duty0, duty1, run_state, speed_level);
+    }
+    return true;
+  }
+  if (name == "LORASTAT") {
+    state::LoraStatus lora{};
+    lora.loss_rate_x10 = static_cast<std::uint16_t>(bits & 0xFFFF);
+    lora.node_id = static_cast<std::uint8_t>((bits >> 16) & 0xFF);
+    lora.present = ((bits >> 24) & 0x1) != 0;
+    lora.link_state = static_cast<std::uint8_t>((bits >> 25) & 0x7);
+    store.UpdateLoraStatus(lora);
+    return true;
+  }
+  if (name == "RIDSTAT") {
+    state::RemoteIdStatus rid{};
+    rid.location_count = static_cast<std::uint16_t>(bits & 0xFFFF);
+    rid.error_count = static_cast<std::uint16_t>((bits >> 16) & 0xFFFF);
+    rid.last_success_ms = value.time_boot_ms;
+    store.UpdateRemoteIdStatus(rid);
     return true;
   }
   return false;
