@@ -452,3 +452,131 @@ TEST_CASE("drone_id.operator_id/self_id:文本字段去除尾部空字符") {
   CHECK(json["drone_id"]["operator_id"]["operator_id"] == "CAAB1234567890");
   CHECK(json["drone_id"]["self_id"]["description"] == "CNS-RPI training kit");
 }
+
+TEST_CASE("全部字段同时填充,顶层结构完整,alarms/logs按截断数正确") {
+  state::TelemetryState state{};
+
+  mavlink_heartbeat_t hb{};
+  hb.type = 2;
+  hb.autopilot = 12;
+  hb.base_mode = 81;
+  hb.system_status = 4;
+  hb.mavlink_version = 3;
+  state.heartbeat = hb;
+
+  mavlink_attitude_t att{};
+  att.roll = 0.1F;
+  state.attitude = att;
+
+  mavlink_gps_raw_int_t gps{};
+  gps.lat = 399042000;
+  gps.eph = 120;
+  gps.epv = 150;
+  state.gps_raw_int = gps;
+
+  mavlink_global_position_int_t pos{};
+  pos.hdg = 8750;
+  state.global_position_int = pos;
+
+  mavlink_sys_status_t sys{};
+  sys.current_battery = -1;
+  state.sys_status = sys;
+
+  mavlink_battery_status_t bs0{};
+  bs0.id = 0;
+  bs0.current_battery = 325;
+  std::uint16_t voltages_ext_nonzero[4] = {3700, 0, 0, 0};
+  std::memcpy(bs0.voltages_ext, voltages_ext_nonzero, sizeof(voltages_ext_nonzero));
+  state.battery_status[0] = bs0;
+
+  mavlink_battery_status_t bs1{};
+  bs1.id = 1;
+  state.battery_status[1] = bs1;
+
+  mavlink_scaled_pressure_t pressure{};
+  pressure.press_abs = 1013.25F;
+  state.scaled_pressure = pressure;
+
+  state.gnss_sat = state::GnssSat{9, 8, 7, 6};
+  state.env_humidity = state::EnvHumidity{535};
+  state.motor_pwm = state::MotorPwm{{45, 45, 50, 50}, true, 60};
+  state.lora_status = state::LoraStatus{15, 9, true, 2};
+  state.remote_id_status = state::RemoteIdStatus{120, 0, 987654};
+
+  std::array<std::uint8_t, 14> mods{};
+  mods.fill(2);
+  state.module_status = mods;
+
+  state::AlarmTable alarms{};
+  alarms.ver = 1;
+  alarms.active_count = 1;
+  alarms.entries[0] = state::AlarmEntry{4, 1032, 2, true, 15};
+  state.alarm_table = alarms;
+
+  state::MessageLog logs{};
+  logs.latest_seq = 1;
+  logs.count = 1;
+  logs.entries[0] = state::LogEntry{1, 1, {0, 0, 1}, 0};
+  state.message_log = logs;
+
+  mavlink_open_drone_id_basic_id_t basic{};
+  std::memcpy(basic.uas_id, "DCDWCNS1AB12CD34EF56", 20);
+  state.open_drone_id_basic_id = basic;
+
+  mavlink_open_drone_id_location_t loc{};
+  loc.altitude_barometric = 45.2F;
+  state.open_drone_id_location = loc;
+
+  mavlink_open_drone_id_system_t odsys{};
+  odsys.operator_altitude_geo = 45.0F;
+  state.open_drone_id_system = odsys;
+
+  mavlink_open_drone_id_operator_id_t op{};
+  std::memcpy(op.operator_id, "CAAB1234567890", 14);
+  state.open_drone_id_operator_id = op;
+
+  mavlink_open_drone_id_self_id_t self{};
+  std::memcpy(self.description, "CNS-RPI training kit", 21);
+  state.open_drone_id_self_id = self;
+
+  auto json = payload::ToJson(state, "NNUTC");
+
+  REQUIRE(json.contains("identity"));
+  REQUIRE(json.contains("telemetry"));
+  REQUIRE(json.contains("modules"));
+  REQUIRE(json.contains("alarms"));
+  REQUIRE(json.contains("logs"));
+  REQUIRE(json.contains("drone_id"));
+
+  const auto& t = json["telemetry"];
+  CHECK(t.contains("heartbeat"));
+  CHECK(t.contains("attitude"));
+  CHECK(t.contains("gps"));
+  CHECK(t.contains("global_position"));
+  CHECK(t.contains("sys_status"));
+  CHECK(t.contains("battery"));
+  CHECK(t.contains("battery2"));
+  CHECK(t.contains("pressure"));
+  CHECK(t.contains("gnss_sat"));
+  CHECK(t.contains("humidity"));
+  CHECK(t.contains("motor"));
+  CHECK(t.contains("lora"));
+  CHECK(t.contains("remote_id"));
+
+  // voltages_ext里非0槽位正确换算，0槽位是null(哨兵值)——前面Task 7的测试
+  // 只覆盖了全0的情况，这里补上"部分槽位有值"的情况。
+  CHECK(t["battery"]["voltages_ext"][0].get<double>() == doctest::Approx(3.7));
+  CHECK(t["battery"]["voltages_ext"][1].is_null());
+
+  REQUIRE(json["modules"].size() == 14);
+  CHECK(json["alarms"]["entries"].size() == 1);
+  CHECK(json["logs"]["entries"].size() == 1);
+  CHECK(json["logs"]["entries"][0]["time"] == "00:00:01");
+
+  const auto& d = json["drone_id"];
+  CHECK(d["basic_id"]["uas_id"] == "DCDWCNS1AB12CD34EF56");
+  CHECK(d["location"]["altitude_barometric"].get<double>() == doctest::Approx(45.2));
+  CHECK(d["system"]["operator_altitude_geo"].get<double>() == doctest::Approx(45.0));
+  CHECK(d["operator_id"]["operator_id"] == "CAAB1234567890");
+  CHECK(d["self_id"]["description"] == "CNS-RPI training kit");
+}
