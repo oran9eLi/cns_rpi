@@ -7,6 +7,7 @@
 
 #include <array>
 #include <cstdint>
+#include <cstdio>
 #include <numbers>
 #include <string>
 #include <string_view>
@@ -267,6 +268,41 @@ nlohmann::json BuildModules(const state::TelemetryState& state) {
   return modules;
 }
 
+nlohmann::json BuildAlarms(const state::AlarmTable& table) {
+  nlohmann::json entries = nlohmann::json::array();
+  for (std::size_t i = 0; i < table.active_count; ++i) {
+    const auto& e = table.entries[i];
+    entries.push_back({
+        {"source_id", e.source_id},
+        {"fault_code", e.fault_code},
+        {"severity", e.severity},
+        {"active", e.active},
+        {"age_s", e.age_s},
+    });
+  }
+  return {{"ver", table.ver}, {"entries", std::move(entries)}};
+}
+
+std::string FormatTimeHhMmSs(const std::array<std::uint8_t, 3>& hms) {
+  char buf[16];
+  std::snprintf(buf, sizeof(buf), "%02d:%02d:%02d", hms[0], hms[1], hms[2]);
+  return std::string(buf);
+}
+
+nlohmann::json BuildLogs(const state::MessageLog& log) {
+  nlohmann::json entries = nlohmann::json::array();
+  for (std::size_t i = 0; i < log.count; ++i) {
+    const auto& e = log.entries[i];
+    entries.push_back({
+        {"sequence", e.sequence},
+        {"message_id", e.message_id},
+        {"time", FormatTimeHhMmSs(e.time_hhmmss)},
+        {"severity", e.severity},
+    });
+  }
+  return {{"latest_seq", log.latest_seq}, {"entries", std::move(entries)}};
+}
+
 }  // namespace
 
 nlohmann::json ToJson(const state::TelemetryState& state, const std::string& school_name) {
@@ -293,6 +329,13 @@ nlohmann::json ToJson(const state::TelemetryState& state, const std::string& sch
 
   if (state.module_status) {
     out["modules"] = BuildModules(state);
+  }
+
+  if (state.alarm_table) {
+    out["alarms"] = BuildAlarms(*state.alarm_table);
+  }
+  if (state.message_log) {
+    out["logs"] = BuildLogs(*state.message_log);
   }
 
   return out;

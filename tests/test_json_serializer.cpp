@@ -310,3 +310,48 @@ TEST_CASE("modules数组:14个模块的name/status,未收到module_status时modu
   CHECK(json["modules"][1]["status"] == "UNINITIALIZED");  // 零初始化占位，合法语义
   CHECK(json["modules"][13]["name"] == "BUSINESS");
 }
+
+TEST_CASE("alarms按active_count截断,未收到时不存在") {
+  state::TelemetryState empty{};
+  CHECK_FALSE(payload::ToJson(empty, "NNUTC").contains("alarms"));
+
+  state::TelemetryState state{};
+  state::AlarmTable table{};
+  table.ver = 1;
+  table.active_count = 2;
+  table.entries[0] = state::AlarmEntry{4, 1032, 2, true, 15};
+  table.entries[1] = state::AlarmEntry{9, 2004, 1, false, 320};
+  state.alarm_table = table;
+
+  auto json = payload::ToJson(state, "NNUTC");
+
+  REQUIRE(json.contains("alarms"));
+  CHECK(json["alarms"]["ver"] == 1);
+  REQUIRE(json["alarms"]["entries"].size() == 2);
+  CHECK(json["alarms"]["entries"][0]["source_id"] == 4);
+  CHECK(json["alarms"]["entries"][0]["fault_code"] == 1032);
+  CHECK(json["alarms"]["entries"][0]["active"] == true);
+  CHECK(json["alarms"]["entries"][1]["age_s"] == 320);
+}
+
+TEST_CASE("logs按count截断,time格式化成HH:MM:SS,未收到时不存在") {
+  state::TelemetryState empty{};
+  CHECK_FALSE(payload::ToJson(empty, "NNUTC").contains("logs"));
+
+  state::TelemetryState state{};
+  state::MessageLog log{};
+  log.latest_seq = 458;
+  log.count = 1;
+  log.entries[0] = state::LogEntry{456, 12, {14, 23, 7}, 1};
+  state.message_log = log;
+
+  auto json = payload::ToJson(state, "NNUTC");
+
+  REQUIRE(json.contains("logs"));
+  CHECK(json["logs"]["latest_seq"] == 458);
+  REQUIRE(json["logs"]["entries"].size() == 1);
+  CHECK(json["logs"]["entries"][0]["sequence"] == 456);
+  CHECK(json["logs"]["entries"][0]["message_id"] == 12);
+  CHECK(json["logs"]["entries"][0]["time"] == "14:23:07");
+  CHECK(json["logs"]["entries"][0]["severity"] == 1);
+}
