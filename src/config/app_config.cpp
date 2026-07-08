@@ -43,6 +43,9 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
     const auto& logging = root.at("logging");
     cfg.logging.level = logging.at("level").get<std::string>();
     cfg.logging.file = logging.at("file").get<std::string>();
+
+    const auto& identity = root.at("identity");
+    cfg.identity.school_name = identity.at("school_name").get<std::string>();
   } catch (const nlohmann::json::out_of_range&) {
     return std::unexpected(ConfigError::kMissingField);
   } catch (const nlohmann::json::type_error&) {

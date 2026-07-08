@@ -24,6 +24,7 @@ TEST_CASE("完整合法配置文件能正确解析出serial/mqtt/logging字段")
     "mqtt": {"broker_host": "192.168.1.100", "broker_port": 1883, "client_id": "cns-rpi",
              "username": "", "password": "", "topic_prefix": "cns_rpi", "qos": 1, "keepalive_seconds": 60},
     "logging": {"level": "info", "file": ""}
+    ,"identity": {"school_name": "NNUTC"}
   })");
 
   auto result = config::LoadAppConfig(path);
@@ -35,6 +36,7 @@ TEST_CASE("完整合法配置文件能正确解析出serial/mqtt/logging字段")
   CHECK(result->mqtt.broker_port == 1883);
   CHECK(result->mqtt.qos == 1);
   CHECK(result->logging.level == "info");
+  CHECK(result->identity.school_name == "NNUTC");
 }
 
 TEST_CASE("配置文件不存在时返回kFileNotFound") {
@@ -68,6 +70,7 @@ TEST_CASE("字段存在但类型不对时返回kInvalidValue") {
     "mqtt": {"broker_host": "192.168.1.100", "broker_port": 1883, "client_id": "cns-rpi",
              "username": "", "password": "", "topic_prefix": "cns_rpi", "qos": 1, "keepalive_seconds": 60},
     "logging": {"level": "info", "file": ""}
+    ,"identity": {"school_name": "NNUTC"}
   })");
 
   auto result = config::LoadAppConfig(path);
@@ -79,6 +82,20 @@ TEST_CASE("字段存在但类型不对时返回kInvalidValue") {
 TEST_CASE("serial有效但mqtt整节缺失时返回kMissingField") {
   auto path = WriteTempConfig(R"({
     "serial": {"device": "/dev/ttyUSB0", "baud": 115200},
+    "logging": {"level": "info", "file": ""}
+  })");
+
+  auto result = config::LoadAppConfig(path);
+
+  REQUIRE_FALSE(result.has_value());
+  CHECK(result.error() == config::ConfigError::kMissingField);
+}
+
+TEST_CASE("serial/mqtt/logging都有效但identity整节缺失时返回kMissingField") {
+  auto path = WriteTempConfig(R"({
+    "serial": {"device": "/dev/ttyUSB0", "baud": 115200},
+    "mqtt": {"broker_host": "192.168.1.100", "broker_port": 1883, "client_id": "cns-rpi",
+             "username": "", "password": "", "topic_prefix": "cns_rpi", "qos": 1, "keepalive_seconds": 60},
     "logging": {"level": "info", "file": ""}
   })");
 

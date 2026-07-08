@@ -46,10 +46,15 @@ struct LoggingConfig {
   std::string file;
 };
 
+struct IdentityConfig {
+  std::string school_name;
+};
+
 struct AppConfig {
   SerialConfig serial;
   MqttConfig mqtt;
   LoggingConfig logging;
+  IdentityConfig identity;
 };
 
 /**

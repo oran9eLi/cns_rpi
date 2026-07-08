@@ -16,5 +16,8 @@
   "logging": {
     "level": "info",
     "file": ""
+  },
+  "identity": {
+    "school_name": "NNUTC"
   }
 }
