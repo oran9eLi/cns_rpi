@@ -149,3 +149,35 @@ TEST_CASE("global_position字段换算,vx/vy/vz/relative_alt不输出") {
   CHECK_FALSE(out.contains("vz"));
   CHECK_FALSE(out.contains("relative_alt"));
 }
+
+TEST_CASE("sys_status字段换算,current_battery命中哨兵值-1时输出null") {
+  state::TelemetryState state{};
+  mavlink_sys_status_t sys{};
+  sys.onboard_control_sensors_present = 1483;
+  sys.onboard_control_sensors_enabled = 1483;
+  sys.onboard_control_sensors_health = 1483;
+  sys.load = 235;
+  sys.voltage_battery = 12600;
+  sys.current_battery = -1;
+  sys.drop_rate_comm = 1;
+  sys.errors_comm = 0;
+  sys.errors_count1 = 0;
+  sys.errors_count2 = 0;
+  sys.errors_count3 = 0;
+  sys.errors_count4 = 0;
+  sys.battery_remaining = 78;
+  sys.onboard_control_sensors_present_extended = 0;
+  sys.onboard_control_sensors_enabled_extended = 0;
+  sys.onboard_control_sensors_health_extended = 0;
+  state.sys_status = sys;
+
+  auto json = payload::ToJson(state, "NNUTC");
+  const auto& out = json["telemetry"]["sys_status"];
+
+  CHECK(out["onboard_control_sensors_present"] == 1483);
+  CHECK(out["load"].get<double>() == doctest::Approx(23.5));
+  CHECK(out["voltage_battery"].get<double>() == doctest::Approx(12.6));
+  CHECK(out["current_battery"].is_null());
+  CHECK(out["drop_rate_comm"].get<double>() == doctest::Approx(0.1));
+  CHECK(out["battery_remaining"] == 78);
+}

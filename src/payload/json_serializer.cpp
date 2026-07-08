@@ -91,6 +91,33 @@ void AddGlobalPosition(nlohmann::json& telemetry, const state::TelemetryState& s
   };
 }
 
+void AddSysStatus(nlohmann::json& telemetry, const state::TelemetryState& state) {
+  if (!state.sys_status) {
+    return;
+  }
+  const auto& sys = *state.sys_status;
+  nlohmann::json out;
+  out["onboard_control_sensors_present"] = sys.onboard_control_sensors_present;
+  out["onboard_control_sensors_enabled"] = sys.onboard_control_sensors_enabled;
+  out["onboard_control_sensors_health"] = sys.onboard_control_sensors_health;
+  out["load"] = static_cast<double>(sys.load) / 10.0;
+  out["voltage_battery"] = static_cast<double>(sys.voltage_battery) / 1000.0;
+  out["current_battery"] = (sys.current_battery == -1)
+                                ? nlohmann::json(nullptr)
+                                : nlohmann::json(static_cast<double>(sys.current_battery) / 100.0);
+  out["drop_rate_comm"] = static_cast<double>(sys.drop_rate_comm) / 10.0;
+  out["errors_comm"] = sys.errors_comm;
+  out["errors_count1"] = sys.errors_count1;
+  out["errors_count2"] = sys.errors_count2;
+  out["errors_count3"] = sys.errors_count3;
+  out["errors_count4"] = sys.errors_count4;
+  out["battery_remaining"] = sys.battery_remaining;
+  out["onboard_control_sensors_present_extended"] = sys.onboard_control_sensors_present_extended;
+  out["onboard_control_sensors_enabled_extended"] = sys.onboard_control_sensors_enabled_extended;
+  out["onboard_control_sensors_health_extended"] = sys.onboard_control_sensors_health_extended;
+  telemetry["sys_status"] = std::move(out);
+}
+
 }  // namespace
 
 nlohmann::json ToJson(const state::TelemetryState& state, const std::string& school_name) {
@@ -102,6 +129,7 @@ nlohmann::json ToJson(const state::TelemetryState& state, const std::string& sch
   AddAttitude(telemetry, state);
   AddGps(telemetry, state);
   AddGlobalPosition(telemetry, state);
+  AddSysStatus(telemetry, state);
   if (!telemetry.empty()) {
     out["telemetry"] = std::move(telemetry);
   }
