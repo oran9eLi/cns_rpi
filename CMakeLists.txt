@@ -21,6 +21,7 @@ add_library(cns_rpi_core
     src/protocol/telemetry_decoder.cpp
     src/protocol/extension_decoder.cpp
     src/protocol/identity.cpp
+    src/payload/json_serializer.cpp
 )
 target_include_directories(cns_rpi_core PUBLIC src)
 # src/mavlink 是从固件仓库 Third_Party/mavlink/ 原样同步的官方生成头文件（common/standard/minimal），
@@ -58,3 +59,7 @@ add_test(NAME identity COMMAND test_identity)
 # test_identity.cpp 里的 fixture 用的是相对路径 tests/fixtures/...，必须显式
 # 指回仓库根目录，否则不管从哪里调用 ctest 都会因为找不到 fixture 文件而失败。
 set_tests_properties(identity PROPERTIES WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+add_executable(test_json_serializer tests/test_json_serializer.cpp)
+target_link_libraries(test_json_serializer PRIVATE cns_rpi_core)
+add_test(NAME json_serializer COMMAND test_json_serializer)
