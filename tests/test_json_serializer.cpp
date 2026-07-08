@@ -355,3 +355,100 @@ TEST_CASE("logs按count截断,time格式化成HH:MM:SS,未收到时不存在") {
   CHECK(json["logs"]["entries"][0]["time"] == "14:23:07");
   CHECK(json["logs"]["entries"][0]["severity"] == 1);
 }
+
+TEST_CASE("drone_id.basic_id:id_or_mac转十六进制,uas_id去除尾部空字符") {
+  state::TelemetryState state{};
+  mavlink_open_drone_id_basic_id_t basic{};
+  basic.target_system = 0;
+  basic.target_component = 0;
+  std::memset(basic.id_or_mac, 0, sizeof(basic.id_or_mac));
+  basic.id_type = 1;
+  basic.ua_type = 2;
+  std::memcpy(basic.uas_id, "DCDWCNS1AB12CD34EF56", 20);
+  state.open_drone_id_basic_id = basic;
+
+  auto json = payload::ToJson(state, "NNUTC");
+  const auto& out = json["drone_id"]["basic_id"];
+
+  CHECK(out["id_or_mac"] == "0000000000000000000000000000000000000000");
+  CHECK(out["id_or_mac"].get<std::string>().size() == 40);
+  CHECK(out["id_type"] == 1);
+  CHECK(out["ua_type"] == 2);
+  CHECK(out["uas_id"] == "DCDWCNS1AB12CD34EF56");
+}
+
+TEST_CASE("drone_id.location:altitude哨兵值-1000转null,speed/direction/height等字段不输出") {
+  state::TelemetryState state{};
+  mavlink_open_drone_id_location_t loc{};
+  loc.latitude = 399042000;
+  loc.longitude = 1164074000;
+  loc.altitude_barometric = -1000.0F;  // 哨兵值 -> null
+  loc.altitude_geodetic = 44.8F;
+  loc.timestamp = 1234.5F;
+  loc.status = 2;
+  loc.horizontal_accuracy = 4;
+  loc.vertical_accuracy = 4;
+  loc.barometer_accuracy = 3;
+  loc.timestamp_accuracy = 2;
+  state.open_drone_id_location = loc;
+
+  auto json = payload::ToJson(state, "NNUTC");
+  const auto& out = json["drone_id"]["location"];
+
+  CHECK(out["latitude"].get<double>() == doctest::Approx(39.9042));
+  CHECK(out["altitude_barometric"].is_null());
+  CHECK(out["altitude_geodetic"].get<double>() == doctest::Approx(44.8));
+  CHECK(out["timestamp"].get<double>() == doctest::Approx(1234.5));
+  CHECK(out["status"] == 2);
+  CHECK_FALSE(out.contains("speed_horizontal"));
+  CHECK_FALSE(out.contains("speed_vertical"));
+  CHECK_FALSE(out.contains("direction"));
+  CHECK_FALSE(out.contains("height"));
+  CHECK_FALSE(out.contains("height_reference"));
+  CHECK_FALSE(out.contains("speed_accuracy"));
+}
+
+TEST_CASE("drone_id.system:operator_altitude_geo哨兵值,area_*字段不输出") {
+  state::TelemetryState state{};
+  mavlink_open_drone_id_system_t sys{};
+  sys.operator_latitude = 399050000;
+  sys.operator_longitude = 1164080000;
+  sys.operator_altitude_geo = -1000.0F;  // 哨兵值 -> null
+  sys.timestamp = 233366400;
+  sys.operator_location_type = 0;
+  sys.classification_type = 0;
+  sys.category_eu = 0;
+  sys.class_eu = 0;
+  state.open_drone_id_system = sys;
+
+  auto json = payload::ToJson(state, "NNUTC");
+  const auto& out = json["drone_id"]["system"];
+
+  CHECK(out["operator_latitude"].get<double>() == doctest::Approx(39.905));
+  CHECK(out["operator_altitude_geo"].is_null());
+  CHECK(out["timestamp"] == 233366400);
+  CHECK_FALSE(out.contains("area_ceiling"));
+  CHECK_FALSE(out.contains("area_floor"));
+  CHECK_FALSE(out.contains("area_count"));
+  CHECK_FALSE(out.contains("area_radius"));
+}
+
+TEST_CASE("drone_id.operator_id/self_id:文本字段去除尾部空字符") {
+  state::TelemetryState state{};
+  mavlink_open_drone_id_operator_id_t op{};
+  op.operator_id_type = 0;
+  std::memset(op.operator_id, 0, sizeof(op.operator_id));
+  std::memcpy(op.operator_id, "CAAB1234567890", 14);
+  state.open_drone_id_operator_id = op;
+
+  mavlink_open_drone_id_self_id_t self{};
+  self.description_type = 0;
+  std::memset(self.description, 0, sizeof(self.description));
+  std::memcpy(self.description, "CNS-RPI training kit", 21);
+  state.open_drone_id_self_id = self;
+
+  auto json = payload::ToJson(state, "NNUTC");
+
+  CHECK(json["drone_id"]["operator_id"]["operator_id"] == "CAAB1234567890");
+  CHECK(json["drone_id"]["self_id"]["description"] == "CNS-RPI training kit");
+}
