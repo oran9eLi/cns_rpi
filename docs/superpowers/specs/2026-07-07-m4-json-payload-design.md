@@ -1,6 +1,6 @@
 # M4 JSON payload 构造 设计文档
 
-版本：2026-07-07
+版本：2026-07-08（第二次修订：电池2/气压改按最终官方通道设计）
 状态：已批准，待写实施计划
 里程碑：M4（`docs/V1设计文档.md` §10）——`state_store` 转 JSON，人工检查字段可读性。
 
@@ -18,7 +18,20 @@ M3a/M3b/M3c 已经把 STM32 发来的所有 MAVLink 帧解码进 `state::Telemet
 
 `attitude`（姿态角/角速度）保留——这个字段来自箱子上真实的 MPU6050 传感器，箱体本身会有姿态变化（如倾斜/震动），不是摆设。
 
+**2026-07-08 补充背景**：真机联调过程中发现固件额外用 `NAMED_VALUE_INT` 发了 `BAROTEMP`/`BAROPRES`/`BAT1CUR`/`BAT2CUR` 四个自定义字段，其中 `BAROTEMP`/`BAROPRES` 和官方 `SCALED_PRESSURE`（`pressure.temperature`/`pressure.press_abs`）是同一物理量的重复表达，`BAT1CUR` 和官方 `BATTERY_STATUS.current_battery`（`battery.current_battery`）也是重复表达；只有 `BAT2CUR`（电池2电流）是真正没有坑位的新数据。跟固件侧对齐后，固件同意**把这几个字段统一改走官方 MAVLink 通道**：气压/温度继续走已有的 `SCALED_PRESSURE`（本设计里 `pressure` 这个 key 一直就是按这条官方消息设计的，不用改），电池2改成再发一条 `BATTERY_STATUS`（用 `id=1` 区分于电池1的 `id=0`），从根上替代现有的 `battery2_status`(`BAT2STAT`) 自定义结构体。
+
+因此本设计**不为 `BAROTEMP`/`BAROPRES`/`BAT1CUR`/`BAT2CUR` 这几个过渡期字段新增任何解码支持**——固件很快会切到官方通道，现在接了也是切换后就要删的白工。`battery2` 直接按"最终会由 `BATTERY_STATUS(id=1)` 提供"来设计（见第 2 节的前置条件、第 5/6/11 节的相应调整）。
+
 ## 2. 文件布局与接口
+
+**前置条件（不属于 `payload/json_serializer` 范围，需要在实施计划里排在 M4 之前）**：`state_store.hpp` 里 `battery_status` 目前是单一坑位（`std::optional<mavlink_battery_status_t>`），`UpdateBatteryStatus` 收到就直接覆盖，不看消息里的 `id` 字段。固件一旦按 `id=0`/`id=1` 轮流发两条 `BATTERY_STATUS`（电池1/电池2），现在的代码会让后到的一条覆盖掉先到的一条，两块电池的数据会互相打架、永远只保得住最后收到的那个。这个改动需要在 M4 之前完成：
+
+```cpp
+// state_store.hpp：battery_status 改成按 id 区分存储，下标即 BATTERY_STATUS.id
+std::array<std::optional<mavlink_battery_status_t>, 2> battery_status;
+```
+
+`protocol/telemetry_decoder.cpp` 里 `MAVLINK_MSG_ID_BATTERY_STATUS` 分支相应改成 `store.UpdateBatteryStatus(decoded.id, decoded)`，按 `id`（超出 0/1 范围的丢弃，打印一条警告即可，暂不支持 2 块以上电池）写入对应下标。`state/state_store.hpp` 里现有的 `Battery2Status` 结构体、`battery2_status` 字段、`UpdateBattery2Status` 接口，以及 `protocol/extension_decoder.cpp` 里的 `BAT2STAT` 解码分支，等固件确认切换到 `BATTERY_STATUS(id=1)` 之后一并删除（删除时机由固件切换进度决定，不阻塞本设计落地——固件切换前，`battery_status[1]` 一直是 `std::nullopt`，`battery2` 这个 JSON key 就按"未收到"规则不输出，这是预期状态，不是 bug）。
 
 - 新增 `src/payload/json_serializer.hpp/.cpp`（文件树已在 `docs/V1设计文档.md` 里预留这个位置）。
 - 核心函数：
@@ -109,7 +122,7 @@ M3a/M3b/M3c 已经把 STM32 发来的所有 MAVLink 帧解码进 `state::Telemet
 | `attitude.roll/pitch/yaw`（含对应的 `*speed`） | rad (float) | 度 (double) | `*180/π` |
 | `pressure.press_abs/press_diff` | hPa (float) | hPa（已是人类单位） | 直接透传 |
 | `pressure.temperature`、`pressure.temperature_press_diff`、`battery.temperature` | cdegC | °C (double) | `/100.0` |
-| `sys_status.voltage_battery`、`battery2.voltage_mv` | mV | V (double) | `/1000.0` |
+| `sys_status.voltage_battery` | mV | V (double) | `/1000.0` |
 | `sys_status.current_battery`、`battery.current_battery` | cA | A (double) | `/100.0` |
 | `sys_status.load`、`sys_status.drop_rate_comm` | d%/c%（×10） | % (double) | `/10.0` |
 | `battery.voltages[]`/`voltages_ext[]` | mV | V 数组 (double) | `/1000.0`（未使用槽位见下方哨兵规则） |
@@ -119,6 +132,8 @@ M3a/M3b/M3c 已经把 STM32 发来的所有 MAVLink 帧解码进 `state::Telemet
 | `motor.duty_percent[]`/`speed_level` | 已是 % | 原样 | 无 |
 | `drone_id.location.altitude_barometric/altitude_geodetic`、`drone_id.system.operator_altitude_geo` | 已是米 (float) | 原样 | 无（哨兵值见下） |
 | `remote_id.last_success_ms` | ms（开机时刻） | 原样 | 无（没有更合适的单位） |
+
+`battery.*` 这一整套换算规则对 `battery2.*` 同样适用——`battery2` 现在来自 `state_store.battery_status[1]`（`BATTERY_STATUS(id=1)`），跟 `battery`(`battery_status[0]`) 是完全相同的官方消息结构，字段、换算公式、哨兵规则一模一样，不再是第6节里那种只有 3 个字段的简化自定义结构。
 
 `gps.eph`/`gps.epv`（GPS HDOP/VDOP，无量纲×100 的数值，不是物理量）**不换算，保持原始整数**，跟其它标量字段不同——按官方注释这两个是"unitless * 100"，除以100后也谈不上"物理单位"，直接透传更符合"存原样、不换算无意义数字"的原则；哨兵规则见下。
 
@@ -130,12 +145,8 @@ M3a/M3b/M3c 已经把 STM32 发来的所有 MAVLink 帧解码进 `state::Telemet
 
 ## 6. 自定义扩展字段的 JSON key 名对照
 
-`telemetry.battery2/motor/gnss_sat/humidity/lora/remote_id` 来自 `state_store.hpp` 里的自定义 struct（不是官方 MAVLink 消息，字段名可以自己定），具体 key 名和含义：
+`telemetry.motor/gnss_sat/humidity/lora/remote_id` 来自 `state_store.hpp` 里的自定义 struct（不是官方 MAVLink 消息，字段名可以自己定），具体 key 名和含义（`battery2` 不在这里——它现在是官方 `BATTERY_STATUS(id=1)`，跟第5节 `battery.*` 用同一套规则，不是自定义字段）：
 
-- **`battery2`**（对应 `Battery2Status`）：
-  - `voltage_v`：电压，伏特 (double)，原始字段 `voltage_mv`(mV) `/1000.0`
-  - `percent`：电量百分比 (uint8)，原样透传
-  - `low_voltage`：是否低电压告警 (bool)，原样透传
 - **`motor`**（对应 `MotorPwm`）：
   - `duty_percent`：4 路电机占空比数组 `[m1,m2,m3,m4]`(uint8 0-100)，已经是百分比，原样透传
   - `run_state`：整机运行状态 (bool)，原样透传（`MOTOR12`/`MOTOR34` 两帧的冗余拷贝，取最新一帧的值）
@@ -173,6 +184,7 @@ M3a/M3b/M3c 已经把 STM32 发来的所有 MAVLink 帧解码进 `state::Telemet
 - 模块状态：14 项都输出正确的 `name`/`status` 字符串，含未收到过状态的模块（值为0，应显示 `UNINITIALIZED`，这是零初始化后的合法语义，不是异常）。
 - `alarms.entries`/`logs.entries` 数组按 `active_count`/`count` 截断，含 0 条、中间值、满 14/9 条三种边界。
 - `uas_id`/`operator_id`/`description` 去除尾部空字符后的字符串正确；`id_or_mac` 十六进制字符串格式正确。
+- （`state_store`/`telemetry_decoder` 前置改动的测试，属于 M4 之前但同一批验收）：先后收到 `BATTERY_STATUS(id=0)` 和 `BATTERY_STATUS(id=1)` 后，两条各自独立可读，互不覆盖；只收到 `id=0` 时 `battery2` 这个 JSON key 不存在（未收到，按省略规则处理，不是异常）；`battery2` 一旦有值，字段集合和换算结果跟 `battery` 用同一套规则验证（复用同一份测试用例结构）。
 
 ## 10. 全局约束（供实施计划引用）
 
@@ -181,6 +193,7 @@ M3a/M3b/M3c 已经把 STM32 发来的所有 MAVLink 帧解码进 `state::Telemet
 - 未收到过的字段省略 JSON key，不输出 `null`；`null` 只用于"消息收到过，但该字段命中协议定义的哨兵值(表示未知/不支持)"这一种情况。
 - key 一律 snake_case。
 - 每个任务完成后运行对应测试，全绿才算完成；任务结束提交一次。
+- **官方通道优先**：已经和固件侧对齐，气压/电池2这类数据优先用官方 MAVLink 消息表达，不新增自定义 `NAMED_VALUE_INT` 字段的解码支持。`SCALED_PRESSURE`本来就是这么设计的（`pressure` key 不用改）；电池2改成 `BATTERY_STATUS(id=1)`，需要先完成第2节的前置改动（`battery_status` 按 id 存），`battery2_status`(`BAT2STAT`)自定义结构体和对应解码分支等固件切换完成后删除。真机联调中额外看到的 `BAROTEMP`/`BAROPRES`/`BAT1CUR`/`BAT2CUR` 这几个过渡期 `NAMED_VALUE_INT` 字段不接入解码，等固件切完直接作废。
 - 这套实训箱固定不动、不飞、不编队：`global_position.vx/vy/vz/relative_alt`、`gps.vel/cog/yaw/vel_acc/hdg_acc`、`drone_id.location.speed_horizontal/speed_vertical/direction/height/height_reference/speed_accuracy`、`drone_id.system.area_ceiling/area_floor/area_count/area_radius` 这些字段是无意义的飞行运动学量，**JSON里不输出**（`state_store`解码层不受影响，仍然原样存储官方结构体全部字段，只是`json_serializer`转换时跳过这些字段）；`attitude`（姿态角/角速度）保留，因为来自箱体上真实的MPU6050传感器。
 
 ## 11. 完整示例（全部字段有值，附逐字段含义）
@@ -276,9 +289,21 @@ M3a/M3b/M3c 已经把 STM32 发来的所有 MAVLink 帧解码进 `state::Telemet
       "fault_bitmask": 0                                                     // 故障/健康位图(官方定义，保持原始数字)
     },
     "battery2": {
-      "voltage_v": 12.6,       // 电压(伏特)——第二路电池，state_store里的Battery2Status
-      "percent": 82,           // 电量百分比
-      "low_voltage": false     // 是否触发低电压告警
+      // 电池2，来自另一条 BATTERY_STATUS(id=1)，字段集合、换算规则跟上面的battery完全一样(第5节)
+      "current_consumed": 890,
+      "energy_consumed": 9200.0,
+      "temperature": 27.8,
+      "voltages": [4.10, 4.09, 4.10, 4.08, null, null, null, null, null, null],
+      "current_battery": 1.85,
+      "id": 1,                 // 电池编号，区分电池1(id=0)/电池2(id=1)的关键字段
+      "battery_function": 1,
+      "type": 1,
+      "battery_remaining": 65,
+      "time_remaining": 2800,
+      "charge_state": 2,
+      "voltages_ext": [null, null, null, null],
+      "mode": 0,
+      "fault_bitmask": 0
     },
     "pressure": {
       "time_boot_ms": 123456,       // 开机以来的时间戳(毫秒)
