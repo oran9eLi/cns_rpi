@@ -285,3 +285,28 @@ TEST_CASE("gnss_sat/humidity/motor/lora/remote_id自定义字段") {
   CHECK(t["remote_id"]["location_count"] == 120);
   CHECK(t["remote_id"]["last_success_ms"] == 987654);
 }
+
+TEST_CASE("modules数组:14个模块的name/status,未收到module_status时modules不存在") {
+  state::TelemetryState empty{};
+  auto empty_json = payload::ToJson(empty, "NNUTC");
+  CHECK_FALSE(empty_json.contains("modules"));
+
+  state::TelemetryState state{};
+  std::array<std::uint8_t, 14> mods{};
+  mods.fill(0);
+  mods[0] = 2;  // GNSS=ONLINE
+  mods[4] = 3;  // LORA=DEGRADED
+  state.module_status = mods;
+
+  auto json = payload::ToJson(state, "NNUTC");
+
+  REQUIRE(json.contains("modules"));
+  REQUIRE(json["modules"].size() == 14);
+  CHECK(json["modules"][0]["name"] == "GNSS");
+  CHECK(json["modules"][0]["status"] == "ONLINE");
+  CHECK(json["modules"][4]["name"] == "LORA");
+  CHECK(json["modules"][4]["status"] == "DEGRADED");
+  CHECK(json["modules"][1]["name"] == "IMU");
+  CHECK(json["modules"][1]["status"] == "UNINITIALIZED");  // 零初始化占位，合法语义
+  CHECK(json["modules"][13]["name"] == "BUSINESS");
+}

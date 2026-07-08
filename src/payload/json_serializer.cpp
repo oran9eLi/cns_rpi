@@ -251,6 +251,22 @@ void AddRemoteId(nlohmann::json& telemetry, const state::TelemetryState& state) 
   };
 }
 
+constexpr std::array<std::string_view, 14> kModuleNames = {
+    "GNSS",       "IMU",      "BARO",       "BATTERY", "LORA",    "5G",
+    "STORAGE",    "REMOTE_ID", "DISPLAY",   "CONTROL", "ALARM",   "SYSTEM",
+    "ESTIMATOR",  "BUSINESS"};
+
+nlohmann::json BuildModules(const state::TelemetryState& state) {
+  nlohmann::json modules = nlohmann::json::array();
+  for (std::size_t i = 0; i < state.module_status->size(); ++i) {
+    modules.push_back({
+        {"name", kModuleNames[i]},
+        {"status", ModuleStateToString((*state.module_status)[i])},
+    });
+  }
+  return modules;
+}
+
 }  // namespace
 
 nlohmann::json ToJson(const state::TelemetryState& state, const std::string& school_name) {
@@ -273,6 +289,10 @@ nlohmann::json ToJson(const state::TelemetryState& state, const std::string& sch
   AddRemoteId(telemetry, state);
   if (!telemetry.empty()) {
     out["telemetry"] = std::move(telemetry);
+  }
+
+  if (state.module_status) {
+    out["modules"] = BuildModules(state);
   }
 
   return out;
