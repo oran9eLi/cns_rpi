@@ -166,6 +166,20 @@ void AddBattery2(nlohmann::json& telemetry, const state::TelemetryState& state) 
   }
 }
 
+void AddPressure(nlohmann::json& telemetry, const state::TelemetryState& state) {
+  if (!state.scaled_pressure) {
+    return;
+  }
+  const auto& p = *state.scaled_pressure;
+  telemetry["pressure"] = {
+      {"time_boot_ms", p.time_boot_ms},
+      {"press_abs", static_cast<double>(p.press_abs)},
+      {"press_diff", static_cast<double>(p.press_diff)},
+      {"temperature", static_cast<double>(p.temperature) / 100.0},
+      {"temperature_press_diff", static_cast<double>(p.temperature_press_diff) / 100.0},
+  };
+}
+
 }  // namespace
 
 nlohmann::json ToJson(const state::TelemetryState& state, const std::string& school_name) {
@@ -180,6 +194,7 @@ nlohmann::json ToJson(const state::TelemetryState& state, const std::string& sch
   AddSysStatus(telemetry, state);
   AddBattery(telemetry, state);
   AddBattery2(telemetry, state);
+  AddPressure(telemetry, state);
   if (!telemetry.empty()) {
     out["telemetry"] = std::move(telemetry);
   }

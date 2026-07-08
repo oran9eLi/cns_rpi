@@ -240,3 +240,23 @@ TEST_CASE("battery2跟battery用同一套规则,来自battery_status[1]") {
   CHECK(out["battery_remaining"].is_null());
   CHECK_FALSE(json["telemetry"].contains("battery"));
 }
+
+TEST_CASE("pressure字段换算,press_abs/press_diff已是hPa直接透传") {
+  state::TelemetryState state{};
+  mavlink_scaled_pressure_t p{};
+  p.time_boot_ms = 123456;
+  p.press_abs = 1013.25F;
+  p.press_diff = 0.02F;
+  p.temperature = 2650;
+  p.temperature_press_diff = 2650;
+  state.scaled_pressure = p;
+
+  auto json = payload::ToJson(state, "NNUTC");
+  const auto& out = json["telemetry"]["pressure"];
+
+  CHECK(out["time_boot_ms"] == 123456);
+  CHECK(out["press_abs"].get<double>() == doctest::Approx(1013.25));
+  CHECK(out["press_diff"].get<double>() == doctest::Approx(0.02));
+  CHECK(out["temperature"].get<double>() == doctest::Approx(26.5));
+  CHECK(out["temperature_press_diff"].get<double>() == doctest::Approx(26.5));
+}
