@@ -5,6 +5,7 @@
 
 #include "payload/json_serializer.hpp"
 
+#include <cstdint>
 #include <numbers>
 
 namespace payload {
@@ -56,6 +57,40 @@ void AddAttitude(nlohmann::json& telemetry, const state::TelemetryState& state) 
   };
 }
 
+void AddGps(nlohmann::json& telemetry, const state::TelemetryState& state) {
+  if (!state.gps_raw_int) {
+    return;
+  }
+  const auto& gps = *state.gps_raw_int;
+  nlohmann::json out;
+  out["time_usec"] = gps.time_usec;
+  out["lat"] = static_cast<double>(gps.lat) / 1e7;
+  out["lon"] = static_cast<double>(gps.lon) / 1e7;
+  out["alt"] = static_cast<double>(gps.alt) / 1000.0;
+  out["alt_ellipsoid"] = static_cast<double>(gps.alt_ellipsoid) / 1000.0;
+  out["eph"] = (gps.eph == UINT16_MAX) ? nlohmann::json(nullptr) : nlohmann::json(gps.eph);
+  out["epv"] = (gps.epv == UINT16_MAX) ? nlohmann::json(nullptr) : nlohmann::json(gps.epv);
+  out["fix_type"] = gps.fix_type;
+  out["satellites_visible"] = gps.satellites_visible;
+  out["h_acc"] = static_cast<double>(gps.h_acc) / 1000.0;
+  out["v_acc"] = static_cast<double>(gps.v_acc) / 1000.0;
+  telemetry["gps"] = std::move(out);
+}
+
+void AddGlobalPosition(nlohmann::json& telemetry, const state::TelemetryState& state) {
+  if (!state.global_position_int) {
+    return;
+  }
+  const auto& pos = *state.global_position_int;
+  telemetry["global_position"] = {
+      {"time_boot_ms", pos.time_boot_ms},
+      {"lat", static_cast<double>(pos.lat) / 1e7},
+      {"lon", static_cast<double>(pos.lon) / 1e7},
+      {"alt", static_cast<double>(pos.alt) / 1000.0},
+      {"hdg", static_cast<double>(pos.hdg) / 100.0},
+  };
+}
+
 }  // namespace
 
 nlohmann::json ToJson(const state::TelemetryState& state, const std::string& school_name) {
@@ -65,6 +100,8 @@ nlohmann::json ToJson(const state::TelemetryState& state, const std::string& sch
   nlohmann::json telemetry = nlohmann::json::object();
   AddHeartbeat(telemetry, state);
   AddAttitude(telemetry, state);
+  AddGps(telemetry, state);
+  AddGlobalPosition(telemetry, state);
   if (!telemetry.empty()) {
     out["telemetry"] = std::move(telemetry);
   }

@@ -80,3 +80,72 @@ TEST_CASE("attitude弧度转角度") {
   CHECK(json["telemetry"]["attitude"]["roll"].get<double>() == doctest::Approx(57.29578));
   CHECK(json["telemetry"]["attitude"]["pitch"].get<double>() == doctest::Approx(-28.64789));
 }
+
+TEST_CASE("gps字段换算,eph/epv命中哨兵值时输出null,vel/cog/yaw等字段不输出") {
+  state::TelemetryState state{};
+  mavlink_gps_raw_int_t gps{};
+  gps.time_usec = 1720000000000000ULL;
+  gps.lat = 399042000;
+  gps.lon = 1164074000;
+  gps.alt = 43500;
+  gps.eph = 65535;  // UINT16_MAX -> null
+  gps.epv = 150;
+  gps.vel = 500;
+  gps.cog = 9000;
+  gps.fix_type = 3;
+  gps.satellites_visible = 14;
+  gps.alt_ellipsoid = 21200;
+  gps.h_acc = 1100;
+  gps.v_acc = 1800;
+  gps.vel_acc = 300;
+  gps.hdg_acc = 500;
+  gps.yaw = 0;
+  state.gps_raw_int = gps;
+
+  auto json = payload::ToJson(state, "NNUTC");
+  const auto& out = json["telemetry"]["gps"];
+
+  CHECK(out["time_usec"] == 1720000000000000ULL);
+  CHECK(out["lat"].get<double>() == doctest::Approx(39.9042));
+  CHECK(out["lon"].get<double>() == doctest::Approx(116.4074));
+  CHECK(out["alt"].get<double>() == doctest::Approx(43.5));
+  CHECK(out["alt_ellipsoid"].get<double>() == doctest::Approx(21.2));
+  CHECK(out["eph"].is_null());
+  CHECK(out["epv"] == 150);
+  CHECK(out["fix_type"] == 3);
+  CHECK(out["satellites_visible"] == 14);
+  CHECK(out["h_acc"].get<double>() == doctest::Approx(1.1));
+  CHECK(out["v_acc"].get<double>() == doctest::Approx(1.8));
+  CHECK_FALSE(out.contains("vel"));
+  CHECK_FALSE(out.contains("cog"));
+  CHECK_FALSE(out.contains("yaw"));
+  CHECK_FALSE(out.contains("vel_acc"));
+  CHECK_FALSE(out.contains("hdg_acc"));
+}
+
+TEST_CASE("global_position字段换算,vx/vy/vz/relative_alt不输出") {
+  state::TelemetryState state{};
+  mavlink_global_position_int_t pos{};
+  pos.time_boot_ms = 123456;
+  pos.lat = 399042000;
+  pos.lon = 1164074000;
+  pos.alt = 43500;
+  pos.relative_alt = 10000;
+  pos.vx = 100;
+  pos.vy = 200;
+  pos.vz = -50;
+  pos.hdg = 8750;
+  state.global_position_int = pos;
+
+  auto json = payload::ToJson(state, "NNUTC");
+  const auto& out = json["telemetry"]["global_position"];
+
+  CHECK(out["time_boot_ms"] == 123456);
+  CHECK(out["lat"].get<double>() == doctest::Approx(39.9042));
+  CHECK(out["alt"].get<double>() == doctest::Approx(43.5));
+  CHECK(out["hdg"].get<double>() == doctest::Approx(87.5));
+  CHECK_FALSE(out.contains("vx"));
+  CHECK_FALSE(out.contains("vy"));
+  CHECK_FALSE(out.contains("vz"));
+  CHECK_FALSE(out.contains("relative_alt"));
+}
