@@ -118,6 +118,54 @@ void AddSysStatus(nlohmann::json& telemetry, const state::TelemetryState& state)
   telemetry["sys_status"] = std::move(out);
 }
 
+nlohmann::json BuildBatteryStatusJson(const mavlink_battery_status_t& bs) {
+  nlohmann::json out;
+  out["current_consumed"] = bs.current_consumed;
+  out["energy_consumed"] = static_cast<double>(bs.energy_consumed) * 100.0;
+  out["temperature"] = static_cast<double>(bs.temperature) / 100.0;
+
+  nlohmann::json voltages = nlohmann::json::array();
+  for (std::uint16_t v : bs.voltages) {
+    voltages.push_back((v == UINT16_MAX) ? nlohmann::json(nullptr)
+                                          : nlohmann::json(static_cast<double>(v) / 1000.0));
+  }
+  out["voltages"] = std::move(voltages);
+
+  out["current_battery"] = (bs.current_battery == -1)
+                                ? nlohmann::json(nullptr)
+                                : nlohmann::json(static_cast<double>(bs.current_battery) / 100.0);
+  out["id"] = bs.id;
+  out["battery_function"] = bs.battery_function;
+  out["type"] = bs.type;
+  out["battery_remaining"] =
+      (bs.battery_remaining == -1) ? nlohmann::json(nullptr) : nlohmann::json(bs.battery_remaining);
+  out["time_remaining"] = bs.time_remaining;
+  out["charge_state"] = bs.charge_state;
+
+  nlohmann::json voltages_ext = nlohmann::json::array();
+  for (std::uint16_t v : bs.voltages_ext) {
+    voltages_ext.push_back((v == 0) ? nlohmann::json(nullptr)
+                                     : nlohmann::json(static_cast<double>(v) / 1000.0));
+  }
+  out["voltages_ext"] = std::move(voltages_ext);
+
+  out["mode"] = bs.mode;
+  out["fault_bitmask"] = bs.fault_bitmask;
+  return out;
+}
+
+void AddBattery(nlohmann::json& telemetry, const state::TelemetryState& state) {
+  if (state.battery_status[0]) {
+    telemetry["battery"] = BuildBatteryStatusJson(*state.battery_status[0]);
+  }
+}
+
+void AddBattery2(nlohmann::json& telemetry, const state::TelemetryState& state) {
+  if (state.battery_status[1]) {
+    telemetry["battery2"] = BuildBatteryStatusJson(*state.battery_status[1]);
+  }
+}
+
 }  // namespace
 
 nlohmann::json ToJson(const state::TelemetryState& state, const std::string& school_name) {
@@ -130,6 +178,8 @@ nlohmann::json ToJson(const state::TelemetryState& state, const std::string& sch
   AddGps(telemetry, state);
   AddGlobalPosition(telemetry, state);
   AddSysStatus(telemetry, state);
+  AddBattery(telemetry, state);
+  AddBattery2(telemetry, state);
   if (!telemetry.empty()) {
     out["telemetry"] = std::move(telemetry);
   }

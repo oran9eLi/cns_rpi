@@ -1,6 +1,8 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
+#include <cstring>
+
 #include "payload/json_serializer.hpp"
 
 TEST_CASE("空TelemetryState只输出identity.school_name其余顶层key都不存在") {
@@ -180,4 +182,61 @@ TEST_CASE("sys_status字段换算,current_battery命中哨兵值-1时输出null"
   CHECK(out["current_battery"].is_null());
   CHECK(out["drop_rate_comm"].get<double>() == doctest::Approx(0.1));
   CHECK(out["battery_remaining"] == 78);
+}
+
+TEST_CASE("battery字段换算含哨兵值,只收到battery_status[0]时battery2不存在") {
+  state::TelemetryState state{};
+  mavlink_battery_status_t bs{};
+  bs.current_consumed = 1520;
+  bs.energy_consumed = 185;  // hJ -> J: *100 = 18500
+  bs.temperature = 2850;
+  std::uint16_t voltages[10] = {4150, 4140, 4150, 4130, 65535, 65535, 65535, 65535, 65535, 65535};
+  std::memcpy(bs.voltages, voltages, sizeof(voltages));
+  bs.current_battery = 325;
+  bs.id = 0;
+  bs.battery_function = 1;
+  bs.type = 1;
+  bs.battery_remaining = 78;
+  bs.time_remaining = 3600;
+  bs.charge_state = 2;
+  std::uint16_t voltages_ext[4] = {0, 0, 0, 0};
+  std::memcpy(bs.voltages_ext, voltages_ext, sizeof(voltages_ext));
+  bs.mode = 0;
+  bs.fault_bitmask = 0;
+  state.battery_status[0] = bs;
+
+  auto json = payload::ToJson(state, "NNUTC");
+  const auto& out = json["telemetry"]["battery"];
+
+  CHECK(out["current_consumed"] == 1520);
+  CHECK(out["energy_consumed"].get<double>() == doctest::Approx(18500.0));
+  CHECK(out["temperature"].get<double>() == doctest::Approx(28.5));
+  CHECK(out["voltages"][0].get<double>() == doctest::Approx(4.15));
+  CHECK(out["voltages"][4].is_null());
+  CHECK(out["current_battery"].get<double>() == doctest::Approx(3.25));
+  CHECK(out["id"] == 0);
+  CHECK(out["battery_remaining"] == 78);
+  CHECK(out["voltages_ext"][0].is_null());
+  CHECK_FALSE(json["telemetry"].contains("battery2"));
+}
+
+TEST_CASE("battery2跟battery用同一套规则,来自battery_status[1]") {
+  state::TelemetryState state{};
+  mavlink_battery_status_t bs{};
+  bs.current_battery = -1;  // 哨兵值 -> null
+  bs.battery_remaining = -1;  // 哨兵值 -> null
+  bs.id = 1;
+  std::uint16_t voltages[10] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+  std::memcpy(bs.voltages, voltages, sizeof(voltages));
+  std::uint16_t voltages_ext[4] = {0, 0, 0, 0};
+  std::memcpy(bs.voltages_ext, voltages_ext, sizeof(voltages_ext));
+  state.battery_status[1] = bs;
+
+  auto json = payload::ToJson(state, "NNUTC");
+  const auto& out = json["telemetry"]["battery2"];
+
+  CHECK(out["id"] == 1);
+  CHECK(out["current_battery"].is_null());
+  CHECK(out["battery_remaining"].is_null());
+  CHECK_FALSE(json["telemetry"].contains("battery"));
 }
