@@ -260,3 +260,28 @@ TEST_CASE("pressure字段换算,press_abs/press_diff已是hPa直接透传") {
   CHECK(out["temperature"].get<double>() == doctest::Approx(26.5));
   CHECK(out["temperature_press_diff"].get<double>() == doctest::Approx(26.5));
 }
+
+TEST_CASE("gnss_sat/humidity/motor/lora/remote_id自定义字段") {
+  state::TelemetryState state{};
+  state.gnss_sat = state::GnssSat{9, 8, 7, 6};
+  state.env_humidity = state::EnvHumidity{535};
+  state.motor_pwm = state::MotorPwm{{45, 45, 50, 50}, true, 60};
+  state.lora_status = state::LoraStatus{15, 9, true, 2};  // link_state=2 -> "ONLINE"
+  state.remote_id_status = state::RemoteIdStatus{120, 0, 987654};
+
+  auto json = payload::ToJson(state, "NNUTC");
+  const auto& t = json["telemetry"];
+
+  CHECK(t["gnss_sat"]["gps_visible"] == 9);
+  CHECK(t["gnss_sat"]["beidou_used"] == 6);
+  CHECK(t["humidity"]["humidity_percent"].get<double>() == doctest::Approx(53.5));
+  CHECK(t["motor"]["duty_percent"] == std::vector<int>{45, 45, 50, 50});
+  CHECK(t["motor"]["run_state"] == true);
+  CHECK(t["motor"]["speed_level"] == 60);
+  CHECK(t["lora"]["loss_rate_percent"].get<double>() == doctest::Approx(1.5));
+  CHECK(t["lora"]["node_id"] == 9);
+  CHECK(t["lora"]["present"] == true);
+  CHECK(t["lora"]["link_state"] == "ONLINE");
+  CHECK(t["remote_id"]["location_count"] == 120);
+  CHECK(t["remote_id"]["last_success_ms"] == 987654);
+}

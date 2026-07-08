@@ -5,8 +5,11 @@
 
 #include "payload/json_serializer.hpp"
 
+#include <array>
 #include <cstdint>
 #include <numbers>
+#include <string>
+#include <string_view>
 
 namespace payload {
 
@@ -180,6 +183,74 @@ void AddPressure(nlohmann::json& telemetry, const state::TelemetryState& state) 
   };
 }
 
+constexpr std::array<std::string_view, 7> kModuleStateNames = {
+    "UNINITIALIZED", "STARTING", "ONLINE", "DEGRADED", "OFFLINE", "FAILED", "DISABLED"};
+
+std::string ModuleStateToString(std::uint8_t state) {
+  if (state < kModuleStateNames.size()) {
+    return std::string(kModuleStateNames[state]);
+  }
+  return "UNKNOWN(" + std::to_string(state) + ")";
+}
+
+void AddGnssSat(nlohmann::json& telemetry, const state::TelemetryState& state) {
+  if (!state.gnss_sat) {
+    return;
+  }
+  const auto& s = *state.gnss_sat;
+  telemetry["gnss_sat"] = {
+      {"gps_visible", s.gps_visible},
+      {"beidou_visible", s.beidou_visible},
+      {"gps_used", s.gps_used},
+      {"beidou_used", s.beidou_used},
+  };
+}
+
+void AddHumidity(nlohmann::json& telemetry, const state::TelemetryState& state) {
+  if (!state.env_humidity) {
+    return;
+  }
+  telemetry["humidity"]["humidity_percent"] =
+      static_cast<double>(state.env_humidity->relative_humidity_x10) / 10.0;
+}
+
+void AddMotor(nlohmann::json& telemetry, const state::TelemetryState& state) {
+  if (!state.motor_pwm) {
+    return;
+  }
+  const auto& m = *state.motor_pwm;
+  telemetry["motor"] = {
+      {"duty_percent", m.duty_percent},
+      {"run_state", m.run_state},
+      {"speed_level", m.speed_level},
+  };
+}
+
+void AddLora(nlohmann::json& telemetry, const state::TelemetryState& state) {
+  if (!state.lora_status) {
+    return;
+  }
+  const auto& l = *state.lora_status;
+  telemetry["lora"] = {
+      {"loss_rate_percent", static_cast<double>(l.loss_rate_x10) / 10.0},
+      {"node_id", l.node_id},
+      {"present", l.present},
+      {"link_state", ModuleStateToString(l.link_state)},
+  };
+}
+
+void AddRemoteId(nlohmann::json& telemetry, const state::TelemetryState& state) {
+  if (!state.remote_id_status) {
+    return;
+  }
+  const auto& r = *state.remote_id_status;
+  telemetry["remote_id"] = {
+      {"location_count", r.location_count},
+      {"error_count", r.error_count},
+      {"last_success_ms", r.last_success_ms},
+  };
+}
+
 }  // namespace
 
 nlohmann::json ToJson(const state::TelemetryState& state, const std::string& school_name) {
@@ -195,6 +266,11 @@ nlohmann::json ToJson(const state::TelemetryState& state, const std::string& sch
   AddBattery(telemetry, state);
   AddBattery2(telemetry, state);
   AddPressure(telemetry, state);
+  AddGnssSat(telemetry, state);
+  AddHumidity(telemetry, state);
+  AddMotor(telemetry, state);
+  AddLora(telemetry, state);
+  AddRemoteId(telemetry, state);
   if (!telemetry.empty()) {
     out["telemetry"] = std::move(telemetry);
   }
