@@ -31,7 +31,7 @@ M3a/M3b/M3c 已经把 STM32 发来的所有 MAVLink 帧解码进 `state::Telemet
 std::array<std::optional<mavlink_battery_status_t>, 2> battery_status;
 ```
 
-`protocol/telemetry_decoder.cpp` 里 `MAVLINK_MSG_ID_BATTERY_STATUS` 分支相应改成 `store.UpdateBatteryStatus(decoded.id, decoded)`，按 `id`（超出 0/1 范围的丢弃，打印一条警告即可，暂不支持 2 块以上电池）写入对应下标。`state/state_store.hpp` 里现有的 `Battery2Status` 结构体、`battery2_status` 字段、`UpdateBattery2Status` 接口，以及 `protocol/extension_decoder.cpp` 里的 `BAT2STAT` 解码分支，等固件确认切换到 `BATTERY_STATUS(id=1)` 之后一并删除（删除时机由固件切换进度决定，不阻塞本设计落地——固件切换前，`battery_status[1]` 一直是 `std::nullopt`，`battery2` 这个 JSON key 就按"未收到"规则不输出，这是预期状态，不是 bug）。
+`protocol/telemetry_decoder.cpp` 里 `MAVLINK_MSG_ID_BATTERY_STATUS` 分支相应改成 `store.UpdateBatteryStatus(decoded.id, decoded)`，按 `id`（超出 0/1 范围的丢弃，打印一条警告即可，暂不支持 2 块以上电池）写入对应下标。`state/state_store.hpp` 里现有的 `Battery2Status` 结构体、`battery2_status` 字段、`UpdateBattery2Status` 接口，以及 `protocol/extension_decoder.cpp` 里的 `BAT2STAT` 解码分支，**已在本次改动里一并删除**（固件侧确认次日就会完成 `BATTERY_STATUS(id=1)` 切换，不等真机复测再删，提前跟着本分支落地）——固件切换前这段时间，`battery_status[1]` 一直是 `std::nullopt`，`battery2` 这个 JSON key 就按"未收到"规则不输出，这是预期状态，不是 bug。
 
 - 新增 `src/payload/json_serializer.hpp/.cpp`（文件树已在 `docs/V1设计文档.md` 里预留这个位置）。
 - 核心函数：
@@ -140,7 +140,7 @@ std::array<std::optional<mavlink_battery_status_t>, 2> battery_status;
 **哨兵值 → `null`**：MAVLink 用特殊值表示"未提供"，换算前先判断是否命中哨兵值，命中则该字段输出 `null`（不换算出无意义的数字）：
 - `gps.eph/epv` = `UINT16_MAX`
 - `sys_status.current_battery`/`battery.current_battery`/`battery.battery_remaining` = `-1`
-- `battery.voltages[]`/`voltages_ext[]` 里等于 `UINT16_MAX`（或 `voltages_ext` 里等于 `0`，按官方注释是"不支持"）的槽位
+- `battery.voltages[]` 里等于 `UINT16_MAX` 的槽位；`voltages_ext[]` 里等于 `0` 的槽位——**两个数组的哨兵值不同**，`voltages_ext` 只看 `0`，不看 `UINT16_MAX`：按官方字段注释，`voltages_ext` 明确说"0 表示不支持，这一点跟 `voltages` 字段不同"，`UINT16_MAX` 不是它的哨兵值
 - `drone_id.location.altitude_barometric/altitude_geodetic`、`drone_id.system.operator_altitude_geo` 等于 `-1000.0f`
 
 ## 6. 自定义扩展字段的 JSON key 名对照
@@ -193,7 +193,7 @@ std::array<std::optional<mavlink_battery_status_t>, 2> battery_status;
 - 未收到过的字段省略 JSON key，不输出 `null`；`null` 只用于"消息收到过，但该字段命中协议定义的哨兵值(表示未知/不支持)"这一种情况。
 - key 一律 snake_case。
 - 每个任务完成后运行对应测试，全绿才算完成；任务结束提交一次。
-- **官方通道优先**：已经和固件侧对齐，气压/电池2这类数据优先用官方 MAVLink 消息表达，不新增自定义 `NAMED_VALUE_INT` 字段的解码支持。`SCALED_PRESSURE`本来就是这么设计的（`pressure` key 不用改）；电池2改成 `BATTERY_STATUS(id=1)`，需要先完成第2节的前置改动（`battery_status` 按 id 存），`battery2_status`(`BAT2STAT`)自定义结构体和对应解码分支等固件切换完成后删除。真机联调中额外看到的 `BAROTEMP`/`BAROPRES`/`BAT1CUR`/`BAT2CUR` 这几个过渡期 `NAMED_VALUE_INT` 字段不接入解码，等固件切完直接作废。
+- **官方通道优先**：已经和固件侧对齐，气压/电池2这类数据优先用官方 MAVLink 消息表达，不新增自定义 `NAMED_VALUE_INT` 字段的解码支持。`SCALED_PRESSURE`本来就是这么设计的（`pressure` key 不用改）；电池2改成 `BATTERY_STATUS(id=1)`，需要先完成第2节的前置改动（`battery_status` 按 id 存），`battery2_status`(`BAT2STAT`)自定义结构体和对应解码分支已随本次改动删除（固件次日完成切换，提前删除不阻塞）。真机联调中额外看到的 `BAROTEMP`/`BAROPRES`/`BAT1CUR`/`BAT2CUR` 这几个过渡期 `NAMED_VALUE_INT` 字段不接入解码，等固件切完直接作废。
 - 这套实训箱固定不动、不飞、不编队：`global_position.vx/vy/vz/relative_alt`、`gps.vel/cog/yaw/vel_acc/hdg_acc`、`drone_id.location.speed_horizontal/speed_vertical/direction/height/height_reference/speed_accuracy`、`drone_id.system.area_ceiling/area_floor/area_count/area_radius` 这些字段是无意义的飞行运动学量，**JSON里不输出**（`state_store`解码层不受影响，仍然原样存储官方结构体全部字段，只是`json_serializer`转换时跳过这些字段）；`attitude`（姿态角/角速度）保留，因为来自箱体上真实的MPU6050传感器。
 
 ## 11. 完整示例（全部字段有值，附逐字段含义）
