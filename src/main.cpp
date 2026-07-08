@@ -18,6 +18,7 @@
 
 #include "common/mavlink.h"
 #include "config/app_config.hpp"
+#include "payload/json_serializer.hpp"
 #include "protocol/extension_decoder.hpp"
 #include "protocol/identity.hpp"
 #include "protocol/telemetry_decoder.hpp"
@@ -198,6 +199,12 @@ void LogExtension(std::uint32_t msgid, const state::TelemetryState& snapshot) {
   }
 }
 
+/// 每处理完一帧调用一次，把当前完整快照序列化成JSON打印到控制台，
+/// 供真机演示/联调时人工核对字段可读性——不是解码逻辑，纯打印。
+void LogJsonPayload(const state::TelemetryState& state, const std::string& school_name) {
+  std::cout << payload::ToJson(state, school_name).dump(2) << std::endl;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -231,6 +238,7 @@ int main(int argc, char** argv) {
       } else if (protocol::DecodeExtensionAndStore(*msg, state_store)) {
         LogExtension(msg->msgid, state_store.Snapshot());
       }
+      LogJsonPayload(state_store.Snapshot(), app_config->identity.school_name);
     }
 
     auto now = std::chrono::steady_clock::now();
