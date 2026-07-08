@@ -79,10 +79,14 @@ void LogTelemetry(std::uint32_t msgid, const state::TelemetryState& snapshot) {
       }
       break;
     case MAVLINK_MSG_ID_BATTERY_STATUS:
-      if (snapshot.battery_status) {
-        std::cout << "BATTERY_STATUS: voltages[0]=" << snapshot.battery_status->voltages[0]
-                  << " battery_remaining="
-                  << static_cast<int>(snapshot.battery_status->battery_remaining) << std::endl;
+      for (std::size_t i = 0; i < snapshot.battery_status.size(); ++i) {
+        if (snapshot.battery_status[i]) {
+          std::cout << "BATTERY_STATUS[" << i
+                    << "]: voltages[0]=" << snapshot.battery_status[i]->voltages[0]
+                    << " battery_remaining="
+                    << static_cast<int>(snapshot.battery_status[i]->battery_remaining)
+                    << std::endl;
+        }
       }
       break;
     case MAVLINK_MSG_ID_SCALED_PRESSURE:

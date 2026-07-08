@@ -27,6 +27,9 @@ namespace state {
 /// MODSTAT0 覆盖 0-7 号，MODSTAT1 覆盖 8-13 号。
 constexpr std::size_t kModuleCount = 14;
 
+/// BATTERY_STATUS.id 目前只处理电池1(id=0)/电池2(id=1)两块，超出范围的id丢弃。
+constexpr std::size_t kBatteryCount = 2;
+
 /// BAT2STAT 拆包结果：电压(mV)/电量(%)/低电压标志，原始刻度，不做单位换算。
 struct Battery2Status {
   std::uint16_t voltage_mv;
@@ -113,7 +116,9 @@ struct TelemetryState {
   std::optional<mavlink_attitude_t> attitude;
   std::optional<mavlink_global_position_int_t> global_position_int;
   std::optional<mavlink_sys_status_t> sys_status;
-  std::optional<mavlink_battery_status_t> battery_status;
+  /// 按 BATTERY_STATUS.id 区分存储：下标0是电池1(id=0)，下标1是电池2(id=1)。
+  /// 固件用不同id区分两块电池，同一坑位直接覆盖会导致两块电池数据互相打架。
+  std::array<std::optional<mavlink_battery_status_t>, kBatteryCount> battery_status;
   std::optional<mavlink_scaled_pressure_t> scaled_pressure;
 
   /// 14 个模块的状态(0-6，含义见 V1设计文档.md §4.1"模块状态枚举")，
@@ -156,7 +161,8 @@ class StateStore {
   void UpdateAttitude(const mavlink_attitude_t& value);
   void UpdateGlobalPositionInt(const mavlink_global_position_int_t& value);
   void UpdateSysStatus(const mavlink_sys_status_t& value);
-  void UpdateBatteryStatus(const mavlink_battery_status_t& value);
+  /// id超出kBatteryCount范围时静默丢弃，不写入、不报错(同解码层一贯的"不认识就丢弃"风格)。
+  void UpdateBatteryStatus(std::uint8_t id, const mavlink_battery_status_t& value);
   void UpdateScaledPressure(const mavlink_scaled_pressure_t& value);
 
   /// 只写 module_status 的 0-7 号元素(来自 MODSTAT0)。若 module_status 之前

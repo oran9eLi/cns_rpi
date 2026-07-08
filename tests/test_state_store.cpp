@@ -16,7 +16,8 @@ TEST_CASE("初始状态所有字段都是nullopt") {
   CHECK_FALSE(snapshot.attitude.has_value());
   CHECK_FALSE(snapshot.global_position_int.has_value());
   CHECK_FALSE(snapshot.sys_status.has_value());
-  CHECK_FALSE(snapshot.battery_status.has_value());
+  CHECK_FALSE(snapshot.battery_status[0].has_value());
+  CHECK_FALSE(snapshot.battery_status[1].has_value());
   CHECK_FALSE(snapshot.scaled_pressure.has_value());
 }
 

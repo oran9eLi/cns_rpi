@@ -32,9 +32,11 @@ void StateStore::UpdateSysStatus(const mavlink_sys_status_t& value) {
   state_.sys_status = value;
 }
 
-void StateStore::UpdateBatteryStatus(const mavlink_battery_status_t& value) {
+void StateStore::UpdateBatteryStatus(std::uint8_t id, const mavlink_battery_status_t& value) {
   std::lock_guard<std::mutex> lock(mutex_);
-  state_.battery_status = value;
+  if (id < kBatteryCount) {
+    state_.battery_status[id] = value;
+  }
 }
 
 void StateStore::UpdateScaledPressure(const mavlink_scaled_pressure_t& value) {

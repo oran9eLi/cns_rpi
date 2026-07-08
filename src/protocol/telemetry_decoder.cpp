@@ -42,7 +42,7 @@ bool DecodeAndStore(const mavlink_message_t& msg, state::StateStore& store) {
     case MAVLINK_MSG_ID_BATTERY_STATUS: {
       mavlink_battery_status_t decoded{};
       mavlink_msg_battery_status_decode(&msg, &decoded);
-      store.UpdateBatteryStatus(decoded);
+      store.UpdateBatteryStatus(decoded.id, decoded);
       return true;
     }
     case MAVLINK_MSG_ID_SCALED_PRESSURE: {

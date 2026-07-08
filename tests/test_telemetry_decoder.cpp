@@ -129,11 +129,11 @@ TEST_CASE("BATTERY_STATUS解码写入store") {
 
   CHECK(handled);
   auto snapshot = store.Snapshot();
-  REQUIRE(snapshot.battery_status.has_value());
+  REQUIRE(snapshot.battery_status[0].has_value());
   // mavlink_battery_status_t 是 packed 结构体，voltages[] 数组元素是未对齐的多字节
   // 字段，同上：static_cast 规避 GCC 14 下 CHECK 宏的引用绑定问题。
-  CHECK(static_cast<std::uint16_t>(snapshot.battery_status->voltages[0]) == 4200);
-  CHECK(snapshot.battery_status->battery_remaining == 80);
+  CHECK(static_cast<std::uint16_t>(snapshot.battery_status[0]->voltages[0]) == 4200);
+  CHECK(snapshot.battery_status[0]->battery_remaining == 80);
 }
 
 TEST_CASE("SCALED_PRESSURE解码写入store") {
@@ -149,6 +149,39 @@ TEST_CASE("SCALED_PRESSURE解码写入store") {
   auto snapshot = store.Snapshot();
   REQUIRE(snapshot.scaled_pressure.has_value());
   CHECK(snapshot.scaled_pressure->press_abs == doctest::Approx(1013.25F));
+}
+
+TEST_CASE("两条不同id的BATTERY_STATUS各自独立存储，互不覆盖") {
+  state::StateStore store;
+  std::uint16_t voltages1[10] = {4200, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+  std::uint16_t voltages_ext[4] = {0, 0, 0, 0};
+  mavlink_message_t msg1{};
+  mavlink_msg_battery_status_pack(kSystemId, kComponentId, &msg1, /*id=*/0,
+                                  /*battery_function=*/0, /*type=*/0, /*temperature=*/2500,
+                                  voltages1, /*current_battery=*/150, /*current_consumed=*/500,
+                                  /*energy_consumed=*/1000, /*battery_remaining=*/80,
+                                  /*time_remaining=*/3600, /*charge_state=*/0, voltages_ext,
+                                  /*mode=*/0, /*fault_bitmask=*/0);
+
+  std::uint16_t voltages2[10] = {4100, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+  mavlink_message_t msg2{};
+  mavlink_msg_battery_status_pack(kSystemId, kComponentId, &msg2, /*id=*/1,
+                                  /*battery_function=*/0, /*type=*/0, /*temperature=*/2400,
+                                  voltages2, /*current_battery=*/90, /*current_consumed=*/300,
+                                  /*energy_consumed=*/800, /*battery_remaining=*/60,
+                                  /*time_remaining=*/2800, /*charge_state=*/0, voltages_ext,
+                                  /*mode=*/0, /*fault_bitmask=*/0);
+
+  protocol::DecodeAndStore(msg1, store);
+  protocol::DecodeAndStore(msg2, store);
+  auto snapshot = store.Snapshot();
+
+  REQUIRE(snapshot.battery_status[0].has_value());
+  REQUIRE(snapshot.battery_status[1].has_value());
+  CHECK(static_cast<std::uint16_t>(snapshot.battery_status[0]->voltages[0]) == 4200);
+  CHECK(static_cast<std::uint16_t>(snapshot.battery_status[1]->voltages[0]) == 4100);
+  CHECK(snapshot.battery_status[0]->battery_remaining == 80);
+  CHECK(snapshot.battery_status[1]->battery_remaining == 60);
 }
 
 TEST_CASE("不认识的消息类型被安静忽略，不影响其他已有字段") {
