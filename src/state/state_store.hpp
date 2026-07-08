@@ -30,13 +30,6 @@ constexpr std::size_t kModuleCount = 14;
 /// BATTERY_STATUS.id 目前只处理电池1(id=0)/电池2(id=1)两块，超出范围的id丢弃。
 constexpr std::size_t kBatteryCount = 2;
 
-/// BAT2STAT 拆包结果：电压(mV)/电量(%)/低电压标志，原始刻度，不做单位换算。
-struct Battery2Status {
-  std::uint16_t voltage_mv;
-  std::uint8_t percent;
-  bool low_voltage;
-};
-
 /// MOTOR12/MOTOR34 拆包结果：4 个电机的占空比(%)，外加两帧共同携带的
 /// run_state/speed_level(整机状态的冗余拷贝，两帧值相同，直接覆盖式更新，
 /// 不像 duty_percent 那样需要区分"自己负责哪一半")。
@@ -124,7 +117,6 @@ struct TelemetryState {
   /// 14 个模块的状态(0-6，含义见 V1设计文档.md §4.1"模块状态枚举")，
   /// MODSTAT0 只写 0-7 号，MODSTAT1 只写 8-13 号，两条帧合并成一份数据。
   std::optional<std::array<std::uint8_t, kModuleCount>> module_status;
-  std::optional<Battery2Status> battery2_status;
   std::optional<MotorPwm> motor_pwm;
   std::optional<GnssSat> gnss_sat;
   std::optional<EnvHumidity> env_humidity;
@@ -171,7 +163,6 @@ class StateStore {
   void UpdateModStatusLow(const std::array<std::uint8_t, 8>& modules0to7);
   /// 只写 module_status 的 8-13 号元素(来自 MODSTAT1)，语义同上。
   void UpdateModStatusHigh(const std::array<std::uint8_t, 6>& modules8to13);
-  void UpdateBattery2Status(const Battery2Status& value);
   /// 只写 duty_percent 的 0-1 号索引(来自 MOTOR12)。若 motor_pwm 之前还没有值
   /// (两帧都还没收到过)，先把整个 struct 零初始化；run_state/speed_level 是
   /// 两帧共同的冗余拷贝，每次都直接覆盖(不需要判断"谁负责哪部分")。

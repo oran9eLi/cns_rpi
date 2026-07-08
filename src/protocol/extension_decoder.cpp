@@ -117,14 +117,6 @@ bool DecodeNamedValueInt(const mavlink_named_value_int_t& value, state::StateSto
     store.UpdateModStatusHigh(modules);
     return true;
   }
-  if (name == "BAT2STAT") {
-    state::Battery2Status status{};
-    status.voltage_mv = static_cast<std::uint16_t>(bits & 0xFFFF);
-    status.percent = static_cast<std::uint8_t>((bits >> 16) & 0xFF);
-    status.low_voltage = ((bits >> 24) & 0x1) != 0;
-    store.UpdateBattery2Status(status);
-    return true;
-  }
   if (name == "GNSS_SAT") {
     state::GnssSat sat{};
     sat.gps_visible = static_cast<std::uint8_t>(bits & 0xFF);

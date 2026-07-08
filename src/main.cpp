@@ -111,11 +111,6 @@ void LogExtension(std::uint32_t msgid, const state::TelemetryState& snapshot) {
         std::cout << "MODSTAT: [0]=" << static_cast<int>((*snapshot.module_status)[0])
                   << " [13]=" << static_cast<int>((*snapshot.module_status)[13]) << std::endl;
       }
-      if (snapshot.battery2_status) {
-        std::cout << "BAT2STAT: voltage_mv=" << snapshot.battery2_status->voltage_mv
-                  << " percent=" << static_cast<int>(snapshot.battery2_status->percent)
-                  << " low_voltage=" << snapshot.battery2_status->low_voltage << std::endl;
-      }
       if (snapshot.motor_pwm) {
         std::cout << "MOTOR: duty=[" << static_cast<int>(snapshot.motor_pwm->duty_percent[0])
                   << "," << static_cast<int>(snapshot.motor_pwm->duty_percent[1]) << ","

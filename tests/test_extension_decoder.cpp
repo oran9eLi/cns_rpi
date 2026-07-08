@@ -120,21 +120,6 @@ TEST_CASE("MODSTAT1解码写入module_status的8-13号,不影响先前的0-7号"
   CHECK((*snapshot.module_status)[13] == 5);
 }
 
-TEST_CASE("BAT2STAT解码拆出电压/电量/低电压标志") {
-  constexpr std::int32_t kValue = static_cast<std::int32_t>(10500u | (15u << 16) | (1u << 24));
-  mavlink_message_t msg = PackNamedValueInt("BAT2STAT", kValue);
-  state::StateStore store;
-
-  bool handled = protocol::DecodeExtensionAndStore(msg, store);
-
-  CHECK(handled);
-  auto snapshot = store.Snapshot();
-  REQUIRE(snapshot.battery2_status.has_value());
-  CHECK(snapshot.battery2_status->voltage_mv == 10500);
-  CHECK(snapshot.battery2_status->percent == 15);
-  CHECK(snapshot.battery2_status->low_voltage);
-}
-
 TEST_CASE("GNSS_SAT解码拆出GPS/北斗可见数与使用数") {
   constexpr std::int32_t kValue =
       static_cast<std::int32_t>(12u | (8u << 8) | (10u << 16) | (6u << 24));

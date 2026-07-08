@@ -64,11 +64,6 @@ void StateStore::UpdateModStatusHigh(const std::array<std::uint8_t, 6>& modules8
   }
 }
 
-void StateStore::UpdateBattery2Status(const Battery2Status& value) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  state_.battery2_status = value;
-}
-
 void StateStore::UpdateMotorPwmLow(std::uint8_t duty0, std::uint8_t duty1, bool run_state,
                                      std::uint8_t speed_level) {
   std::lock_guard<std::mutex> lock(mutex_);

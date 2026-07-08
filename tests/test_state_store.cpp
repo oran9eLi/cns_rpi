@@ -75,20 +75,13 @@ TEST_CASE("UpdateModStatusLow只影响0-7号模块,UpdateModStatusHigh只影响8
 
 TEST_CASE("扩展遥测字段的Update各自独立,不影响其他字段") {
   state::StateStore store;
-  state::Battery2Status bat2{12600, 80, false};
   state::GnssSat sat{12, 8, 10, 6};
   state::EnvHumidity hum{535};
 
-  store.UpdateBattery2Status(bat2);
   store.UpdateMotorPwmLow(10, 20, true, 50);
   store.UpdateGnssSat(sat);
   store.UpdateEnvHumidity(hum);
   auto snapshot = store.Snapshot();
-
-  REQUIRE(snapshot.battery2_status.has_value());
-  CHECK(snapshot.battery2_status->voltage_mv == 12600);
-  CHECK(snapshot.battery2_status->percent == 80);
-  CHECK_FALSE(snapshot.battery2_status->low_voltage);
 
   REQUIRE(snapshot.motor_pwm.has_value());
   CHECK(snapshot.motor_pwm->duty_percent[0] == 10);

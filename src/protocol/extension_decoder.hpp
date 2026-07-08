@@ -5,8 +5,8 @@
  * @brief M3b/M3c 范围内 NAMED_VALUE_INT/TUNNEL 扩展帧 + OPEN_DRONE_ID_* 身份帧的解码入口。
  *
  * @details
- * 只负责"认出本模块关心的扩展帧语义(M3b: MODSTAT0/MODSTAT1/BAT2STAT/MOTOR12/MOTOR34/
- * GNSS_SAT/HUMIDITY/LORASTAT/RIDSTAT 九种 NAMED_VALUE_INT + 告警表/日志增量两种 TUNNEL；
+ * 只负责"认出本模块关心的扩展帧语义(M3b: MODSTAT0/MODSTAT1/MOTOR12/MOTOR34/
+ * GNSS_SAT/HUMIDITY/LORASTAT/RIDSTAT 八种 NAMED_VALUE_INT + 告警表/日志增量两种 TUNNEL；
  * M3c: OPEN_DRONE_ID_BASIC_ID/LOCATION/SYSTEM/OPERATOR_ID/SELF_ID 五种身份帧)、
  * 解码、写入 state_store"，不做单位换算(留给 M4 payload/json_serializer)，
  * 不关心帧从哪来(uart/mavlink_link 的事)、被谁读(state/ 下游消费者的事)。
