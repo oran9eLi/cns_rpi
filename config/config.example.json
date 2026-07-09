@@ -19,5 +19,11 @@
   },
   "identity": {
     "school_name": "NNUTC"
+  },
+  "cellular": {
+    "apn": "cmnet",
+    "cid": 1,
+    "usb_interface_number": "05",
+    "at_port_wait_seconds": 30
   }
 }
