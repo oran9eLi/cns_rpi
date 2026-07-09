@@ -6,7 +6,7 @@
 # 幂等：重复执行不会破坏已有配置，也不会重复堆积备份文件（内容不变就跳过）。
 set -euo pipefail
 
-TOTAL_STEPS=4
+TOTAL_STEPS=5
 TIMESTAMP="$(date +%Y%m%d%H%M%S)"
 
 step() {
@@ -47,8 +47,11 @@ scripts/install_deps.sh — RPi 环境准备
   [3] 配置 git 全局 URL 重写 -> github.com 流量转发至镜像代理
       （原因：RPi 直连 GitHub 实测丢包/超时，否则后续 git pull/clone 会卡住）
   [4] 打印版本信息，确认安装结果
+  [5] 用 CMake 编译一次本仓库（cmake -S . -B build && cmake --build build），
+      确认环境装完之后代码能直接编译过，不用再手动跑一遍
 
-影响范围：仅修改 apt 源配置和 git 全局配置，不涉及本仓库以外的其他文件。
+影响范围：仅修改 apt 源配置和 git 全局配置，不涉及本仓库以外的其他文件；
+第 [5] 步会在本仓库根目录下创建/更新 build/ 目录（已在 .gitignore 里排除）。
 BANNER
 
 step 1 "切换 apt 源为清华 TUNA 镜像（原因：国内直连官方源慢/不稳定）"
@@ -92,6 +95,12 @@ step 4 "版本信息（确认安装结果）"
 g++ --version
 cmake --version
 git --version
+
+step 5 "编译本仓库（确认环境装完后代码能直接编译过）"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+cmake -S "${REPO_ROOT}" -B "${REPO_ROOT}/build"
+cmake --build "${REPO_ROOT}/build"
 
 echo
 echo "===== 环境准备完成 ====="
