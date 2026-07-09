@@ -41,7 +41,7 @@ target_include_directories(cns_rpi_mqtt PUBLIC src)
 target_link_libraries(cns_rpi_mqtt PUBLIC PkgConfig::MOSQUITTO)
 
 add_executable(cns_rpi src/main.cpp)
-target_link_libraries(cns_rpi PRIVATE cns_rpi_core)
+target_link_libraries(cns_rpi PRIVATE cns_rpi_core cns_rpi_mqtt)
 
 add_executable(test_mavlink_link tests/test_mavlink_link.cpp)
 target_link_libraries(test_mavlink_link PRIVATE cns_rpi_core)
