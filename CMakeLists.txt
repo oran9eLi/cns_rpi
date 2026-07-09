@@ -22,6 +22,7 @@ add_library(cns_rpi_core
     src/protocol/extension_decoder.cpp
     src/protocol/identity.cpp
     src/payload/json_serializer.cpp
+    src/mqtt/topic.cpp
 )
 target_include_directories(cns_rpi_core PUBLIC src)
 # src/mavlink 是从固件仓库 Third_Party/mavlink/ 原样同步的官方生成头文件（common/standard/minimal），
@@ -63,3 +64,7 @@ set_tests_properties(identity PROPERTIES WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 add_executable(test_json_serializer tests/test_json_serializer.cpp)
 target_link_libraries(test_json_serializer PRIVATE cns_rpi_core)
 add_test(NAME json_serializer COMMAND test_json_serializer)
+
+add_executable(test_mqtt_topic tests/test_mqtt_topic.cpp)
+target_link_libraries(test_mqtt_topic PRIVATE cns_rpi_core)
+add_test(NAME mqtt_topic COMMAND test_mqtt_topic)
