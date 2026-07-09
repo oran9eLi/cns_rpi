@@ -138,7 +138,9 @@ def send_battery_status(conn, battery_id: int, cell_mv: list[int], current_ca: i
     """官方 BATTERY_STATUS，用 id 区分电池1(id=0)/电池2(id=1)，字段语义/单位见
     mavlink_msg_battery_status.h 官方注释：voltages[10]槽位不用填 UINT16_MAX，
     voltages_ext[4]槽位不用填0（跟voltages不同，这里两块电池都只有普通cell、不
-    用扩展槽位，所以voltages_ext全传0）。"""
+    用扩展槽位，所以voltages_ext全传0）。cell_mv 只传1个值——固件侧只有一路
+    电压采集(整包电压)，没有逐节电芯监测能力，之前这里演示过3/4个假cell值
+    是编的，没有实际依据，2026-07-09订正。"""
     voltages = list(cell_mv) + [0xFFFF] * (10 - len(cell_mv))
     conn.mav.battery_status_send(
         id=battery_id,
@@ -347,10 +349,10 @@ def main():
             send_sys_status(conn); time.sleep(msg_gap_s)
             send_modstat(conn, now_ms, 0, module_states); time.sleep(msg_gap_s)
             send_modstat(conn, now_ms, 1, module_states); time.sleep(msg_gap_s)
-            send_battery_status(conn, battery_id=0, cell_mv=[3933, 3933, 3934],
+            send_battery_status(conn, battery_id=0, cell_mv=[11800],
                                  current_ca=1500, current_consumed_mah=500,
                                  energy_consumed_hj=1000, percent=80); time.sleep(msg_gap_s)
-            send_battery_status(conn, battery_id=1, cell_mv=[3933, 3933, 3934],
+            send_battery_status(conn, battery_id=1, cell_mv=[11500],
                                  current_ca=1200, current_consumed_mah=400,
                                  energy_consumed_hj=800, percent=75); time.sleep(msg_gap_s)
             send_scaled_pressure(conn, now_ms, press_abs_hpa=1013.25, temperature_cdeg=2500); time.sleep(msg_gap_s)
