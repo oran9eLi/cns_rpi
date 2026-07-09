@@ -165,7 +165,8 @@ std::array<std::optional<mavlink_battery_status_t>, 2> battery_status;
 
 ## 7. `drone_id`/`alarms`/`logs` 细节
 
-- `drone_id.basic_id/location/system/operator_id/self_id`：按第4、5节规则做枚举保留/单位换算。`uas_id`/`operator_id`/`description` 这几个 `char[]` 字段转成去除尾部空字符的字符串；`id_or_mac`（我们自己广播时恒为全零，字段本身是"仅用于接收其他飞行器数据时"）转成十六进制字符串——20字节对应40个十六进制字符，全零时为40个`'0'`组成的字符串。
+- `drone_id.basic_id/location/system/operator_id/self_id`：按第4、5节规则做枚举保留/单位换算。`uas_id`/`operator_id`/`description` 这几个 `char[]` 字段转成去除尾部空字符的字符串。
+- **2026-07-09 精简**：`target_system`/`target_component`/`id_or_mac` 这三个字段从全部 5 个子块里去掉，不再输出到 JSON。理由：`target_system`/`target_component` 是 MAVLink 点对点寻址字段，广播场景下恒为 0；`id_or_mac` 官方定义是"仅用于转发别的无人机身份数据"，本产品只会广播自己的身份，恒为全零（20字节的十六进制字符串，40个`'0'`）——三个字段固件永远填不出有意义的值，白占 MQTT 带宽，删掉不影响协议解码（这几个字段在 `state/state_store.hpp` 存的官方 MAVLink struct 里还在，只是 JSON 序列化这一层不再输出）。
 - `drone_id.location`/`drone_id.system` 各自省略了几个官方消息字段（`speed_horizontal`/`speed_vertical`/`direction`/`height`/`height_reference`/`speed_accuracy`、`area_ceiling`/`area_floor`/`area_count`/`area_radius`），理由和完整清单见第1节——这个箱子固定不动、不编队，这些字段永远是没有意义的默认值。
 - `alarms` = `{"ver": ..., "entries": [{"source_id","fault_code","severity","active","age_s"}, ...]}`，按 `active_count` 截断（`fault_code`/`source_id`/`severity` 业务含义未知，文档已注明，保持原始数字）。
 - `logs` = `{"latest_seq": ..., "entries": [{"sequence","message_id","time":"HH:MM:SS","severity"}, ...]}`，按 `count` 截断；`time` 由 `time_hhmmss` 三元组拼成 `"HH:MM:SS"` 字符串。
@@ -183,7 +184,7 @@ std::array<std::optional<mavlink_battery_status_t>, 2> battery_status;
 - 哨兵值 → `null`：至少覆盖 `gps.eph=UINT16_MAX`、`sys_status.current_battery=-1`、`drone_id.location.altitude_barometric=-1000.0f` 三种情况。
 - 模块状态：14 项都输出正确的 `name`/`status` 字符串，含未收到过状态的模块（值为0，应显示 `UNINITIALIZED`，这是零初始化后的合法语义，不是异常）。
 - `alarms.entries`/`logs.entries` 数组按 `active_count`/`count` 截断，含 0 条、中间值、满 14/9 条三种边界。
-- `uas_id`/`operator_id`/`description` 去除尾部空字符后的字符串正确；`id_or_mac` 十六进制字符串格式正确。
+- `uas_id`/`operator_id`/`description` 去除尾部空字符后的字符串正确；`drone_id` 五个子块都不输出 `target_system`/`target_component`/`id_or_mac`（2026-07-09 精简后新增覆盖）。
 - （`state_store`/`telemetry_decoder` 前置改动的测试，属于 M4 之前但同一批验收）：先后收到 `BATTERY_STATUS(id=0)` 和 `BATTERY_STATUS(id=1)` 后，两条各自独立可读，互不覆盖；只收到 `id=0` 时 `battery2` 这个 JSON key 不存在（未收到，按省略规则处理，不是异常）；`battery2` 一旦有值，字段集合和换算结果跟 `battery` 用同一套规则验证（复用同一份测试用例结构）。
 
 ## 10. 全局约束（供实施计划引用）
@@ -369,9 +370,7 @@ std::array<std::optional<mavlink_battery_status_t>, 2> battery_status;
   },
   "drone_id": {
     "basic_id": {
-      "target_system": 0,       // 目标系统ID(0=广播)
-      "target_component": 0,    // 目标组件ID(0=广播)
-      "id_or_mac": "0000000000000000000000000000000000000000",  // 仅用于接收其他飞行器数据时的MAC/ID；我们自己广播时恒为全零
+      // target_system/target_component/id_or_mac 不输出：2026-07-09精简，见第7节
       "id_type": 1,              // UAS ID格式类型(官方枚举，保持原始数字)
       "ua_type": 2,              // 无人机类型(官方枚举，保持原始数字)
       "uas_id": "DCDWCNS1AB12CD34EF56"  // 无人机唯一识别码，即厂商唯一产品识别码，同identity.vendor_id
@@ -382,9 +381,6 @@ std::array<std::optional<mavlink_battery_status_t>, 2> battery_status;
       "altitude_barometric": 45.2,   // 气压高度(米)
       "altitude_geodetic": 44.8,     // WGS84大地高度(米)
       "timestamp": 1234.5,           // UTC整点后的秒数
-      "target_system": 0,
-      "target_component": 0,
-      "id_or_mac": "0000000000000000000000000000000000000000",
       "status": 2,                    // 飞行器地面/空中状态(官方枚举，保持原始数字)
       "horizontal_accuracy": 4,       // 水平位置精度等级(官方枚举，保持原始数字)
       "vertical_accuracy": 4,         // 垂直位置精度等级(官方枚举，保持原始数字)
@@ -398,9 +394,6 @@ std::array<std::optional<mavlink_battery_status_t>, 2> battery_status;
       "operator_longitude": 116.408,  // 操作员经度(度)
       "operator_altitude_geo": 45.0,  // 操作员大地高度(米)
       "timestamp": 233366400,         // UNIX时间戳(秒，2019-01-01 00:00:00起)
-      "target_system": 0,
-      "target_component": 0,
-      "id_or_mac": "0000000000000000000000000000000000000000",
       "operator_location_type": 0,    // 操作员位置类型(官方枚举，保持原始数字)
       "classification_type": 0,       // 无人机分类类型(官方枚举，保持原始数字)
       "category_eu": 0,               // 欧盟分类下的类别(官方枚举，保持原始数字)
@@ -408,16 +401,10 @@ std::array<std::optional<mavlink_battery_status_t>, 2> battery_status;
       // area_ceiling/area_floor/area_count/area_radius 不输出：编队/多机场景专用字段，这个箱子是单机，见第1节
     },
     "operator_id": {
-      "target_system": 0,
-      "target_component": 0,
-      "id_or_mac": "0000000000000000000000000000000000000000",
       "operator_id_type": 0,           // operator_id字段的格式类型(官方枚举，保持原始数字)
       "operator_id": "CAAB1234567890"  // 操作员执照编号等文本(去除尾部空字符)
     },
     "self_id": {
-      "target_system": 0,
-      "target_component": 0,
-      "id_or_mac": "0000000000000000000000000000000000000000",
       "description_type": 0,               // description字段的格式类型(官方枚举，保持原始数字)
       "description": "CNS-RPI training kit" // 自由文本描述(去除尾部空字符)
     }

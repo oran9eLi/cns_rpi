@@ -356,12 +356,9 @@ TEST_CASE("logs按count截断,time格式化成HH:MM:SS,未收到时不存在") {
   CHECK(json["logs"]["entries"][0]["severity"] == 1);
 }
 
-TEST_CASE("drone_id.basic_id:id_or_mac转十六进制,uas_id去除尾部空字符") {
+TEST_CASE("drone_id.basic_id:uas_id去除尾部空字符") {
   state::TelemetryState state{};
   mavlink_open_drone_id_basic_id_t basic{};
-  basic.target_system = 0;
-  basic.target_component = 0;
-  std::memset(basic.id_or_mac, 0, sizeof(basic.id_or_mac));
   basic.id_type = 1;
   basic.ua_type = 2;
   std::memcpy(basic.uas_id, "DCDWCNS1AB12CD34EF56", 20);
@@ -370,11 +367,27 @@ TEST_CASE("drone_id.basic_id:id_or_mac转十六进制,uas_id去除尾部空字�
   auto json = payload::ToJson(state, "NNUTC");
   const auto& out = json["drone_id"]["basic_id"];
 
-  CHECK(out["id_or_mac"] == "0000000000000000000000000000000000000000");
-  CHECK(out["id_or_mac"].get<std::string>().size() == 40);
   CHECK(out["id_type"] == 1);
   CHECK(out["ua_type"] == 2);
   CHECK(out["uas_id"] == "DCDWCNS1AB12CD34EF56");
+}
+
+TEST_CASE("drone_id五个子块都不输出target_system/target_component/id_or_mac") {
+  state::TelemetryState state{};
+  state.open_drone_id_basic_id = mavlink_open_drone_id_basic_id_t{};
+  state.open_drone_id_location = mavlink_open_drone_id_location_t{};
+  state.open_drone_id_system = mavlink_open_drone_id_system_t{};
+  state.open_drone_id_operator_id = mavlink_open_drone_id_operator_id_t{};
+  state.open_drone_id_self_id = mavlink_open_drone_id_self_id_t{};
+
+  auto json = payload::ToJson(state, "NNUTC");
+  const auto& d = json["drone_id"];
+
+  for (const char* block : {"basic_id", "location", "system", "operator_id", "self_id"}) {
+    CHECK_FALSE(d[block].contains("target_system"));
+    CHECK_FALSE(d[block].contains("target_component"));
+    CHECK_FALSE(d[block].contains("id_or_mac"));
+  }
 }
 
 TEST_CASE("drone_id.location:altitude哨兵值-1000转null,speed/direction/height等字段不输出") {

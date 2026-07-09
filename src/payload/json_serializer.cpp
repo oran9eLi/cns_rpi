@@ -304,16 +304,6 @@ nlohmann::json BuildLogs(const state::MessageLog& log) {
   return {{"latest_seq", log.latest_seq}, {"entries", std::move(entries)}};
 }
 
-std::string ToHexString(const std::uint8_t* data, std::size_t len) {
-  static constexpr char kHexDigits[] = "0123456789abcdef";
-  std::string out(len * 2, '0');
-  for (std::size_t i = 0; i < len; ++i) {
-    out[i * 2] = kHexDigits[(data[i] >> 4) & 0xF];
-    out[i * 2 + 1] = kHexDigits[data[i] & 0xF];
-  }
-  return out;
-}
-
 std::string ToTrimmedString(const char* data, std::size_t max_len) {
   return std::string(data, strnlen(data, max_len));
 }
@@ -324,9 +314,6 @@ void AddDroneIdBasicId(nlohmann::json& drone_id, const state::TelemetryState& st
   }
   const auto& b = *state.open_drone_id_basic_id;
   drone_id["basic_id"] = {
-      {"target_system", b.target_system},
-      {"target_component", b.target_component},
-      {"id_or_mac", ToHexString(b.id_or_mac, sizeof(b.id_or_mac))},
       {"id_type", b.id_type},
       {"ua_type", b.ua_type},
       {"uas_id", ToTrimmedString(reinterpret_cast<const char*>(b.uas_id), sizeof(b.uas_id))},
@@ -348,9 +335,6 @@ void AddDroneIdLocation(nlohmann::json& drone_id, const state::TelemetryState& s
                                   ? nlohmann::json(nullptr)
                                   : nlohmann::json(static_cast<double>(l.altitude_geodetic));
   out["timestamp"] = static_cast<double>(l.timestamp);
-  out["target_system"] = l.target_system;
-  out["target_component"] = l.target_component;
-  out["id_or_mac"] = ToHexString(l.id_or_mac, sizeof(l.id_or_mac));
   out["status"] = l.status;
   out["horizontal_accuracy"] = l.horizontal_accuracy;
   out["vertical_accuracy"] = l.vertical_accuracy;
@@ -371,9 +355,6 @@ void AddDroneIdSystem(nlohmann::json& drone_id, const state::TelemetryState& sta
                                       ? nlohmann::json(nullptr)
                                       : nlohmann::json(static_cast<double>(s.operator_altitude_geo));
   out["timestamp"] = s.timestamp;
-  out["target_system"] = s.target_system;
-  out["target_component"] = s.target_component;
-  out["id_or_mac"] = ToHexString(s.id_or_mac, sizeof(s.id_or_mac));
   out["operator_location_type"] = s.operator_location_type;
   out["classification_type"] = s.classification_type;
   out["category_eu"] = s.category_eu;
@@ -387,9 +368,6 @@ void AddDroneIdOperatorId(nlohmann::json& drone_id, const state::TelemetryState&
   }
   const auto& o = *state.open_drone_id_operator_id;
   drone_id["operator_id"] = {
-      {"target_system", o.target_system},
-      {"target_component", o.target_component},
-      {"id_or_mac", ToHexString(o.id_or_mac, sizeof(o.id_or_mac))},
       {"operator_id_type", o.operator_id_type},
       {"operator_id", ToTrimmedString(o.operator_id, sizeof(o.operator_id))},
   };
@@ -401,9 +379,6 @@ void AddDroneIdSelfId(nlohmann::json& drone_id, const state::TelemetryState& sta
   }
   const auto& s = *state.open_drone_id_self_id;
   drone_id["self_id"] = {
-      {"target_system", s.target_system},
-      {"target_component", s.target_component},
-      {"id_or_mac", ToHexString(s.id_or_mac, sizeof(s.id_or_mac))},
       {"description_type", s.description_type},
       {"description", ToTrimmedString(s.description, sizeof(s.description))},
   };
