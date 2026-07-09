@@ -15,7 +15,10 @@ import glob
 import json
 import re
 import subprocess
+import sys
 import time
+
+import serial
 
 
 AT_BAUDRATE = 115200
@@ -140,5 +143,66 @@ def wait_for_carrier(iface, timeout_seconds=CARRIER_WAIT_SECONDS):
     return False
 
 
+def dial_up(config):
+    """执行一次完整拨号序列。返回True表示成功，False表示失败(具体原因
+    已经打印到stdout，不用异常传递失败原因——这是独立小脚本，退出码
+    足够表达成败，不需要更复杂的错误类型)。
+    """
+    port = find_at_port(config["usb_interface_number"], config["at_port_wait_seconds"])
+    if port is None:
+        print(f"[cellular_dialup] 超时({config['at_port_wait_seconds']}秒)没找到AT口"
+              f"(interface_number={config['usb_interface_number']})")
+        return False
+    print(f"[cellular_dialup] 找到AT口: {port}")
+
+    cid = config["cid"]
+    apn = config["apn"]
+
+    with serial.Serial(port, AT_BAUDRATE, timeout=1) as ser:
+        ok, lines = send_at_command(ser, "AT+CGDCONT?")
+        if not ok:
+            print("[cellular_dialup] AT+CGDCONT? 失败")
+            return False
+        existing_apn = parse_cgdcont_apn(lines, cid)
+        if needs_cgdcont_set(existing_apn, apn):
+            print(f"[cellular_dialup] cid={cid} 当前APN={existing_apn!r}，"
+                  f"跟配置的{apn!r}不一致，发送AT+CGDCONT=设置")
+            ok, _ = send_at_command(ser, f'AT+CGDCONT={cid},"IPV4V6","{apn}"')
+            if not ok:
+                print("[cellular_dialup] AT+CGDCONT= 失败")
+                return False
+
+        ok, _ = send_at_command(ser, f"AT+CGACT=1,{cid}")
+        if not ok:
+            print("[cellular_dialup] AT+CGACT 返回ERROR，用AT+CGACT?复查激活状态")
+            query_ok, query_lines = send_at_command(ser, "AT+CGACT?")
+            if not query_ok or not parse_cgact_active(query_lines, cid):
+                print(f"[cellular_dialup] cid={cid} 确认未激活，AT+CGACT失败")
+                return False
+            print(f"[cellular_dialup] cid={cid} 已经处于激活状态，视为成功")
+
+        ok, _ = send_at_command(ser, f"AT+QNETDEVCTL={cid},1,{NCM_NETCARD_INDEX}")
+        if not ok:
+            print("[cellular_dialup] AT+QNETDEVCTL 失败")
+            return False
+
+    if not wait_for_carrier(NCM_IFACE_NAME):
+        print(f"[cellular_dialup] 等待{NCM_IFACE_NAME}出现LOWER_UP超时"
+              f"({CARRIER_WAIT_SECONDS}秒)")
+        return False
+
+    print(f"[cellular_dialup] 拨号成功，{NCM_IFACE_NAME}已起来，DHCP交给NetworkManager处理")
+    return True
+
+
+def main():
+    if len(sys.argv) != 2:
+        print(f"用法: {sys.argv[0]} <config.json路径>", file=sys.stderr)
+        sys.exit(2)
+    config = load_cellular_config(sys.argv[1])
+    success = dial_up(config)
+    sys.exit(0 if success else 1)
+
+
 if __name__ == "__main__":
-    pass  # main()留给Task 3
+    main()
