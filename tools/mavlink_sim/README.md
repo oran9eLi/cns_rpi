@@ -44,8 +44,11 @@ python3 -m venv ~/.venvs/mavlink-sim
 
 `send_frames.py` 每轮（默认 1Hz）发送：
 
-- 标准遥测：`HEARTBEAT` / `GPS_RAW_INT` / `ATTITUDE` / `SYS_STATUS`
-- 扩展帧（`NAMED_VALUE_INT`）：`MODSTAT0`/`MODSTAT1`/`BAT2STAT`/`MOTOR12`/`MOTOR34`/
+- 标准遥测：`HEARTBEAT` / `GPS_RAW_INT` / `ATTITUDE` / `SYS_STATUS` /
+  `BATTERY_STATUS`(id=0 电池1 + id=1 电池2) / `SCALED_PRESSURE`（2026-07-09 跟
+  M4 官方通道切换同步：电池2 从自定义 `BAT2STAT` 改成官方 `BATTERY_STATUS(id=1)`，
+  气压/温度从自定义字段改成官方 `SCALED_PRESSURE`）
+- 扩展帧（`NAMED_VALUE_INT`）：`MODSTAT0`/`MODSTAT1`/`MOTOR12`/`MOTOR34`/
   `GNSS_SAT`/`HUMIDITY`/`LORASTAT`/`RIDSTAT`（2026-07-07 跟固件 `Formal_Framework`
   PR#1 同步：`ENVHUM`→`HUMIDITY`、单条 `MOTORPWM`→`MOTOR12`/`MOTOR34`，新增
   `LORASTAT`/`RIDSTAT` 两条 RPi 专属遥测）

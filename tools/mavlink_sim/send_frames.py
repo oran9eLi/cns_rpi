@@ -16,6 +16,10 @@ Framework/Inc/px4lite_remote_tunnel.h、Framework/Inc/px4lite_types.h
 2026-07-07 跟固件 Formal_Framework PR#1 同步：`ENVHUM`→`HUMIDITY`、单条
 `MOTORPWM`→`MOTOR12`/`MOTOR34` 双帧，新增 `LORASTAT`/`RIDSTAT`（RPi 专属）
 和 `OPEN_DRONE_ID_*` 身份帧（M3c），字段布局详见 docs/固件对接-数据格式.md。
+
+2026-07-09 跟 M4 官方通道切换同步：气压/温度改发官方 `SCALED_PRESSURE`，
+电池2 不再用自定义 `BAT2STAT`，改发官方 `BATTERY_STATUS(id=1)`（跟电池1同一
+消息、`id` 区分），详见 docs/superpowers/specs/2026-07-07-m4-json-payload-design.md。
 """
 
 import argparse
@@ -129,9 +133,35 @@ def send_modstat(conn, now_ms: int, part: int, module_states: list[int]):
     _named_value_int(conn, now_ms, "MODSTAT0" if part == 0 else "MODSTAT1", packed)
 
 
-def send_bat2stat(conn, now_ms: int, voltage_mv: int, percent: int, low_voltage: bool):
-    packed = (voltage_mv & 0xFFFF) | ((percent & 0xFF) << 16) | ((1 if low_voltage else 0) << 24)
-    _named_value_int(conn, now_ms, "BAT2STAT", packed)
+def send_battery_status(conn, battery_id: int, cell_mv: list[int], current_ca: int,
+                         current_consumed_mah: int, energy_consumed_hj: int, percent: int):
+    """官方 BATTERY_STATUS，用 id 区分电池1(id=0)/电池2(id=1)，字段语义/单位见
+    mavlink_msg_battery_status.h 官方注释：voltages[10]槽位不用填 UINT16_MAX，
+    voltages_ext[4]槽位不用填0（跟voltages不同，这里两块电池都只有普通cell、不
+    用扩展槽位，所以voltages_ext全传0）。"""
+    voltages = list(cell_mv) + [0xFFFF] * (10 - len(cell_mv))
+    conn.mav.battery_status_send(
+        id=battery_id,
+        battery_function=mavutil.mavlink.MAV_BATTERY_FUNCTION_ALL,
+        type=mavutil.mavlink.MAV_BATTERY_TYPE_LIPO,
+        temperature=2500,          # 0.01 degC，演示值 25.00度
+        voltages=voltages,
+        current_battery=current_ca,        # 0.01A
+        current_consumed=current_consumed_mah,  # mAh
+        energy_consumed=energy_consumed_hj,     # hJ (0.01Wh)
+        battery_remaining=percent,
+        voltages_ext=[0, 0, 0, 0],
+    )
+
+
+def send_scaled_pressure(conn, now_ms: int, press_abs_hpa: float, temperature_cdeg: int):
+    """官方 SCALED_PRESSURE，替代此前自定义的 BAROTEMP/BAROPRES。"""
+    conn.mav.scaled_pressure_send(
+        time_boot_ms=now_ms,
+        press_abs=press_abs_hpa,
+        press_diff=0.0,
+        temperature=temperature_cdeg,
+    )
 
 
 def send_motor12(conn, now_ms: int, duty1: int, duty2: int, run_state: bool, speed_level: int):
@@ -317,7 +347,13 @@ def main():
             send_sys_status(conn); time.sleep(msg_gap_s)
             send_modstat(conn, now_ms, 0, module_states); time.sleep(msg_gap_s)
             send_modstat(conn, now_ms, 1, module_states); time.sleep(msg_gap_s)
-            send_bat2stat(conn, now_ms, voltage_mv=11800, percent=75, low_voltage=False); time.sleep(msg_gap_s)
+            send_battery_status(conn, battery_id=0, cell_mv=[3933, 3933, 3934],
+                                 current_ca=1500, current_consumed_mah=500,
+                                 energy_consumed_hj=1000, percent=80); time.sleep(msg_gap_s)
+            send_battery_status(conn, battery_id=1, cell_mv=[3933, 3933, 3934],
+                                 current_ca=1200, current_consumed_mah=400,
+                                 energy_consumed_hj=800, percent=75); time.sleep(msg_gap_s)
+            send_scaled_pressure(conn, now_ms, press_abs_hpa=1013.25, temperature_cdeg=2500); time.sleep(msg_gap_s)
             send_motor12(conn, now_ms, duty1=50, duty2=50, run_state=True, speed_level=60); time.sleep(msg_gap_s)
             send_motor34(conn, now_ms, duty3=48, duty4=52, run_state=True, speed_level=60); time.sleep(msg_gap_s)
             send_gnss_sat(conn, now_ms, gps_visible=8, bds_visible=6, gps_used=6, bds_used=4); time.sleep(msg_gap_s)
@@ -334,7 +370,8 @@ def main():
 
             sent_rounds += 1
             print(f"[{sent_rounds}] 已发送一轮：HEARTBEAT/GPS_RAW_INT/ATTITUDE/SYS_STATUS/"
-                  f"MODSTAT0/MODSTAT1/BAT2STAT/MOTOR12/MOTOR34/GNSS_SAT/HUMIDITY/"
+                  f"MODSTAT0/MODSTAT1/BATTERY_STATUS(id=0)/BATTERY_STATUS(id=1)/"
+                  f"SCALED_PRESSURE/MOTOR12/MOTOR34/GNSS_SAT/HUMIDITY/"
                   f"LORASTAT/RIDSTAT/TUNNEL(告警表+日志心跳)/OPEN_DRONE_ID_*(5种身份帧)")
 
             if args.count and sent_rounds >= args.count:
