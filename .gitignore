@@ -2,6 +2,10 @@
 build/
 cmake-build-*/
 
+# Python 字节码缓存(scripts/cellular_dialup.py 等)
+__pycache__/
+*.pyc
+
 # 本地真实配置（只提交 config/*.example.json）
 config/config.json
 
