@@ -138,8 +138,9 @@ def send_battery_status(conn, battery_id: int, cell_mv: list[int], current_ca: i
     """官方 BATTERY_STATUS，用 id 区分电池1(id=0)/电池2(id=1)，字段语义/单位见
     mavlink_msg_battery_status.h 官方注释：voltages[10]槽位不用填 UINT16_MAX，
     voltages_ext[4]槽位不用填0（跟voltages不同，这里两块电池都只有普通cell、不
-    用扩展槽位，所以voltages_ext全传0）。cell_mv 只传1个值——固件侧只有一路
-    电压采集(整包电压)，没有逐节电芯监测能力，之前这里演示过3/4个假cell值
+    用扩展槽位，所以voltages_ext全传0）。cell_mv 只传1个值——电池1/电池2各自
+    能独立采集(两条BATTERY_STATUS、id=0/id=1分别对应)，但每一块电池内部只有
+    一路整包电压采集，没有逐节电芯监测能力，之前这里演示过3/4个假cell值
     是编的，没有实际依据，2026-07-09订正。"""
     voltages = list(cell_mv) + [0xFFFF] * (10 - len(cell_mv))
     conn.mav.battery_status_send(

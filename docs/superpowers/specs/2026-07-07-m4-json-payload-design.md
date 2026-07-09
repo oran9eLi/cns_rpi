@@ -277,7 +277,7 @@ std::array<std::optional<mavlink_battery_status_t>, 2> battery_status;
       "current_consumed": 1520,                                              // 已消耗电荷(毫安时)
       "energy_consumed": 18500.0,                                            // 已消耗能量(焦耳)
       "temperature": 28.5,                                                   // 电池温度(摄氏度)
-      "voltages": [12.6, null, null, null, null, null, null, null, null, null], // 只有槽位0是真实值(固件只有一路整包电压采集，没有逐节电芯监测)，其余槽位为null
+      "voltages": [12.6, null, null, null, null, null, null, null, null, null], // 只有槽位0是真实值(这块电池自己只有一路整包电压采集，没有逐节电芯监测；电池1/电池2各自独立采集，见battery2)，其余槽位为null
       "current_battery": 3.25,                                               // 电池电流(安培)
       "id": 0,                                                                // 电池编号
       "battery_function": 1,                                                 // 电池用途类型(官方枚举，保持原始数字)
