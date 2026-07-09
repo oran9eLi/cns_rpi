@@ -6,7 +6,7 @@ Before=network.target
 [Service]
 Type=oneshot
 RemainAfterExit=yes
-ExecStart=/usr/bin/python3 /opt/cns_rpi/scripts/cellular_dialup.py /opt/cns_rpi/config/config.json
+ExecStart=/usr/bin/python3 /home/dcdw/cns_rpi/scripts/cellular_dialup.py /home/dcdw/cns_rpi/config/config.json
 Restart=on-failure
 RestartSec=15
 
