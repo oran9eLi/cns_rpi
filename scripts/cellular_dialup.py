@@ -11,8 +11,10 @@ config/config.json 里新增的 "cellular" 节。
 设计依据：docs/superpowers/specs/2026-07-09-cellular-dialup-design.md。
 """
 
+import glob
 import json
 import re
+import subprocess
 import time
 
 
@@ -92,6 +94,50 @@ def send_at_command(ser, command, timeout=AT_COMMAND_TIMEOUT_SECONDS):
             return False, lines
         lines.append(line)
     return False, lines
+
+
+def find_at_port(interface_number, wait_seconds):
+    """轮询/dev/ttyUSB*，用udevadm找ID_USB_INTERFACE_NUM匹配interface_number
+    的设备。每1秒重新扫描一次，最多等wait_seconds秒，找到返回设备路径，
+    超时返回None。设备号会随其它USB设备插拔变化(docs/5G模块拨号验证.md已
+    确认)，不能假设固定的ttyUSB编号，必须靠这个属性识别。
+    """
+    deadline = time.monotonic() + wait_seconds
+    while time.monotonic() < deadline:
+        for dev in sorted(glob.glob("/dev/ttyUSB*")):
+            try:
+                result = subprocess.run(
+                    ["udevadm", "info", "-q", "property", "-n", dev],
+                    capture_output=True, text=True, timeout=5, check=True,
+                )
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                continue
+            target = f"ID_USB_INTERFACE_NUM={interface_number}"
+            if target in result.stdout.splitlines():
+                return dev
+        time.sleep(1)
+    return None
+
+
+def wait_for_carrier(iface, timeout_seconds=CARRIER_WAIT_SECONDS):
+    """轮询`ip link show <iface>`直到看到LOWER_UP，超时返回False。
+    DHCP不用这个脚本管——NetworkManager一见carrier就自动接管
+    (docs/5G模块拨号验证.md已确认)。
+    """
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        try:
+            result = subprocess.run(
+                ["ip", "link", "show", iface],
+                capture_output=True, text=True, timeout=5, check=True,
+            )
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+            time.sleep(1)
+            continue
+        if "LOWER_UP" in result.stdout:
+            return True
+        time.sleep(1)
+    return False
 
 
 if __name__ == "__main__":
