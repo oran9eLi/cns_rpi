@@ -1,0 +1,14 @@
+[Unit]
+Description=cns_rpi 5G模块开机拨号(AT+CGDCONT/CGACT/QNETDEVCTL)
+After=network-pre.target
+Before=network.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/bin/python3 /opt/cns_rpi/scripts/cellular_dialup.py /opt/cns_rpi/config/config.json
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target
