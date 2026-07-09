@@ -158,7 +158,13 @@ def dial_up(config):
     cid = config["cid"]
     apn = config["apn"]
 
-    with serial.Serial(port, AT_BAUDRATE, timeout=1) as ser:
+    try:
+        ser = serial.Serial(port, AT_BAUDRATE, timeout=1)
+    except serial.SerialException as exc:
+        print(f"[cellular_dialup] 打开串口{port}失败: {exc}")
+        return False
+
+    with ser:
         ok, lines = send_at_command(ser, "AT+CGDCONT?")
         if not ok:
             print("[cellular_dialup] AT+CGDCONT? 失败")
@@ -199,7 +205,11 @@ def main():
     if len(sys.argv) != 2:
         print(f"用法: {sys.argv[0]} <config.json路径>", file=sys.stderr)
         sys.exit(2)
-    config = load_cellular_config(sys.argv[1])
+    try:
+        config = load_cellular_config(sys.argv[1])
+    except (OSError, KeyError, ValueError) as exc:
+        print(f"[cellular_dialup] 读取配置失败: {exc}", file=sys.stderr)
+        sys.exit(1)
     success = dial_up(config)
     sys.exit(0 if success else 1)
 
