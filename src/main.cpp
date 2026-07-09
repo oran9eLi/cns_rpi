@@ -8,16 +8,22 @@
  * protocol::DecodeAndStore（标准遥测）和 protocol::DecodeExtensionAndStore
  * （NAMED_VALUE_INT/TUNNEL 扩展帧 + OPEN_DRONE_ID_* 身份帧），
  * 写入 state::StateStore -> 打印解码后的有意义字段做人工验证。
- * 启动时读一次 RPi 本机序列号(V1 过渡期权威键)。不接 MQTT（M5 的事）。
+ * 启动时读一次 RPi 本机序列号(V1 过渡期权威键)。M5 阶段接入 MQTT 发布：
+ * 身份就绪(state_store.vendor_id 有值)后才连接 broker，连上后按 1Hz 固定
+ * 节奏把 payload::ToJson() 的结果发布到 {topic_prefix}/{vendor_id}/telemetry，
+ * retain=true；断线重连交给 libmosquitto 自己处理，不做应用层重试。
  */
 
 #include <chrono>
 #include <cstdlib>
 #include <iostream>
+#include <optional>
 #include <string>
 
 #include "common/mavlink.h"
 #include "config/app_config.hpp"
+#include "mqtt/mqtt_client.hpp"
+#include "mqtt/topic.hpp"
 #include "payload/json_serializer.hpp"
 #include "protocol/extension_decoder.hpp"
 #include "protocol/identity.hpp"
@@ -30,6 +36,7 @@ namespace {
 constexpr std::uint8_t kSystemId = 1;
 constexpr std::uint8_t kComponentId = MAV_COMP_ID_ONBOARD_COMPUTER;
 constexpr auto kHeartbeatInterval = std::chrono::seconds(1);
+constexpr auto kTelemetryPublishInterval = std::chrono::seconds(1);
 
 /// RPi 自己的 HEARTBEAT：它不是飞控，所以 autopilot=MAV_AUTOPILOT_INVALID。
 mavlink_message_t BuildHeartbeat() {
@@ -225,6 +232,9 @@ int main(int argc, char** argv) {
     state_store.UpdateRpiSerial(*serial);
   }
   auto last_heartbeat = std::chrono::steady_clock::now();
+  std::optional<mqtt::MqttClient> mqtt_client;
+  std::string telemetry_topic;
+  auto last_telemetry_publish = std::chrono::steady_clock::now();
   while (true) {
     if (auto msg = link->ReceiveMessage()) {
       state_store.UpdateDcdwLabel(protocol::FormatDcdwLabel(msg->sysid));
@@ -241,6 +251,37 @@ int main(int argc, char** argv) {
       mavlink_message_t heartbeat = BuildHeartbeat();
       link->SendMessage(heartbeat);
       last_heartbeat = now;
+    }
+
+    if (!mqtt_client) {
+      auto snapshot = state_store.Snapshot();
+      if (snapshot.vendor_id) {
+        telemetry_topic = mqtt::BuildTelemetryTopic(app_config->mqtt.topic_prefix, *snapshot.vendor_id);
+        mqtt_client = mqtt::MqttClient::Open({
+            .broker_host = app_config->mqtt.broker_host,
+            .broker_port = app_config->mqtt.broker_port,
+            .client_id = app_config->mqtt.client_id,
+            .username = app_config->mqtt.username,
+            .password = app_config->mqtt.password,
+            .keepalive_seconds = app_config->mqtt.keepalive_seconds,
+        });
+        if (mqtt_client) {
+          std::cout << "MQTT连接中: broker=" << app_config->mqtt.broker_host
+                    << " topic=" << telemetry_topic << std::endl;
+        } else {
+          std::cerr << "MQTT客户端创建失败，下一轮重试" << std::endl;
+        }
+      }
+    }
+
+    if (mqtt_client && mqtt_client->IsConnected() &&
+        now - last_telemetry_publish >= kTelemetryPublishInterval) {
+      std::string json_str =
+          payload::ToJson(state_store.Snapshot(), app_config->identity.school_name).dump();
+      if (!mqtt_client->Publish(telemetry_topic, json_str, app_config->mqtt.qos, /*retain=*/true)) {
+        std::cerr << "MQTT发布失败，下个节拍重试" << std::endl;
+      }
+      last_telemetry_publish = now;
     }
   }
 }

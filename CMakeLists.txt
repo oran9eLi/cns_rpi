@@ -11,6 +11,9 @@ find_package(nlohmann_json 3.2.0 REQUIRED)
 
 enable_testing()
 
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(MOSQUITTO REQUIRED IMPORTED_TARGET libmosquitto)
+
 # cns_rpi_core：uart/、config/ 等和 main() 无关的业务代码单独成库，
 # 这样 tests/ 下的单测能直接链接这些代码，不用把 main() 也一起拖进测试二进制。
 add_library(cns_rpi_core
@@ -22,6 +25,7 @@ add_library(cns_rpi_core
     src/protocol/extension_decoder.cpp
     src/protocol/identity.cpp
     src/payload/json_serializer.cpp
+    src/mqtt/topic.cpp
 )
 target_include_directories(cns_rpi_core PUBLIC src)
 # src/mavlink 是从固件仓库 Third_Party/mavlink/ 原样同步的官方生成头文件（common/standard/minimal），
@@ -29,8 +33,15 @@ target_include_directories(cns_rpi_core PUBLIC src)
 target_include_directories(cns_rpi_core SYSTEM PUBLIC src/mavlink)
 target_link_libraries(cns_rpi_core PUBLIC nlohmann_json::nlohmann_json)
 
+# cns_rpi_mqtt 独立成库，不并入 cns_rpi_core：只有它需要链接真实的
+# libmosquitto，这样 cns_rpi_core 的其他消费者（各 test_* target）
+# 不会被迫在链接时也依赖 libmosquitto。
+add_library(cns_rpi_mqtt src/mqtt/mqtt_client.cpp)
+target_include_directories(cns_rpi_mqtt PUBLIC src)
+target_link_libraries(cns_rpi_mqtt PUBLIC PkgConfig::MOSQUITTO)
+
 add_executable(cns_rpi src/main.cpp)
-target_link_libraries(cns_rpi PRIVATE cns_rpi_core)
+target_link_libraries(cns_rpi PRIVATE cns_rpi_core cns_rpi_mqtt)
 
 add_executable(test_mavlink_link tests/test_mavlink_link.cpp)
 target_link_libraries(test_mavlink_link PRIVATE cns_rpi_core)
@@ -63,3 +74,7 @@ set_tests_properties(identity PROPERTIES WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 add_executable(test_json_serializer tests/test_json_serializer.cpp)
 target_link_libraries(test_json_serializer PRIVATE cns_rpi_core)
 add_test(NAME json_serializer COMMAND test_json_serializer)
+
+add_executable(test_mqtt_topic tests/test_mqtt_topic.cpp)
+target_link_libraries(test_mqtt_topic PRIVATE cns_rpi_core)
+add_test(NAME mqtt_topic COMMAND test_mqtt_topic)
