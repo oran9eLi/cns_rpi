@@ -74,10 +74,10 @@ class MqttClient {
   bool IsConnected() const;
 
  private:
-  MqttClient(mosquitto* handle, std::shared_ptr<std::atomic<bool>> connected);
+  MqttClient(mosquitto* handle, std::unique_ptr<std::atomic<bool>> connected);
 
   mosquitto* handle_;
-  std::shared_ptr<std::atomic<bool>> connected_;
+  std::unique_ptr<std::atomic<bool>> connected_;
 };
 
 }  // namespace mqtt

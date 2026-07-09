@@ -33,7 +33,7 @@ void OnDisconnect(struct mosquitto* /*mosq*/, void* userdata, int /*rc*/) {
 
 }  // namespace
 
-MqttClient::MqttClient(mosquitto* handle, std::shared_ptr<std::atomic<bool>> connected)
+MqttClient::MqttClient(mosquitto* handle, std::unique_ptr<std::atomic<bool>> connected)
     : handle_(handle), connected_(std::move(connected)) {}
 
 MqttClient::MqttClient(MqttClient&& other) noexcept
@@ -65,7 +65,7 @@ std::optional<MqttClient> MqttClient::Open(const ConnectionOptions& options) {
   static std::once_flag lib_init_flag;
   std::call_once(lib_init_flag, [] { mosquitto_lib_init(); });
 
-  auto connected = std::make_shared<std::atomic<bool>>(false);
+  auto connected = std::make_unique<std::atomic<bool>>(false);
   mosquitto* handle =
       mosquitto_new(options.client_id.c_str(), /*clean_session=*/true, connected.get());
   if (!handle) {
@@ -73,13 +73,20 @@ std::optional<MqttClient> MqttClient::Open(const ConnectionOptions& options) {
   }
 
   if (!options.username.empty()) {
-    mosquitto_username_pw_set(handle, options.username.c_str(), options.password.c_str());
+    if (mosquitto_username_pw_set(handle, options.username.c_str(), options.password.c_str()) !=
+        MOSQ_ERR_SUCCESS) {
+      mosquitto_destroy(handle);
+      return std::nullopt;
+    }
   }
 
   mosquitto_connect_callback_set(handle, &OnConnect);
   mosquitto_disconnect_callback_set(handle, &OnDisconnect);
-  mosquitto_reconnect_delay_set(handle, /*reconnect_delay=*/1, /*reconnect_delay_max=*/30,
-                                 /*reconnect_exponential_backoff=*/true);
+  if (mosquitto_reconnect_delay_set(handle, /*reconnect_delay=*/1, /*reconnect_delay_max=*/30,
+                                     /*reconnect_exponential_backoff=*/true) != MOSQ_ERR_SUCCESS) {
+    mosquitto_destroy(handle);
+    return std::nullopt;
+  }
 
   if (mosquitto_connect_async(handle, options.broker_host.c_str(), options.broker_port,
                                options.keepalive_seconds) != MOSQ_ERR_SUCCESS) {
@@ -92,7 +99,7 @@ std::optional<MqttClient> MqttClient::Open(const ConnectionOptions& options) {
     return std::nullopt;
   }
 
-  return MqttClient(handle, connected);
+  return MqttClient(handle, std::move(connected));
 }
 
 bool MqttClient::Publish(const std::string& topic, const std::string& payload, int qos,
