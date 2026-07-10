@@ -42,6 +42,10 @@ add_library(cns_rpi_mqtt src/mqtt/mqtt_client.cpp)
 target_include_directories(cns_rpi_mqtt PUBLIC src)
 target_link_libraries(cns_rpi_mqtt PUBLIC PkgConfig::MOSQUITTO)
 
+add_executable(test_mqtt_client tests/test_mqtt_client.cpp)
+target_link_libraries(test_mqtt_client PRIVATE cns_rpi_mqtt)
+add_test(NAME mqtt_client COMMAND test_mqtt_client)
+
 add_executable(cns_rpi src/main.cpp)
 target_link_libraries(cns_rpi PRIVATE cns_rpi_core cns_rpi_mqtt)
 

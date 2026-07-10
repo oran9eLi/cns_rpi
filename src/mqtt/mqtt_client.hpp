@@ -18,7 +18,7 @@
  * 直接依赖 config::MqttConfig 这个类型，调用方在 main.cpp 里做字段搬运）。
  */
 
-#include <atomic>
+#include <chrono>
 #include <memory>
 #include <optional>
 #include <string>
@@ -26,6 +26,15 @@
 struct mosquitto;
 
 namespace mqtt {
+
+struct ClientState;
+
+struct WillOptions {
+  std::string topic;
+  std::string payload;
+  int qos = 2;
+  bool retain = true;
+};
 
 /// 连接一个 MQTT broker 所需的全部参数，字段跟 config::MqttConfig 一一对应
 /// （去掉了 mqtt_client.hpp 用不到的 topic_prefix/qos——那两个是 main.cpp
@@ -37,6 +46,7 @@ struct ConnectionOptions {
   std::string username;
   std::string password;
   int keepalive_seconds = 0;
+  WillOptions will;
 };
 
 /// libmosquitto 客户端的 RAII 包装：一个实例对应一条到 broker 的连接。
@@ -70,14 +80,18 @@ class MqttClient {
    */
   bool Publish(const std::string& topic, const std::string& payload, int qos, bool retain);
 
+  /// 发布并等待 libmosquitto 的完成回调，超时或发布失败返回 false。
+  bool PublishAndWait(const std::string& topic, const std::string& payload, int qos, bool retain,
+                      std::chrono::milliseconds timeout);
+
   /// 读取当前连接状态（由 on_connect/on_disconnect 回调维护，不主动问库）。
   bool IsConnected() const;
 
  private:
-  MqttClient(mosquitto* handle, std::unique_ptr<std::atomic<bool>> connected);
+  MqttClient(mosquitto* handle, std::unique_ptr<ClientState> state);
 
   mosquitto* handle_;
-  std::unique_ptr<std::atomic<bool>> connected_;
+  std::unique_ptr<ClientState> state_;
 };
 
 }  // namespace mqtt
