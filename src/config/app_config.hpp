@@ -5,9 +5,8 @@
  * @brief 读取 config/config.json，给各模块提供启动配置。
  *
  * @details
- * M2 阶段只有 uart/ 消费 serial 字段；mqtt/logging 字段现在就解析出来放进
- * AppConfig（对应 config.example.json 的完整 schema），但暂时没人用——
- * 等 M5（MQTT）、日志接入这些模块实现时再从这里取，不需要再改这个文件的 schema。
+ * MQTT 配置按 connection/auth/topics 分组，配置加载阶段完成类型、范围和
+ * topic 单段合法性校验，运行循环只消费已经验证的值。
  * 依赖边界：只依赖 nlohmann/json，不包含 uart/、mqtt/ 等其他模块头文件。
  */
 
@@ -22,7 +21,7 @@ enum class ConfigError {
   kFileNotFound,   ///< 文件路径打不开
   kParseError,     ///< 内容不是合法 JSON
   kMissingField,   ///< 缺少必需字段
-  kInvalidValue,   ///< 字段存在但类型不对
+  kInvalidValue,   ///< 字段类型错误或取值超出允许范围
 };
 
 struct SerialConfig {
@@ -30,15 +29,34 @@ struct SerialConfig {
   int baud = 0;        ///< 波特率
 };
 
-struct MqttConfig {
-  std::string broker_host;
-  int broker_port = 0;
-  std::string client_id;
+struct MqttConnectionConfig {
+  std::string host;
+  int port = 0;
+  int keepalive_seconds = 0;
+  /// config.json 的 client_id 是产品前缀，连接时追加 "-{vendor_id}" 保证唯一。
+  std::string client_id_prefix;
+};
+
+struct MqttAuthConfig {
   std::string username;
   std::string password;
-  std::string topic_prefix;
+};
+
+struct MqttTopicConfig {
+  std::string suffix;
   int qos = 0;
-  int keepalive_seconds = 0;
+};
+
+struct MqttTopicsConfig {
+  std::string topic_namespace;
+  MqttTopicConfig registration;
+  MqttTopicConfig telemetry;
+};
+
+struct MqttConfig {
+  MqttConnectionConfig connection;
+  MqttAuthConfig auth;
+  MqttTopicsConfig topics;
 };
 
 struct LoggingConfig {

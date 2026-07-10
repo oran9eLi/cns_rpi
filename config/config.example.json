@@ -4,14 +4,27 @@
     "baud": 115200
   },
   "mqtt": {
-    "broker_host": "192.168.1.100",
-    "broker_port": 1883,
-    "client_id": "cns-rpi",
-    "username": "",
-    "password": "",
-    "topic_prefix": "cns_rpi",
-    "qos": 1,
-    "keepalive_seconds": 60
+    "connection": {
+      "host": "localhost",
+      "port": 1883,
+      "keepalive": 60,
+      "client_id": "cns-rpi"
+    },
+    "auth": {
+      "username": "",
+      "password": ""
+    },
+    "topics": {
+      "namespace": "cns_rpi",
+      "registration": {
+        "suffix": "registration",
+        "qos": 2
+      },
+      "telemetry": {
+        "suffix": "telemetry",
+        "qos": 0
+      }
+    }
   },
   "logging": {
     "level": "info",
