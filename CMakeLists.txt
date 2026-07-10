@@ -26,6 +26,7 @@ add_library(cns_rpi_core
     src/protocol/identity.cpp
     src/payload/json_serializer.cpp
     src/mqtt/topic.cpp
+    src/registration/registration_payload.cpp
 )
 target_include_directories(cns_rpi_core PUBLIC src)
 # src/mavlink 是从固件仓库 Third_Party/mavlink/ 原样同步的官方生成头文件（common/standard/minimal），
@@ -78,3 +79,7 @@ add_test(NAME json_serializer COMMAND test_json_serializer)
 add_executable(test_mqtt_topic tests/test_mqtt_topic.cpp)
 target_link_libraries(test_mqtt_topic PRIVATE cns_rpi_core)
 add_test(NAME mqtt_topic COMMAND test_mqtt_topic)
+
+add_executable(test_registration_payload tests/test_registration_payload.cpp)
+target_link_libraries(test_registration_payload PRIVATE cns_rpi_core)
+add_test(NAME registration_payload COMMAND test_registration_payload)
