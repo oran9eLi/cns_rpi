@@ -18,5 +18,6 @@ struct OnlineRegistration {
 
 std::string BuildOnlinePayload(const OnlineRegistration& input);
 std::string BuildOfflinePayload(const std::string& vendor_id);
+std::string BuildClientId(const std::string& prefix, const std::string& vendor_id);
 
 }  // namespace registration

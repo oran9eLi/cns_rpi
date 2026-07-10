@@ -10,11 +10,12 @@
  * 写入 state::StateStore -> 打印解码后的有意义字段做人工验证。
  * 启动时读一次 RPi 本机序列号(V1 过渡期权威键)。M5 阶段接入 MQTT 发布：
  * 身份就绪(state_store.vendor_id 有值)后才连接 broker，连上后按 1Hz 固定
- * 节奏把 payload::ToJson() 的结果发布到 {topic_prefix}/{vendor_id}/telemetry，
- * retain=true；断线重连交给 libmosquitto 自己处理，不做应用层重试。
+ * 节奏发布遥测；注册扩展在连接/重连和身份元数据变化时发布 retained online，
+ * 异常断线由 Last Will 标记 offline，正常退出主动发布 offline。
  */
 
 #include <chrono>
+#include <csignal>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
@@ -28,6 +29,8 @@
 #include "protocol/extension_decoder.hpp"
 #include "protocol/identity.hpp"
 #include "protocol/telemetry_decoder.hpp"
+#include "registration/registration_payload.hpp"
+#include "registration/registration_state.hpp"
 #include "state/state_store.hpp"
 #include "uart/mavlink_link.hpp"
 
@@ -37,6 +40,10 @@ constexpr std::uint8_t kSystemId = 1;
 constexpr std::uint8_t kComponentId = MAV_COMP_ID_ONBOARD_COMPUTER;
 constexpr auto kHeartbeatInterval = std::chrono::seconds(1);
 constexpr auto kTelemetryPublishInterval = std::chrono::seconds(1);
+
+volatile std::sig_atomic_t g_exit_requested = 0;
+
+void HandleExitSignal(int /*signal*/) { g_exit_requested = 1; }
 
 /// RPi 自己的 HEARTBEAT：它不是飞控，所以 autopilot=MAV_AUTOPILOT_INVALID。
 mavlink_message_t BuildHeartbeat() {
@@ -210,6 +217,9 @@ void LogJsonPayload(const state::TelemetryState& state, const std::string& schoo
 }  // namespace
 
 int main(int argc, char** argv) {
+  std::signal(SIGINT, HandleExitSignal);
+  std::signal(SIGTERM, HandleExitSignal);
+
   const std::string config_path = argc > 1 ? argv[1] : "config/config.json";
 
   auto app_config = config::LoadAppConfig(config_path);
@@ -233,9 +243,12 @@ int main(int argc, char** argv) {
   }
   auto last_heartbeat = std::chrono::steady_clock::now();
   std::optional<mqtt::MqttClient> mqtt_client;
+  registration::RegistrationState registration_state;
+  std::string registration_topic;
+  std::string offline_payload;
   std::string telemetry_topic;
   auto last_telemetry_publish = std::chrono::steady_clock::now();
-  while (true) {
+  while (!g_exit_requested) {
     if (auto msg = link->ReceiveMessage()) {
       state_store.UpdateDcdwLabel(protocol::FormatDcdwLabel(msg->sysid));
       if (protocol::DecodeAndStore(*msg, state_store)) {
@@ -256,20 +269,52 @@ int main(int argc, char** argv) {
     if (!mqtt_client) {
       auto snapshot = state_store.Snapshot();
       if (snapshot.vendor_id) {
-        telemetry_topic = mqtt::BuildTelemetryTopic(app_config->mqtt.topic_prefix, *snapshot.vendor_id);
+        const auto& topics = app_config->mqtt.topics;
+        registration_topic = mqtt::BuildRegistrationTopic(
+            topics.topic_namespace, *snapshot.vendor_id, topics.registration.suffix);
+        telemetry_topic = mqtt::BuildTelemetryTopic(
+            topics.topic_namespace, *snapshot.vendor_id, topics.telemetry.suffix);
+        offline_payload = registration::BuildOfflinePayload(*snapshot.vendor_id);
         mqtt_client = mqtt::MqttClient::Open({
-            .broker_host = app_config->mqtt.broker_host,
-            .broker_port = app_config->mqtt.broker_port,
-            .client_id = app_config->mqtt.client_id,
-            .username = app_config->mqtt.username,
-            .password = app_config->mqtt.password,
-            .keepalive_seconds = app_config->mqtt.keepalive_seconds,
+            .broker_host = app_config->mqtt.connection.host,
+            .broker_port = app_config->mqtt.connection.port,
+            .client_id = registration::BuildClientId(
+                app_config->mqtt.connection.client_id_prefix, *snapshot.vendor_id),
+            .username = app_config->mqtt.auth.username,
+            .password = app_config->mqtt.auth.password,
+            .keepalive_seconds = app_config->mqtt.connection.keepalive_seconds,
+            .will = {
+                .topic = registration_topic,
+                .payload = offline_payload,
+                .qos = topics.registration.qos,
+                .retain = true,
+            },
         });
         if (mqtt_client) {
-          std::cout << "MQTT连接中: broker=" << app_config->mqtt.broker_host
+          std::cout << "MQTT连接中: broker=" << app_config->mqtt.connection.host
                     << " topic=" << telemetry_topic << std::endl;
         } else {
           std::cerr << "MQTT客户端创建失败，下一轮重试" << std::endl;
+        }
+      }
+    }
+
+    if (mqtt_client) {
+      auto snapshot = state_store.Snapshot();
+      if (snapshot.vendor_id) {
+        const auto online_payload = registration::BuildOnlinePayload({
+            .vendor_id = *snapshot.vendor_id,
+            .school_name = app_config->identity.school_name,
+            .dcdw_label = snapshot.dcdw_label,
+        });
+        if (registration_state.ShouldPublish(mqtt_client->IsConnected(), online_payload)) {
+          const auto& registration_config = app_config->mqtt.topics.registration;
+          if (mqtt_client->Publish(registration_topic, online_payload, registration_config.qos,
+                                   /*retain=*/true)) {
+            registration_state.MarkPublished(online_payload);
+          } else {
+            std::cerr << "MQTT注册发布失败，下一轮重试" << std::endl;
+          }
         }
       }
     }
@@ -278,10 +323,20 @@ int main(int argc, char** argv) {
         now - last_telemetry_publish >= kTelemetryPublishInterval) {
       std::string json_str =
           payload::ToJson(state_store.Snapshot(), app_config->identity.school_name).dump();
-      if (!mqtt_client->Publish(telemetry_topic, json_str, app_config->mqtt.qos, /*retain=*/true)) {
+      if (!mqtt_client->Publish(telemetry_topic, json_str,
+                                app_config->mqtt.topics.telemetry.qos, /*retain=*/true)) {
         std::cerr << "MQTT发布失败，下个节拍重试" << std::endl;
       }
       last_telemetry_publish = now;
     }
   }
+
+  if (mqtt_client && mqtt_client->IsConnected() && !registration_topic.empty()) {
+    if (!mqtt_client->PublishAndWait(registration_topic, offline_payload,
+                                     app_config->mqtt.topics.registration.qos,
+                                     /*retain=*/true, std::chrono::seconds(2))) {
+      std::cerr << "MQTT离线状态发布超时" << std::endl;
+    }
+  }
+  return EXIT_SUCCESS;
 }

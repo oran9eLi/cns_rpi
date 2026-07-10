@@ -38,3 +38,7 @@ TEST_CASE("offline注册只携带主键和状态") {
             {"status", "offline"},
         });
 }
+
+TEST_CASE("Client ID由配置前缀和vendor_id组成") {
+  CHECK(registration::BuildClientId("cns-rpi", "ABC123") == "cns-rpi-ABC123");
+}

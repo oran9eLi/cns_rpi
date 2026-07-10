@@ -30,4 +30,8 @@ std::string BuildOfflinePayload(const std::string& vendor_id) {
   }.dump();
 }
 
+std::string BuildClientId(const std::string& prefix, const std::string& vendor_id) {
+  return prefix + "-" + vendor_id;
+}
+
 }  // namespace registration
