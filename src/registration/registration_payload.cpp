@@ -5,6 +5,9 @@
 
 #include "registration/registration_payload.hpp"
 
+#include <algorithm>
+#include <cctype>
+
 #include <nlohmann/json.hpp>
 
 namespace registration {
@@ -32,6 +35,15 @@ std::string BuildOfflinePayload(const std::string& vendor_id) {
 
 std::string BuildClientId(const std::string& prefix, const std::string& vendor_id) {
   return prefix + "-" + vendor_id;
+}
+
+bool IsValidDeviceIdentity(const std::string& prefix, const std::string& vendor_id) {
+  const auto safe = [](const std::string& value) {
+    return !value.empty() && std::ranges::all_of(value, [](unsigned char ch) {
+      return std::isalnum(ch) != 0 || ch == '-' || ch == '_' || ch == '.' || ch == ':';
+    });
+  };
+  return safe(prefix) && safe(vendor_id) && BuildClientId(prefix, vendor_id).size() <= 65535;
 }
 
 }  // namespace registration

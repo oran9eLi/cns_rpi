@@ -224,7 +224,8 @@ int main(int argc, char** argv) {
 
   auto app_config = config::LoadAppConfig(config_path);
   if (!app_config) {
-    std::cerr << "读取配置失败: " << config_path << "\n";
+    std::cerr << "读取配置失败: " << config_path << ": "
+              << config::ConfigErrorMessage(app_config.error()) << "\n";
     return EXIT_FAILURE;
   }
 
@@ -244,6 +245,7 @@ int main(int argc, char** argv) {
   auto last_heartbeat = std::chrono::steady_clock::now();
   std::optional<mqtt::MqttClient> mqtt_client;
   registration::RegistrationState registration_state;
+  std::optional<std::string> active_vendor_id;
   std::string registration_topic;
   std::string offline_payload;
   std::string telemetry_topic;
@@ -266,9 +268,28 @@ int main(int argc, char** argv) {
       last_heartbeat = now;
     }
 
+    auto mqtt_snapshot = state_store.Snapshot();
+    if (mqtt_client && active_vendor_id && mqtt_snapshot.vendor_id &&
+        *mqtt_snapshot.vendor_id != *active_vendor_id) {
+      mqtt_client->PublishAndWait(registration_topic, offline_payload,
+                                  app_config->mqtt.topics.registration.qos,
+                                  /*retain=*/true, std::chrono::seconds(2));
+      mqtt_client.reset();
+      registration_state = registration::RegistrationState{};
+      active_vendor_id.reset();
+      registration_topic.clear();
+      telemetry_topic.clear();
+      offline_payload.clear();
+    }
+
     if (!mqtt_client) {
-      auto snapshot = state_store.Snapshot();
+      auto snapshot = mqtt_snapshot;
       if (snapshot.vendor_id) {
+        if (!registration::IsValidDeviceIdentity(
+                app_config->mqtt.connection.client_id_prefix, *snapshot.vendor_id)) {
+          std::cerr << "vendor_id或MQTT Client ID前缀含非法字符，暂不连接MQTT" << std::endl;
+          continue;
+        }
         const auto& topics = app_config->mqtt.topics;
         registration_topic = mqtt::BuildRegistrationTopic(
             topics.topic_namespace, *snapshot.vendor_id, topics.registration.suffix);
@@ -291,6 +312,7 @@ int main(int argc, char** argv) {
             },
         });
         if (mqtt_client) {
+          active_vendor_id = *snapshot.vendor_id;
           std::cout << "MQTT连接中: broker=" << app_config->mqtt.connection.host
                     << " topic=" << telemetry_topic << std::endl;
         } else {

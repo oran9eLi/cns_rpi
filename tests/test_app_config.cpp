@@ -64,18 +64,21 @@ TEST_CASE("配置文件不存在时返回kFileNotFound") {
   auto result = config::LoadAppConfig("/nonexistent/path/config.json");
   REQUIRE_FALSE(result.has_value());
   CHECK(result.error() == config::ConfigError::kFileNotFound);
+  CHECK(config::ConfigErrorMessage(result.error()) == "配置文件不存在或无法打开");
 }
 
 TEST_CASE("JSON格式损坏时返回kParseError") {
   auto result = config::LoadAppConfig(WriteTempConfig("{ not valid json "));
   REQUIRE_FALSE(result.has_value());
   CHECK(result.error() == config::ConfigError::kParseError);
+  CHECK(config::ConfigErrorMessage(result.error()) == "配置文件不是合法JSON");
 }
 
 TEST_CASE("缺少必需字段时返回kMissingField") {
   auto result = config::LoadAppConfig(WriteTempConfig(R"({"serial": {"device": "/dev/ttyUSB0"}})"));
   REQUIRE_FALSE(result.has_value());
   CHECK(result.error() == config::ConfigError::kMissingField);
+  CHECK(config::ConfigErrorMessage(result.error()) == "配置文件缺少必需字段");
 }
 
 TEST_CASE("字段类型错误时返回kInvalidValue") {
@@ -83,6 +86,7 @@ TEST_CASE("字段类型错误时返回kInvalidValue") {
   auto result = config::LoadAppConfig(WriteTempConfig(invalid));
   REQUIRE_FALSE(result.has_value());
   CHECK(result.error() == config::ConfigError::kInvalidValue);
+  CHECK(config::ConfigErrorMessage(result.error()) == "配置字段类型或取值非法");
 }
 
 TEST_CASE("MQTT数值范围非法时返回kInvalidValue") {

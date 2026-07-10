@@ -42,3 +42,13 @@ TEST_CASE("offline注册只携带主键和状态") {
 TEST_CASE("Client ID由配置前缀和vendor_id组成") {
   CHECK(registration::BuildClientId("cns-rpi", "ABC123") == "cns-rpi-ABC123");
 }
+
+TEST_CASE("设备标识必须能安全用于topic和Client ID") {
+  CHECK(registration::IsValidDeviceIdentity("cns-rpi", "ABC123"));
+  CHECK_FALSE(registration::IsValidDeviceIdentity("cns-rpi", ""));
+  CHECK_FALSE(registration::IsValidDeviceIdentity("cns-rpi", "bad/id"));
+  CHECK_FALSE(registration::IsValidDeviceIdentity("cns-rpi", "bad+id"));
+  CHECK_FALSE(registration::IsValidDeviceIdentity("cns-rpi", "bad#id"));
+  CHECK_FALSE(registration::IsValidDeviceIdentity("cns-rpi", std::string("bad\0id", 6)));
+  CHECK_FALSE(registration::IsValidDeviceIdentity("", "ABC123"));
+}

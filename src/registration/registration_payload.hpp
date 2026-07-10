@@ -19,5 +19,7 @@ struct OnlineRegistration {
 std::string BuildOnlinePayload(const OnlineRegistration& input);
 std::string BuildOfflinePayload(const std::string& vendor_id);
 std::string BuildClientId(const std::string& prefix, const std::string& vendor_id);
+/// 检查前缀和设备标识能否安全用作 MQTT topic 单段与 Client ID。
+bool IsValidDeviceIdentity(const std::string& prefix, const std::string& vendor_id);
 
 }  // namespace registration

@@ -13,6 +13,7 @@
 #include <expected>
 #include <filesystem>
 #include <string>
+#include <string_view>
 
 namespace config {
 
@@ -23,6 +24,9 @@ enum class ConfigError {
   kMissingField,   ///< 缺少必需字段
   kInvalidValue,   ///< 字段类型错误或取值超出允许范围
 };
+
+/// 转成人可读的启动错误原因。
+std::string_view ConfigErrorMessage(ConfigError error);
 
 struct SerialConfig {
   std::string device;  ///< 字符设备路径，例如 "/dev/ttyUSB0"

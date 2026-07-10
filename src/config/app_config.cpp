@@ -21,6 +21,20 @@ bool IsValidQos(int qos) { return qos >= 0 && qos <= 2; }
 
 }  // namespace
 
+std::string_view ConfigErrorMessage(ConfigError error) {
+  switch (error) {
+    case ConfigError::kFileNotFound:
+      return "配置文件不存在或无法打开";
+    case ConfigError::kParseError:
+      return "配置文件不是合法JSON";
+    case ConfigError::kMissingField:
+      return "配置文件缺少必需字段";
+    case ConfigError::kInvalidValue:
+      return "配置字段类型或取值非法";
+  }
+  return "未知配置错误";
+}
+
 std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path& path) {
   std::ifstream in(path);
   if (!in.is_open()) {
