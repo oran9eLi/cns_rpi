@@ -311,6 +311,7 @@ int main(int argc, char** argv) {
                 .qos = topics.registration.qos,
                 .retain = true,
             },
+            .subscriptions = {},
         });
         if (mqtt_client) {
           active_vendor_id = *snapshot.vendor_id;

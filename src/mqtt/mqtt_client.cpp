@@ -20,15 +20,41 @@ struct ClientState {
   std::mutex publish_mutex;
   std::condition_variable publish_cv;
   int completed_mid = -1;
+  std::vector<std::pair<std::string, int>> subscriptions;
+  IncomingMessageQueue incoming_messages;
 };
+
+bool IncomingMessageQueue::Push(IncomingMessage message) {
+  std::lock_guard lock(mutex_);
+  if (messages_.size() >= kCapacity) {
+    return false;
+  }
+  messages_.push_back(std::move(message));
+  return true;
+}
+
+std::optional<IncomingMessage> IncomingMessageQueue::TryPop() {
+  std::lock_guard lock(mutex_);
+  if (messages_.empty()) {
+    return std::nullopt;
+  }
+  IncomingMessage message = std::move(messages_.front());
+  messages_.pop_front();
+  return message;
+}
 
 namespace {
 
-void OnConnect(struct mosquitto* /*mosq*/, void* userdata, int rc) {
+void OnConnect(struct mosquitto* mosq, void* userdata, int rc) {
   auto* state = static_cast<ClientState*>(userdata);
   if (rc == 0) {
     state->connected.store(true);
     std::cout << "MQTT已连接" << std::endl;
+    for (const auto& [topic, qos] : state->subscriptions) {
+      if (mosquitto_subscribe(mosq, /*mid=*/nullptr, topic.c_str(), qos) != MOSQ_ERR_SUCCESS) {
+        std::cerr << "MQTT订阅失败: topic=" << topic << std::endl;
+      }
+    }
   } else {
     std::cerr << "MQTT连接失败: rc=" << rc << std::endl;
   }
@@ -47,6 +73,21 @@ void OnPublish(struct mosquitto* /*mosq*/, void* userdata, int mid) {
     state->completed_mid = mid;
   }
   state->publish_cv.notify_all();
+}
+
+void OnMessage(struct mosquitto* /*mosq*/, void* userdata,
+               const struct mosquitto_message* message) {
+  auto* state = static_cast<ClientState*>(userdata);
+  const auto* payload = static_cast<const char*>(message->payload);
+  IncomingMessage incoming{
+      .topic = message->topic ? message->topic : "",
+      .payload = payload && message->payloadlen > 0
+                     ? std::string(payload, static_cast<std::size_t>(message->payloadlen))
+                     : std::string{},
+  };
+  if (!state->incoming_messages.Push(std::move(incoming))) {
+    std::cerr << "MQTT入站消息队列已满，丢弃新消息" << std::endl;
+  }
 }
 
 }  // namespace
@@ -86,6 +127,7 @@ std::optional<MqttClient> MqttClient::Open(const ConnectionOptions& options) {
   std::call_once(lib_init_flag, [] { mosquitto_lib_init(); });
 
   auto state = std::make_unique<ClientState>();
+  state->subscriptions = options.subscriptions;
   mosquitto* handle = mosquitto_new(options.client_id.c_str(), /*clean_session=*/true, state.get());
   if (!handle) {
     return std::nullopt;
@@ -102,6 +144,7 @@ std::optional<MqttClient> MqttClient::Open(const ConnectionOptions& options) {
   mosquitto_connect_callback_set(handle, &OnConnect);
   mosquitto_disconnect_callback_set(handle, &OnDisconnect);
   mosquitto_publish_callback_set(handle, &OnPublish);
+  mosquitto_message_callback_set(handle, &OnMessage);
   if (mosquitto_will_set(handle, options.will.topic.c_str(),
                          static_cast<int>(options.will.payload.size()),
                          options.will.payload.data(), options.will.qos,
@@ -152,5 +195,9 @@ bool MqttClient::PublishAndWait(const std::string& topic, const std::string& pay
 }
 
 bool MqttClient::IsConnected() const { return state_->connected.load(); }
+
+std::optional<IncomingMessage> MqttClient::TryPopMessage() {
+  return state_->incoming_messages.TryPop();
+}
 
 }  // namespace mqtt

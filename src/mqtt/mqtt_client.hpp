@@ -19,15 +19,39 @@
  */
 
 #include <chrono>
+#include <cstddef>
+#include <deque>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
+#include <utility>
+#include <vector>
 
 struct mosquitto;
 
 namespace mqtt {
 
 struct ClientState;
+
+struct IncomingMessage {
+  std::string topic;
+  std::string payload;
+};
+
+/// MQTT 网络线程与业务主线程之间的固定容量消息队列。
+class IncomingMessageQueue {
+ public:
+  static constexpr std::size_t kCapacity = 64;
+
+  /// 队列满时拒绝新消息，避免网络线程无限占用内存。
+  bool Push(IncomingMessage message);
+  std::optional<IncomingMessage> TryPop();
+
+ private:
+  std::mutex mutex_;
+  std::deque<IncomingMessage> messages_;
+};
 
 struct WillOptions {
   std::string topic;
@@ -49,6 +73,7 @@ struct ConnectionOptions {
   int reconnect_delay_seconds = 1;
   int reconnect_delay_max_seconds = 30;
   WillOptions will;
+  std::vector<std::pair<std::string, int>> subscriptions;
 };
 
 /// libmosquitto 客户端的 RAII 包装：一个实例对应一条到 broker 的连接。
@@ -88,6 +113,9 @@ class MqttClient {
 
   /// 读取当前连接状态（由 on_connect/on_disconnect 回调维护，不主动问库）。
   bool IsConnected() const;
+
+  /// 主线程非阻塞读取一条由 MQTT 回调复制入队的消息。
+  std::optional<IncomingMessage> TryPopMessage();
 
  private:
   MqttClient(mosquitto* handle, std::unique_ptr<ClientState> state);
