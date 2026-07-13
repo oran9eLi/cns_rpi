@@ -31,4 +31,15 @@ TEST_CASE("请求号目标编号和参数补丁必须合法") {
   CHECK_FALSE(config_command::BuildConfigRequestPayload(
                   "req-1", "DCDW-002", config_command::ConfigParameterPatch{})
                   .has_value());
+
+  config_command::ConfigParameterPatch out_of_range;
+  out_of_range.heartbeat_interval_ms = 99;
+  CHECK_FALSE(config_command::BuildConfigRequestPayload(
+                  "req-1", "DCDW-002", out_of_range).has_value());
+
+  config_command::ConfigParameterPatch invalid_reconnect;
+  invalid_reconnect.mqtt_reconnect_delay_s = 31;
+  invalid_reconnect.mqtt_reconnect_delay_max_s = 30;
+  CHECK_FALSE(config_command::BuildConfigRequestPayload(
+                  "req-1", "DCDW-002", invalid_reconnect).has_value());
 }

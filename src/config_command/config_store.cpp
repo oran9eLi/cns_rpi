@@ -68,11 +68,30 @@ std::expected<void, CommandError> PersistDirect(const std::filesystem::path& con
                                                 const nlohmann::json& candidate) {
   auto temporary = WriteCandidate(config_path, candidate);
   if (!temporary) return std::unexpected(temporary.error());
-  if (::rename(temporary->c_str(), config_path.c_str()) != 0) {
+  const std::filesystem::path backup = temporary->string() + ".old";
+  if (::link(config_path.c_str(), backup.c_str()) != 0 || !FsyncDirectory(config_path)) {
     ::unlink(temporary->c_str());
+    ::unlink(backup.c_str());
     return std::unexpected(WriteError());
   }
-  if (!FsyncDirectory(config_path)) return std::unexpected(WriteError());
+  if (::rename(temporary->c_str(), config_path.c_str()) != 0) {
+    ::unlink(temporary->c_str());
+    ::unlink(backup.c_str());
+    return std::unexpected(WriteError());
+  }
+  if (!FsyncDirectory(config_path)) {
+    const bool restored = ::rename(backup.c_str(), config_path.c_str()) == 0 &&
+                          FsyncDirectory(config_path);
+    if (!restored) {
+      // rename 已完成而旧配置无法可靠恢复，此时按“已提交”处理并让上层ACK后重启，
+      // 不能返回普通失败导致磁盘可能已更新、进程却继续按旧内存配置运行。
+      return {};
+    }
+    return std::unexpected(WriteError());
+  }
+  ::unlink(backup.c_str());
+  // 新配置已经完成目录fsync，此后的备份清理失败不改变提交结果。
+  FsyncDirectory(config_path);
   return {};
 }
 
@@ -103,18 +122,20 @@ std::expected<void, CommandError> PersistWithHelper(const WriterOptions& options
     }
   }
   ::unlink(temporary->c_str());
-  if (!WIFEXITED(status) || WEXITSTATUS(status) != 0 || !FsyncDirectory(config_path)) {
-    return std::unexpected(WriteError());
-  }
+  bool target_matches = false;
   try {
     std::ifstream input(config_path);
     nlohmann::json verified;
     input >> verified;
-    if (!input || verified != candidate) return std::unexpected(WriteError());
+    target_matches = input && verified == candidate;
   } catch (const nlohmann::json::exception&) {
-    return std::unexpected(WriteError());
+    target_matches = false;
   }
-  return {};
+  // helper 是持久化提交者；一旦目标已经等于候选配置，就不能再向上层报告普通失败，
+  // 否则会出现磁盘已应用但ACK为rejected且进程不重启的状态分裂。
+  if (target_matches) return {};
+  if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) return std::unexpected(WriteError());
+  return std::unexpected(WriteError("helper返回成功但目标配置未更新"));
 }
 
 }  // namespace

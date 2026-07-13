@@ -52,6 +52,25 @@ bool IsAllowedParameter(std::string_view name) {
 
 }  // namespace
 
+std::expected<void, CommandError> ValidateConfigParameterPatch(
+    const ConfigParameterPatch& parameters) {
+  const auto valid = [](const std::optional<int>& value, int minimum, int maximum) {
+    return !value || (*value >= minimum && *value <= maximum);
+  };
+  if (!valid(parameters.telemetry_publish_interval_ms, 100, 60000) ||
+      !valid(parameters.heartbeat_interval_ms, 100, 60000) ||
+      !valid(parameters.mqtt_reconnect_delay_s, 1, 3600) ||
+      !valid(parameters.mqtt_reconnect_delay_max_s, 1, 3600)) {
+    return std::unexpected(Error("invalid_parameter", "配置参数超出允许范围"));
+  }
+  if (parameters.mqtt_reconnect_delay_s && parameters.mqtt_reconnect_delay_max_s &&
+      *parameters.mqtt_reconnect_delay_s > *parameters.mqtt_reconnect_delay_max_s) {
+    return std::unexpected(
+        Error("invalid_parameter", "mqtt_reconnect_delay_s不能大于最大等待"));
+  }
+  return {};
+}
+
 std::expected<ConfigCommand, CommandError> ParseConfigCommand(std::string_view payload) {
   nlohmann::json root;
   try {
@@ -101,11 +120,8 @@ std::expected<ConfigCommand, CommandError> ParseConfigCommand(std::string_view p
     }
   }
 
-  if (patch.mqtt_reconnect_delay_s && patch.mqtt_reconnect_delay_max_s &&
-      *patch.mqtt_reconnect_delay_s > *patch.mqtt_reconnect_delay_max_s) {
-    return std::unexpected(
-        Error("invalid_parameter", "mqtt_reconnect_delay_s不能大于最大等待"));
-  }
+  auto validation = ValidateConfigParameterPatch(patch);
+  if (!validation) return std::unexpected(validation.error());
   return ConfigCommand{.command_id = command_id, .parameters = patch};
 }
 

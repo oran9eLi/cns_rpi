@@ -7,7 +7,8 @@
  * docs/superpowers/specs/2026-07-09-m5-mqtt-publish-design.md §6）。
  *
  * @details
- * V1 只发布，不订阅——命令下行/ACK 回传是 M6 的事，这里不暴露任何订阅接口。
+ * 配置命令阶段增加订阅与固定容量入站队列；网络回调只复制消息，业务解析、写盘和
+ * 退出决策仍由主线程完成。M6 电机命令下行尚未接入。
  * 断线重连交给 libmosquitto 自己的后台线程（mosquitto_loop_start +
  * mosquitto_reconnect_delay_set），这个类不实现应用层重试逻辑。
  * 用前向声明 struct mosquitto，不在头文件里包含 <mosquitto.h>——这样只

@@ -274,6 +274,7 @@ int main(int argc, char** argv) {
   std::string telemetry_topic;
   std::string config_set_topic;
   std::string config_ack_topic;
+  bool restart_requested = false;
   auto last_telemetry_publish = std::chrono::steady_clock::now();
   while (!g_exit_requested) {
     if (auto msg = link->ReceiveMessage()) {
@@ -410,7 +411,10 @@ int main(int argc, char** argv) {
           if (!acked) {
             std::cerr << "配置命令ACK发布失败或超时" << std::endl;
           }
-          if (result.should_exit) g_exit_requested = 1;
+          if (result.should_exit) {
+            restart_requested = true;
+            break;
+          }
         }
       }
     }
@@ -427,7 +431,8 @@ int main(int argc, char** argv) {
     }
   }
 
-  if (mqtt_client && mqtt_client->IsConnected() && !registration_topic.empty()) {
+  if (!restart_requested && mqtt_client && mqtt_client->IsConnected() &&
+      !registration_topic.empty()) {
     if (!mqtt_client->PublishAndWait(registration_topic, offline_payload,
                                      app_config->mqtt.topics.registration.qos,
                                      /*retain=*/true, std::chrono::seconds(2))) {

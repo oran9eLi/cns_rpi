@@ -53,6 +53,8 @@ std::expected<nlohmann::json, CommandError> BuildConfigRequestPayload(
     return std::unexpected(
         CommandError{.code = "invalid_parameter", .message = "参数补丁不能为空"});
   }
+  auto validation = ValidateConfigParameterPatch(parameters);
+  if (!validation) return std::unexpected(validation.error());
   return nlohmann::json{{"request_id", request_id},
                         {"target", {{"dcdw_label", target_dcdw_label}}},
                         {"parameters", std::move(parameter_json)}};

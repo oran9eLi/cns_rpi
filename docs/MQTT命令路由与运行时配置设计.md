@@ -603,7 +603,7 @@ bool PublishConfigRequest(
 验证日期：2026-07-13。
 
 - 开发机重新配置并完整构建成功，`ctest --test-dir build --output-on-failure` 共 17 项测试全部通过。
-- 开发机临时启动 Mosquitto 2.0.22，并设置 `CNS_TEST_MQTT_BROKER_PORT=18884` 运行真实 broker 集成测试；客户端实际完成连接、订阅、发布、回调入队和 PUBACK，`test_mqtt_client` 共 3 个用例、265 个断言全部通过。
+- 开发机临时启动 Mosquitto 2.0.22，并设置 `CNS_TEST_MQTT_BROKER_PORT=18884` 运行真实 broker 集成测试；客户端实际完成连接、订阅、20 条普通 QoS 1 发布与一条 `PublishAndWait` 交错、回调入队和 PUBACK，`test_mqtt_client` 共 3 个用例、285 个断言全部通过。
 - Raspberry Pi 5 ARM64（`aarch64`、GCC 14.2.0、libmosquitto 2.0.21）从当前功能分支独立配置和完整构建成功，17 项测试全部通过。
 - `direct` 原子替换、写入失败保留原文件、`disabled` 拒绝写入、helper 成功/失败、重复命令不写盘不退出、非法命令 rejected、成功命令 applied 并要求退出，均由自动化测试覆盖。
 - 本机缺少 `socat` 和 `pymavlink`，本轮没有伪造 UART 身份帧运行完整 `cns_rpi` 进程，因此“真实命令 topic → 完整进程持久化 → ACK → 退出”仍需在有 STM32 身份帧或专用 PTY 测试夹具的环境补做。

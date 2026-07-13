@@ -31,6 +31,8 @@ struct CommandError {
   std::string message;
 };
 
+std::expected<void, CommandError> ValidateConfigParameterPatch(
+    const ConfigParameterPatch& parameters);
 std::expected<ConfigCommand, CommandError> ParseConfigCommand(std::string_view payload);
 nlohmann::json BuildRejectedAck(std::string_view command_id, const CommandError& error);
 

@@ -65,11 +65,16 @@ TEST_CASE("连接broker后订阅消息进入主线程队列") {
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   REQUIRE(client->IsConnected());
-  REQUIRE(client->Publish(topic, "payload", 1, false));
+  for (int i = 0; i < 20; ++i) {
+    REQUIRE(client->Publish(topic, "plain-" + std::to_string(i), 1, false));
+  }
+  REQUIRE(client->PublishAndWait(topic, "payload", 1, false,
+                                 std::chrono::seconds(2)));
 
   std::optional<mqtt::IncomingMessage> received;
   while (!received && std::chrono::steady_clock::now() < deadline) {
-    received = client->TryPopMessage();
+    auto candidate = client->TryPopMessage();
+    if (candidate && candidate->payload == "payload") received = std::move(candidate);
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
   }
   REQUIRE(received.has_value());

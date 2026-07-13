@@ -9,6 +9,7 @@
 #include <condition_variable>
 #include <iostream>
 #include <mutex>
+#include <unordered_set>
 #include <utility>
 
 #include <mosquitto.h>
@@ -19,7 +20,8 @@ struct ClientState {
   std::atomic<bool> connected{false};
   std::mutex publish_mutex;
   std::condition_variable publish_cv;
-  int completed_mid = -1;
+  std::unordered_set<int> waiting_mids;
+  std::unordered_set<int> completed_mids;
   std::vector<std::pair<std::string, int>> subscriptions;
   IncomingMessageQueue incoming_messages;
 };
@@ -70,7 +72,7 @@ void OnPublish(struct mosquitto* /*mosq*/, void* userdata, int mid) {
   auto* state = static_cast<ClientState*>(userdata);
   {
     std::lock_guard lock(state->publish_mutex);
-    state->completed_mid = mid;
+    if (state->waiting_mids.contains(mid)) state->completed_mids.insert(mid);
   }
   state->publish_cv.notify_all();
 }
@@ -183,15 +185,18 @@ bool MqttClient::Publish(const std::string& topic, const std::string& payload, i
 bool MqttClient::PublishAndWait(const std::string& topic, const std::string& payload, int qos,
                                 bool retain, std::chrono::milliseconds timeout) {
   std::unique_lock lock(state_->publish_mutex);
-  state_->completed_mid = -1;
   int mid = -1;
   const int rc = mosquitto_publish(handle_, &mid, topic.c_str(), static_cast<int>(payload.size()),
                                    payload.data(), qos, retain);
   if (rc != MOSQ_ERR_SUCCESS) {
     return false;
   }
-  return state_->publish_cv.wait_for(lock, timeout,
-                                     [this, mid] { return state_->completed_mid == mid; });
+  state_->waiting_mids.insert(mid);
+  const bool completed = state_->publish_cv.wait_for(
+      lock, timeout, [this, mid] { return state_->completed_mids.contains(mid); });
+  state_->waiting_mids.erase(mid);
+  state_->completed_mids.erase(mid);
+  return completed;
 }
 
 bool MqttClient::IsConnected() const { return state_->connected.load(); }
