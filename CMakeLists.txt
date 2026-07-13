@@ -46,6 +46,10 @@ add_library(cns_rpi_mqtt src/mqtt/mqtt_client.cpp)
 target_include_directories(cns_rpi_mqtt PUBLIC src)
 target_link_libraries(cns_rpi_mqtt PUBLIC PkgConfig::MOSQUITTO)
 
+add_library(cns_rpi_config_request src/config_command/config_request.cpp)
+target_include_directories(cns_rpi_config_request PUBLIC src)
+target_link_libraries(cns_rpi_config_request PUBLIC cns_rpi_core cns_rpi_mqtt)
+
 add_executable(test_mqtt_client tests/test_mqtt_client.cpp)
 target_link_libraries(test_mqtt_client PRIVATE cns_rpi_mqtt)
 add_test(NAME mqtt_client COMMAND test_mqtt_client)
@@ -112,3 +116,7 @@ add_test(NAME config_store COMMAND test_config_store)
 add_executable(test_command_processor tests/test_command_processor.cpp)
 target_link_libraries(test_command_processor PRIVATE cns_rpi_core)
 add_test(NAME command_processor COMMAND test_command_processor)
+
+add_executable(test_config_request tests/test_config_request.cpp)
+target_link_libraries(test_config_request PRIVATE cns_rpi_config_request)
+add_test(NAME config_request COMMAND test_config_request)
