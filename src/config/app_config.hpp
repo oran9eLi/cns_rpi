@@ -11,9 +11,11 @@
  */
 
 #include <expected>
+#include <chrono>
 #include <filesystem>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace config {
 
@@ -39,6 +41,10 @@ struct MqttConnectionConfig {
   int keepalive_seconds = 0;
   /// config.json 的 client_id 是产品前缀，连接时追加 "-{vendor_id}" 保证唯一。
   std::string client_id_prefix;
+  struct ReconnectConfig {
+    int delay_seconds = 0;
+    int delay_max_seconds = 0;
+  } reconnect;
 };
 
 struct MqttAuthConfig {
@@ -72,11 +78,18 @@ struct IdentityConfig {
   std::string school_name;
 };
 
+struct RuntimeConfig {
+  std::chrono::milliseconds telemetry_publish_interval{0};
+  std::chrono::milliseconds heartbeat_interval{0};
+  std::vector<std::string> applied_command_ids;
+};
+
 struct AppConfig {
   SerialConfig serial;
   MqttConfig mqtt;
   LoggingConfig logging;
   IdentityConfig identity;
+  RuntimeConfig runtime;
 };
 
 /**

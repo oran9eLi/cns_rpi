@@ -6,6 +6,7 @@
 #include "config/app_config.hpp"
 
 #include <fstream>
+#include <unordered_set>
 
 #include <nlohmann/json.hpp>
 
@@ -18,6 +19,10 @@ bool IsValidTopicSegment(const std::string& value) {
 }
 
 bool IsValidQos(int qos) { return qos >= 0 && qos <= 2; }
+
+bool IsValidCommandId(const std::string& command_id) {
+  return !command_id.empty() && command_id.size() <= 128;
+}
 
 }  // namespace
 
@@ -60,6 +65,9 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
     cfg.mqtt.connection.port = connection.at("port").get<int>();
     cfg.mqtt.connection.keepalive_seconds = connection.at("keepalive").get<int>();
     cfg.mqtt.connection.client_id_prefix = connection.at("client_id").get<std::string>();
+    const auto& reconnect = connection.at("reconnect");
+    cfg.mqtt.connection.reconnect.delay_seconds = reconnect.at("delay_s").get<int>();
+    cfg.mqtt.connection.reconnect.delay_max_seconds = reconnect.at("delay_max_s").get<int>();
 
     const auto& auth = mqtt.at("auth");
     cfg.mqtt.auth.username = auth.at("username").get<std::string>();
@@ -80,6 +88,14 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
 
     const auto& identity = root.at("identity");
     cfg.identity.school_name = identity.at("school_name").get<std::string>();
+
+    const auto& runtime = root.at("runtime");
+    cfg.runtime.telemetry_publish_interval = std::chrono::milliseconds(
+        runtime.at("telemetry_publish_interval_ms").get<int>());
+    cfg.runtime.heartbeat_interval =
+        std::chrono::milliseconds(runtime.at("heartbeat_interval_ms").get<int>());
+    cfg.runtime.applied_command_ids =
+        runtime.at("applied_command_ids").get<std::vector<std::string>>();
   } catch (const nlohmann::json::out_of_range&) {
     return std::unexpected(ConfigError::kMissingField);
   } catch (const nlohmann::json::type_error&) {
@@ -88,13 +104,28 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
 
   const auto& connection = cfg.mqtt.connection;
   const auto& topics = cfg.mqtt.topics;
+  const auto telemetry_ms = cfg.runtime.telemetry_publish_interval.count();
+  const auto heartbeat_ms = cfg.runtime.heartbeat_interval.count();
   if (connection.host.empty() || connection.client_id_prefix.empty() || connection.port < 1 ||
       connection.port > 65535 || connection.keepalive_seconds <= 0 ||
+      connection.reconnect.delay_seconds < 1 || connection.reconnect.delay_seconds > 3600 ||
+      connection.reconnect.delay_max_seconds < 1 ||
+      connection.reconnect.delay_max_seconds > 3600 ||
+      connection.reconnect.delay_seconds > connection.reconnect.delay_max_seconds ||
+      telemetry_ms < 100 || telemetry_ms > 60000 || heartbeat_ms < 100 ||
+      heartbeat_ms > 60000 || cfg.runtime.applied_command_ids.size() > 32 ||
       !IsValidTopicSegment(topics.topic_namespace) ||
       !IsValidTopicSegment(topics.registration.suffix) ||
       !IsValidTopicSegment(topics.telemetry.suffix) || !IsValidQos(topics.registration.qos) ||
       !IsValidQos(topics.telemetry.qos)) {
     return std::unexpected(ConfigError::kInvalidValue);
+  }
+
+  std::unordered_set<std::string> command_ids;
+  for (const auto& command_id : cfg.runtime.applied_command_ids) {
+    if (!IsValidCommandId(command_id) || !command_ids.insert(command_id).second) {
+      return std::unexpected(ConfigError::kInvalidValue);
+    }
   }
 
   return cfg;

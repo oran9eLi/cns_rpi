@@ -1,6 +1,7 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <string>
@@ -21,7 +22,8 @@ std::string ValidConfig() {
     "serial": {"device": "/dev/ttyUSB0", "baud": 115200},
     "mqtt": {
       "connection": {"host": "localhost", "port": 1883, "keepalive": 60,
-                     "client_id": "cns-rpi"},
+                     "client_id": "cns-rpi",
+                     "reconnect": {"delay_s": 1, "delay_max_s": 30}},
       "auth": {"username": "user", "password": "pass"},
       "topics": {
         "namespace": "cns_rpi",
@@ -30,7 +32,12 @@ std::string ValidConfig() {
       }
     },
     "logging": {"level": "info", "file": ""},
-    "identity": {"school_name": "NNUTC"}
+    "identity": {"school_name": "NNUTC"},
+    "runtime": {
+      "telemetry_publish_interval_ms": 1000,
+      "heartbeat_interval_ms": 1000,
+      "applied_command_ids": []
+    }
   })";
 }
 
@@ -58,6 +65,48 @@ TEST_CASE("完整合法嵌套配置能正确解析") {
   CHECK(result->mqtt.topics.registration.qos == 2);
   CHECK(result->mqtt.topics.telemetry.suffix == "telemetry");
   CHECK(result->mqtt.topics.telemetry.qos == 0);
+  CHECK(result->runtime.telemetry_publish_interval == std::chrono::milliseconds(1000));
+  CHECK(result->runtime.heartbeat_interval == std::chrono::milliseconds(1000));
+  CHECK(result->runtime.applied_command_ids.empty());
+  CHECK(result->mqtt.connection.reconnect.delay_seconds == 1);
+  CHECK(result->mqtt.connection.reconnect.delay_max_seconds == 30);
+}
+
+TEST_CASE("运行参数范围或重连组合非法时返回kInvalidValue") {
+  SUBCASE("遥测间隔低于100毫秒") {
+    auto invalid = ReplaceOnce(ValidConfig(), "\"telemetry_publish_interval_ms\": 1000",
+                               "\"telemetry_publish_interval_ms\": 99");
+    auto result = config::LoadAppConfig(WriteTempConfig(invalid));
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == config::ConfigError::kInvalidValue);
+  }
+  SUBCASE("心跳间隔高于60000毫秒") {
+    auto invalid = ReplaceOnce(ValidConfig(), "\"heartbeat_interval_ms\": 1000",
+                               "\"heartbeat_interval_ms\": 60001");
+    auto result = config::LoadAppConfig(WriteTempConfig(invalid));
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == config::ConfigError::kInvalidValue);
+  }
+  SUBCASE("重连初始等待大于最大等待") {
+    auto invalid = ReplaceOnce(ValidConfig(), "\"delay_s\": 1, \"delay_max_s\": 30",
+                               "\"delay_s\": 31, \"delay_max_s\": 30");
+    auto result = config::LoadAppConfig(WriteTempConfig(invalid));
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == config::ConfigError::kInvalidValue);
+  }
+  SUBCASE("幂等命令号超过32条") {
+    std::string ids = "[";
+    for (int i = 0; i < 33; ++i) {
+      if (i != 0) ids += ",";
+      ids += "\"cmd-" + std::to_string(i) + "\"";
+    }
+    ids += "]";
+    auto invalid = ReplaceOnce(ValidConfig(), "\"applied_command_ids\": []",
+                               "\"applied_command_ids\": " + ids);
+    auto result = config::LoadAppConfig(WriteTempConfig(invalid));
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == config::ConfigError::kInvalidValue);
+  }
 }
 
 TEST_CASE("配置文件不存在时返回kFileNotFound") {

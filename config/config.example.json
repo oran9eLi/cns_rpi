@@ -8,7 +8,11 @@
       "host": "localhost",
       "port": 1883,
       "keepalive": 60,
-      "client_id": "cns-rpi"
+      "client_id": "cns-rpi",
+      "reconnect": {
+        "delay_s": 1,
+        "delay_max_s": 30
+      }
     },
     "auth": {
       "username": "",
@@ -32,6 +36,11 @@
   },
   "identity": {
     "school_name": "SEU"
+  },
+  "runtime": {
+    "telemetry_publish_interval_ms": 1000,
+    "heartbeat_interval_ms": 1000,
+    "applied_command_ids": []
   },
   "cellular": {
     "apn": "cmnet",

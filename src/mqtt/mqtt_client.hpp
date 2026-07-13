@@ -46,6 +46,8 @@ struct ConnectionOptions {
   std::string username;
   std::string password;
   int keepalive_seconds = 0;
+  int reconnect_delay_seconds = 1;
+  int reconnect_delay_max_seconds = 30;
   WillOptions will;
 };
 

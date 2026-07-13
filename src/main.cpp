@@ -38,8 +38,6 @@ namespace {
 
 constexpr std::uint8_t kSystemId = 1;
 constexpr std::uint8_t kComponentId = MAV_COMP_ID_ONBOARD_COMPUTER;
-constexpr auto kHeartbeatInterval = std::chrono::seconds(1);
-constexpr auto kTelemetryPublishInterval = std::chrono::seconds(1);
 
 volatile std::sig_atomic_t g_exit_requested = 0;
 
@@ -262,7 +260,7 @@ int main(int argc, char** argv) {
     }
 
     auto now = std::chrono::steady_clock::now();
-    if (now - last_heartbeat >= kHeartbeatInterval) {
+    if (now - last_heartbeat >= app_config->runtime.heartbeat_interval) {
       mavlink_message_t heartbeat = BuildHeartbeat();
       link->SendMessage(heartbeat);
       last_heartbeat = now;
@@ -304,6 +302,9 @@ int main(int argc, char** argv) {
             .username = app_config->mqtt.auth.username,
             .password = app_config->mqtt.auth.password,
             .keepalive_seconds = app_config->mqtt.connection.keepalive_seconds,
+            .reconnect_delay_seconds = app_config->mqtt.connection.reconnect.delay_seconds,
+            .reconnect_delay_max_seconds =
+                app_config->mqtt.connection.reconnect.delay_max_seconds,
             .will = {
                 .topic = registration_topic,
                 .payload = offline_payload,
@@ -342,7 +343,7 @@ int main(int argc, char** argv) {
     }
 
     if (mqtt_client && mqtt_client->IsConnected() &&
-        now - last_telemetry_publish >= kTelemetryPublishInterval) {
+        now - last_telemetry_publish >= app_config->runtime.telemetry_publish_interval) {
       std::string json_str =
           payload::ToJson(state_store.Snapshot(), app_config->identity.school_name).dump();
       if (!mqtt_client->Publish(telemetry_topic, json_str,

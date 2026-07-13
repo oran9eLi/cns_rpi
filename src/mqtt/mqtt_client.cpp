@@ -109,7 +109,8 @@ std::optional<MqttClient> MqttClient::Open(const ConnectionOptions& options) {
     mosquitto_destroy(handle);
     return std::nullopt;
   }
-  if (mosquitto_reconnect_delay_set(handle, /*reconnect_delay=*/1, /*reconnect_delay_max=*/30,
+  if (mosquitto_reconnect_delay_set(handle, options.reconnect_delay_seconds,
+                                     options.reconnect_delay_max_seconds,
                                      /*reconnect_exponential_backoff=*/true) != MOSQ_ERR_SUCCESS) {
     mosquitto_destroy(handle);
     return std::nullopt;
