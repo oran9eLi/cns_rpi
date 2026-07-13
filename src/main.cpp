@@ -26,6 +26,9 @@
 #include "common/mavlink.h"
 #include "config/app_config.hpp"
 #include "config_command/config_store.hpp"
+#include "config_command/command_parser.hpp"
+#include "config_command/command_processor.hpp"
+#include "config_command/config_updater.hpp"
 #include "mqtt/mqtt_client.hpp"
 #include "mqtt/topic.hpp"
 #include "payload/json_serializer.hpp"
@@ -269,6 +272,8 @@ int main(int argc, char** argv) {
   std::string registration_topic;
   std::string offline_payload;
   std::string telemetry_topic;
+  std::string config_set_topic;
+  std::string config_ack_topic;
   auto last_telemetry_publish = std::chrono::steady_clock::now();
   while (!g_exit_requested) {
     if (auto msg = link->ReceiveMessage()) {
@@ -299,6 +304,8 @@ int main(int argc, char** argv) {
       active_vendor_id.reset();
       registration_topic.clear();
       telemetry_topic.clear();
+      config_set_topic.clear();
+      config_ack_topic.clear();
       offline_payload.clear();
     }
 
@@ -315,6 +322,10 @@ int main(int argc, char** argv) {
             topics.topic_namespace, *snapshot.vendor_id, topics.registration.suffix);
         telemetry_topic = mqtt::BuildTelemetryTopic(
             topics.topic_namespace, *snapshot.vendor_id, topics.telemetry.suffix);
+        config_set_topic = mqtt::BuildConfigSetTopic(
+            topics.topic_namespace, *snapshot.vendor_id, topics.config_set.suffix);
+        config_ack_topic = mqtt::BuildConfigAckTopic(
+            topics.topic_namespace, *snapshot.vendor_id, topics.config_ack.suffix);
         offline_payload = registration::BuildOfflinePayload(*snapshot.vendor_id);
         mqtt_client = mqtt::MqttClient::Open({
             .broker_host = app_config->mqtt.connection.host,
@@ -333,7 +344,7 @@ int main(int argc, char** argv) {
                 .qos = topics.registration.qos,
                 .retain = true,
             },
-            .subscriptions = {},
+            .subscriptions = {{config_set_topic, topics.config_set.qos}},
         });
         if (mqtt_client) {
           active_vendor_id = *snapshot.vendor_id;
@@ -361,6 +372,45 @@ int main(int argc, char** argv) {
           } else {
             std::cerr << "MQTT注册发布失败，下一轮重试" << std::endl;
           }
+        }
+      }
+    }
+
+    if (mqtt_client) {
+      if (auto message = mqtt_client->TryPopMessage()) {
+        if (message->topic != config_set_topic) {
+          std::cerr << "忽略非本设备配置命令topic: " << message->topic << std::endl;
+        } else {
+          config_command::CommandProcessResult result;
+          auto parsed = config_command::ParseConfigCommand(message->payload);
+          if (!parsed) {
+            result = config_command::ProcessConfigCommand(
+                message->payload, nlohmann::json::object(),
+                [](const nlohmann::json&) ->
+                    std::expected<void, config_command::CommandError> {
+                  return std::unexpected(config_command::CommandError{
+                      .code = "config_write_failed", .message = "不可达的持久化分支"});
+                });
+          } else {
+            auto current = config_command::LoadConfigJson(config_path);
+            if (!current) {
+              result.ack = config_command::BuildRejectedAck(parsed->command_id, current.error());
+            } else {
+              result = config_command::ProcessConfigCommand(
+                  message->payload, *current,
+                  [&](const nlohmann::json& candidate) {
+                    return config_command::PersistConfig(*writer_options, config_path, candidate);
+                  });
+            }
+          }
+
+          const bool acked = mqtt_client->PublishAndWait(
+              config_ack_topic, result.ack.dump(), app_config->mqtt.topics.config_ack.qos,
+              /*retain=*/false, std::chrono::seconds(2));
+          if (!acked) {
+            std::cerr << "配置命令ACK发布失败或超时" << std::endl;
+          }
+          if (result.should_exit) g_exit_requested = 1;
         }
       }
     }

@@ -120,3 +120,7 @@ add_test(NAME command_processor COMMAND test_command_processor)
 add_executable(test_config_request tests/test_config_request.cpp)
 target_link_libraries(test_config_request PRIVATE cns_rpi_config_request)
 add_test(NAME config_request COMMAND test_config_request)
+
+add_executable(test_cns_rpi_service tests/test_cns_rpi_service.cpp)
+target_compile_definitions(test_cns_rpi_service PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+add_test(NAME cns_rpi_service COMMAND test_cns_rpi_service)

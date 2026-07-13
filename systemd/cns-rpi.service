@@ -1,0 +1,15 @@
+[Unit]
+Description=CNS RPi 数据节点
+After=network-online.target cellular-dialup.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=dcdw
+WorkingDirectory=/home/dcdw/cns_rpi
+ExecStart=/home/dcdw/cns_rpi/build/cns_rpi /home/dcdw/cns_rpi/config/config.json --config-writer=helper --config-helper=/usr/local/libexec/cns-rpi-apply-config
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target
