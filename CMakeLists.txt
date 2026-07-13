@@ -28,6 +28,7 @@ add_library(cns_rpi_core
     src/mqtt/topic.cpp
     src/registration/registration_payload.cpp
     src/registration/registration_state.cpp
+    src/config_command/command_parser.cpp
 )
 target_include_directories(cns_rpi_core PUBLIC src)
 # src/mavlink 是从固件仓库 Third_Party/mavlink/ 原样同步的官方生成头文件（common/standard/minimal），
@@ -92,3 +93,7 @@ add_test(NAME registration_payload COMMAND test_registration_payload)
 add_executable(test_registration_state tests/test_registration_state.cpp)
 target_link_libraries(test_registration_state PRIVATE cns_rpi_core)
 add_test(NAME registration_state COMMAND test_registration_state)
+
+add_executable(test_command_parser tests/test_command_parser.cpp)
+target_link_libraries(test_command_parser PRIVATE cns_rpi_core)
+add_test(NAME command_parser COMMAND test_command_parser)
