@@ -111,6 +111,10 @@ add_test(NAME config_updater COMMAND test_config_updater)
 
 add_executable(test_config_store tests/test_config_store.cpp)
 target_link_libraries(test_config_store PRIVATE cns_rpi_core)
+add_executable(config_store_helper tests/config_store_helper.cpp)
+target_compile_definitions(test_config_store PRIVATE
+    CONFIG_STORE_HELPER_PATH="$<TARGET_FILE:config_store_helper>")
+add_dependencies(test_config_store config_store_helper)
 add_test(NAME config_store COMMAND test_config_store)
 
 add_executable(test_command_processor tests/test_command_processor.cpp)

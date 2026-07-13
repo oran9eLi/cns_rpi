@@ -107,15 +107,23 @@ std::expected<void, CommandError> PersistDirect(const std::filesystem::path& con
 std::expected<void, CommandError> PersistWithHelper(const WriterOptions& options,
                                                     const std::filesystem::path& config_path,
                                                     const nlohmann::json& candidate) {
+  nlohmann::json original;
+  try {
+    std::ifstream input(config_path);
+    input >> original;
+    if (!input) return std::unexpected(WriteError("无法保存helper执行前的配置快照"));
+  } catch (const nlohmann::json::exception&) {
+    return std::unexpected(WriteError("helper执行前的配置不是合法JSON"));
+  }
   auto temporary = WriteCandidate(config_path, candidate);
   if (!temporary) return std::unexpected(temporary.error());
 
   const std::string helper = options.helper_path.string();
   const std::string source = temporary->string();
-  const std::string target = config_path.string();
+  const std::string target_path_string = config_path.string();
   const pid_t child = ::fork();
   if (child == 0) {
-    ::execl(helper.c_str(), helper.c_str(), source.c_str(), target.c_str(),
+    ::execl(helper.c_str(), helper.c_str(), source.c_str(), target_path_string.c_str(),
             static_cast<char*>(nullptr));
     _exit(127);
   }
@@ -131,24 +139,29 @@ std::expected<void, CommandError> PersistWithHelper(const WriterOptions& options
     }
   }
   ::unlink(temporary->c_str());
-  bool target_matches = false;
+  std::optional<nlohmann::json> target_json;
   try {
     std::ifstream input(config_path);
     nlohmann::json verified;
     input >> verified;
-    target_matches = input && verified == candidate;
+    if (input) target_json = std::move(verified);
   } catch (const nlohmann::json::exception&) {
-    target_matches = false;
+    target_json.reset();
   }
-  if (target_matches) {
+  if (target_json && *target_json == candidate) {
     if (!FsyncFile(config_path) || !FsyncDirectory(config_path)) {
       return std::unexpected(UncertainError());
     }
     // 即使helper错误地返回非零，目标内容和持久化边界均已确认，不能再报告普通失败。
     return {};
   }
-  if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) return std::unexpected(WriteError());
-  return std::unexpected(WriteError("helper返回成功但目标配置未更新"));
+  if (target_json && *target_json == original) {
+    if (!FsyncFile(config_path) || !FsyncDirectory(config_path)) {
+      return std::unexpected(UncertainError());
+    }
+    return std::unexpected(WriteError());
+  }
+  return std::unexpected(UncertainError());
 }
 
 }  // namespace

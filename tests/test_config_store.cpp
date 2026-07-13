@@ -96,3 +96,28 @@ TEST_CASE("helper退出状态决定写入结果") {
   input >> actual;
   CHECK(actual == nlohmann::json{{"new", true}});
 }
+
+TEST_CASE("helper改坏或写错目标配置时返回不确定状态") {
+  TempDirectory directory;
+  const auto path = directory.path() / "config.json";
+  WriteText(path, R"({"old":true})");
+
+  const auto corrupt_helper = directory.path() / "config-store-corrupt";
+  std::filesystem::create_symlink(CONFIG_STORE_HELPER_PATH, corrupt_helper);
+  auto corrupt = config_command::PersistConfig(
+      {.mode = config_command::ConfigWriterMode::kHelper,
+       .helper_path = corrupt_helper},
+      path, nlohmann::json{{"new", true}});
+  REQUIRE_FALSE(corrupt.has_value());
+  CHECK(corrupt.error().code == "config_write_uncertain");
+
+  WriteText(path, R"({"old":true})");
+  const auto wrong_helper = directory.path() / "config-store-wrong";
+  std::filesystem::create_symlink(CONFIG_STORE_HELPER_PATH, wrong_helper);
+  auto wrong = config_command::PersistConfig(
+      {.mode = config_command::ConfigWriterMode::kHelper,
+       .helper_path = wrong_helper},
+      path, nlohmann::json{{"new", true}});
+  REQUIRE_FALSE(wrong.has_value());
+  CHECK(wrong.error().code == "config_write_uncertain");
+}
