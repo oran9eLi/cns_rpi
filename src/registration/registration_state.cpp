@@ -12,9 +12,7 @@ bool RegistrationState::ShouldPublish(bool connected, const std::string& current
     connection_requires_publish_ = true;
   }
   was_connected_ = connected;
-  return connected &&
-         (connection_requires_publish_ || !last_published_payload_ ||
-          *last_published_payload_ != current_payload);
+  return connected && (connection_requires_publish_ || !last_published_payload_ || *last_published_payload_ != current_payload);
 }
 
 void RegistrationState::MarkPublished(const std::string& payload) {
