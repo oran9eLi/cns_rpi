@@ -20,9 +20,12 @@
 #include <iostream>
 #include <optional>
 #include <string>
+#include <string_view>
+#include <vector>
 
 #include "common/mavlink.h"
 #include "config/app_config.hpp"
+#include "config_command/config_store.hpp"
 #include "mqtt/mqtt_client.hpp"
 #include "mqtt/topic.hpp"
 #include "payload/json_serializer.hpp"
@@ -218,7 +221,26 @@ int main(int argc, char** argv) {
   std::signal(SIGINT, HandleExitSignal);
   std::signal(SIGTERM, HandleExitSignal);
 
-  const std::string config_path = argc > 1 ? argv[1] : "config/config.json";
+  std::string config_path = "config/config.json";
+  bool config_path_seen = false;
+  std::vector<std::string_view> writer_arguments;
+  for (int i = 1; i < argc; ++i) {
+    const std::string_view argument = argv[i];
+    if (argument.starts_with("--config-")) {
+      writer_arguments.push_back(argument);
+    } else if (!config_path_seen) {
+      config_path = argument;
+      config_path_seen = true;
+    } else {
+      std::cerr << "只能指定一个配置文件路径\n";
+      return EXIT_FAILURE;
+    }
+  }
+  auto writer_options = config_command::ParseWriterOptions(writer_arguments);
+  if (!writer_options) {
+    std::cerr << "配置写入启动参数非法: " << writer_options.error() << "\n";
+    return EXIT_FAILURE;
+  }
 
   auto app_config = config::LoadAppConfig(config_path);
   if (!app_config) {
