@@ -74,3 +74,16 @@ TEST_CASE("解析和持久化失败均返回rejected并继续运行") {
   CHECK(failed.ack["message"] == "磁盘写入失败");
   CHECK_FALSE(failed.should_exit);
 }
+
+TEST_CASE("持久化状态不确定时返回rejected但要求重启核对磁盘") {
+  auto result = config_command::ProcessConfigCommand(
+      ValidPayload("cmd-uncertain"), CurrentConfig(),
+      [](const nlohmann::json&) -> std::expected<void, config_command::CommandError> {
+        return std::unexpected(config_command::CommandError{
+            .code = "config_write_uncertain", .message = "配置提交状态不确定"});
+      });
+  CHECK(result.ack["status"] == "rejected");
+  CHECK(result.ack["error_code"] == "config_write_uncertain");
+  CHECK(result.ack["restart_required"] == true);
+  CHECK(result.should_exit);
+}

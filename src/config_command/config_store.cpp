@@ -20,6 +20,10 @@ CommandError WriteError(std::string message = "配置持久化失败") {
   return {.code = "config_write_failed", .message = std::move(message)};
 }
 
+CommandError UncertainError() {
+  return {.code = "config_write_uncertain", .message = "配置提交状态不确定"};
+}
+
 bool WriteAll(int fd, std::string_view content) {
   std::size_t offset = 0;
   while (offset < content.size()) {
@@ -64,6 +68,14 @@ bool FsyncDirectory(const std::filesystem::path& path) {
   return success;
 }
 
+bool FsyncFile(const std::filesystem::path& path) {
+  const int fd = ::open(path.c_str(), O_RDONLY);
+  if (fd < 0) return false;
+  const bool success = ::fsync(fd) == 0;
+  ::close(fd);
+  return success;
+}
+
 std::expected<void, CommandError> PersistDirect(const std::filesystem::path& config_path,
                                                 const nlohmann::json& candidate) {
   auto temporary = WriteCandidate(config_path, candidate);
@@ -80,12 +92,9 @@ std::expected<void, CommandError> PersistDirect(const std::filesystem::path& con
     return std::unexpected(WriteError());
   }
   if (!FsyncDirectory(config_path)) {
-    const bool restored = ::rename(backup.c_str(), config_path.c_str()) == 0 &&
-                          FsyncDirectory(config_path);
-    if (!restored) {
-      // rename 已完成而旧配置无法可靠恢复，此时按“已提交”处理并让上层ACK后重启，
-      // 不能返回普通失败导致磁盘可能已更新、进程却继续按旧内存配置运行。
-      return {};
+    const bool restore_renamed = ::rename(backup.c_str(), config_path.c_str()) == 0;
+    if (!restore_renamed || !FsyncDirectory(config_path)) {
+      return std::unexpected(UncertainError());
     }
     return std::unexpected(WriteError());
   }
@@ -131,9 +140,13 @@ std::expected<void, CommandError> PersistWithHelper(const WriterOptions& options
   } catch (const nlohmann::json::exception&) {
     target_matches = false;
   }
-  // helper 是持久化提交者；一旦目标已经等于候选配置，就不能再向上层报告普通失败，
-  // 否则会出现磁盘已应用但ACK为rejected且进程不重启的状态分裂。
-  if (target_matches) return {};
+  if (target_matches) {
+    if (!FsyncFile(config_path) || !FsyncDirectory(config_path)) {
+      return std::unexpected(UncertainError());
+    }
+    // 即使helper错误地返回非零，目标内容和持久化边界均已确认，不能再报告普通失败。
+    return {};
+  }
   if (!WIFEXITED(status) || WEXITSTATUS(status) != 0) return std::unexpected(WriteError());
   return std::unexpected(WriteError("helper返回成功但目标配置未更新"));
 }

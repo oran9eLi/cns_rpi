@@ -42,8 +42,10 @@ CommandProcessResult ProcessConfigCommand(std::string_view payload,
   }
   auto persisted = persist(*candidate);
   if (!persisted) {
-    return {.ack = BuildRejectedAck(command->command_id, persisted.error()),
-            .should_exit = false};
+    auto ack = BuildRejectedAck(command->command_id, persisted.error());
+    const bool uncertain = persisted.error().code == "config_write_uncertain";
+    if (uncertain) ack["restart_required"] = true;
+    return {.ack = std::move(ack), .should_exit = uncertain};
   }
   return {.ack = {{"command_id", command->command_id},
                   {"status", "applied"},

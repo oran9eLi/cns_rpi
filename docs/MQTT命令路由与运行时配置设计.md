@@ -409,6 +409,7 @@ UNIQUE(source_id, request_id)
 | `config_read_failed` | 读取原始配置失败 |
 | `config_write_disabled` | 未启用配置写入后端 |
 | `config_write_failed` | 配置持久化失败 |
+| `config_write_uncertain` | 提交或恢复期间持久化边界失败；返回 rejected 后主动重启，靠幂等记录核对实际状态 |
 
 ## 12. 配置持久化
 
