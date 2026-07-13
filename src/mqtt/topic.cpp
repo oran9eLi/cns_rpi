@@ -27,4 +27,19 @@ std::string BuildTelemetryTopic(const std::string& topic_namespace, const std::s
   return BuildDeviceTopic(topic_namespace, vendor_id, suffix);
 }
 
+std::string BuildConfigSetTopic(const std::string& topic_namespace,
+                                const std::string& vendor_id, const std::string& suffix) {
+  return BuildDeviceTopic(topic_namespace, vendor_id, suffix);
+}
+
+std::string BuildConfigAckTopic(const std::string& topic_namespace,
+                                const std::string& vendor_id, const std::string& suffix) {
+  return BuildDeviceTopic(topic_namespace, vendor_id, suffix);
+}
+
+std::string BuildConfigRequestTopic(const std::string& topic_namespace,
+                                    const std::string& source_vendor_id) {
+  return topic_namespace + "/sources/" + source_vendor_id + "/config/request";
+}
+
 }  // namespace mqtt

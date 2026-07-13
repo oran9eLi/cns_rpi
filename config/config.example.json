@@ -27,6 +27,14 @@
       "telemetry": {
         "suffix": "telemetry",
         "qos": 0
+      },
+      "config_set": {
+        "suffix": "config/set",
+        "qos": 2
+      },
+      "config_ack": {
+        "suffix": "config/ack",
+        "qos": 2
       }
     }
   },

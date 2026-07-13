@@ -61,6 +61,8 @@ struct MqttTopicsConfig {
   std::string topic_namespace;
   MqttTopicConfig registration;
   MqttTopicConfig telemetry;
+  MqttTopicConfig config_set;
+  MqttTopicConfig config_ack;
 };
 
 struct MqttConfig {

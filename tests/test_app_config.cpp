@@ -28,7 +28,9 @@ std::string ValidConfig() {
       "topics": {
         "namespace": "cns_rpi",
         "registration": {"suffix": "registration", "qos": 2},
-        "telemetry": {"suffix": "telemetry", "qos": 0}
+        "telemetry": {"suffix": "telemetry", "qos": 0},
+        "config_set": {"suffix": "config/set", "qos": 2},
+        "config_ack": {"suffix": "config/ack", "qos": 2}
       }
     },
     "logging": {"level": "info", "file": ""},
@@ -65,11 +67,24 @@ TEST_CASE("完整合法嵌套配置能正确解析") {
   CHECK(result->mqtt.topics.registration.qos == 2);
   CHECK(result->mqtt.topics.telemetry.suffix == "telemetry");
   CHECK(result->mqtt.topics.telemetry.qos == 0);
+  CHECK(result->mqtt.topics.config_set.suffix == "config/set");
+  CHECK(result->mqtt.topics.config_set.qos == 2);
+  CHECK(result->mqtt.topics.config_ack.suffix == "config/ack");
+  CHECK(result->mqtt.topics.config_ack.qos == 2);
   CHECK(result->runtime.telemetry_publish_interval == std::chrono::milliseconds(1000));
   CHECK(result->runtime.heartbeat_interval == std::chrono::milliseconds(1000));
   CHECK(result->runtime.applied_command_ids.empty());
   CHECK(result->mqtt.connection.reconnect.delay_seconds == 1);
   CHECK(result->mqtt.connection.reconnect.delay_max_seconds == 30);
+}
+
+TEST_CASE("配置命令和ACK必须使用QoS2") {
+  auto invalid = ReplaceOnce(ValidConfig(),
+      "\"config_set\": {\"suffix\": \"config/set\", \"qos\": 2}",
+      "\"config_set\": {\"suffix\": \"config/set\", \"qos\": 1}");
+  auto result = config::LoadAppConfig(WriteTempConfig(invalid));
+  REQUIRE_FALSE(result.has_value());
+  CHECK(result.error() == config::ConfigError::kInvalidValue);
 }
 
 TEST_CASE("运行参数范围或重连组合非法时返回kInvalidValue") {

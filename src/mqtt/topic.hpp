@@ -31,4 +31,16 @@ std::string BuildRegistrationTopic(const std::string& topic_namespace,
 std::string BuildTelemetryTopic(const std::string& topic_namespace, const std::string& vendor_id,
                                 const std::string& suffix);
 
+/// 拼服务器向设备下发配置命令的 topic。
+std::string BuildConfigSetTopic(const std::string& topic_namespace,
+                                const std::string& vendor_id, const std::string& suffix);
+
+/// 拼设备返回配置命令执行结果的 topic。
+std::string BuildConfigAckTopic(const std::string& topic_namespace,
+                                const std::string& vendor_id, const std::string& suffix);
+
+/// 拼本设备作为命令来源时向服务器提交请求的 topic。
+std::string BuildConfigRequestTopic(const std::string& topic_namespace,
+                                    const std::string& source_vendor_id);
+
 }  // namespace mqtt
