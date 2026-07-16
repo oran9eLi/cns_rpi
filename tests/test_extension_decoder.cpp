@@ -557,7 +557,7 @@ TEST_CASE("RIDSTAT解码拆出位置广播成功计数/错误计数,time_boot_ms
 
 TEST_CASE("GNSSUTC decodes date and seconds-of-day") {
   mavlink_message_t msg =
-      PackNamedValueIntWithTime("GNSSUTC", /*time_boot_ms=*/45296, /*value=*/20260716);
+      PackNamedValueIntWithTime("GNSSUTC", /*time_boot_ms=*/45296, /*value=*/260716);
   state::StateStore store;
 
   bool handled = protocol::DecodeExtensionAndStore(msg, store);
@@ -565,7 +565,7 @@ TEST_CASE("GNSSUTC decodes date and seconds-of-day") {
   CHECK(handled);
   auto snapshot = store.Snapshot();
   REQUIRE(snapshot.gnss_utc.has_value());
-  CHECK(snapshot.gnss_utc->date_yyyymmdd == 20260716U);
+  CHECK(snapshot.gnss_utc->date_yymmdd == 260716U);
   CHECK(snapshot.gnss_utc->seconds_of_day == 45296U);
 }
 

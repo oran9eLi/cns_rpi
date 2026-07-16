@@ -208,10 +208,10 @@ void AddGnssSat(nlohmann::json& telemetry, const state::TelemetryState& state) {
   };
 }
 
-std::string FormatDateYyyyMmDd(std::uint32_t date_yyyymmdd) {
-  const auto year = date_yyyymmdd / 10000U;
-  const auto month = (date_yyyymmdd / 100U) % 100U;
-  const auto day = date_yyyymmdd % 100U;
+std::string FormatDateYyMmDd(std::uint32_t date_yymmdd) {
+  const auto year = 2000U + date_yymmdd / 10000U;
+  const auto month = (date_yymmdd / 100U) % 100U;
+  const auto day = date_yymmdd % 100U;
   char buf[16];
   std::snprintf(buf, sizeof(buf), "%04u-%02u-%02u", year, month, day);
   return std::string(buf);
@@ -233,9 +233,9 @@ void AddGnssTime(nlohmann::json& telemetry, const state::TelemetryState& state) 
   }
   const auto& utc = *state.gnss_utc;
   telemetry["gnss_time"] = {
-      {"date_yyyymmdd", utc.date_yyyymmdd},
+      {"date_yymmdd", utc.date_yymmdd},
       {"seconds_of_day", utc.seconds_of_day},
-      {"date", FormatDateYyyyMmDd(utc.date_yyyymmdd)},
+      {"date", FormatDateYyMmDd(utc.date_yymmdd)},
       {"time", FormatSecondsOfDay(utc.seconds_of_day)},
   };
 }

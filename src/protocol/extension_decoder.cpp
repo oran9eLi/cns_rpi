@@ -128,7 +128,7 @@ bool DecodeNamedValueInt(const mavlink_named_value_int_t& value, state::StateSto
   }
   if (name == "GNSSUTC") {
     state::GnssUtc utc{};
-    utc.date_yyyymmdd = bits;
+    utc.date_yymmdd = bits;
     utc.seconds_of_day = value.time_boot_ms;
     store.UpdateGnssUtc(utc);
     return true;

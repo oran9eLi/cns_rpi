@@ -79,7 +79,7 @@ struct GnssSat {
 };
 
 struct GnssUtc {
-  std::uint32_t date_yyyymmdd;
+  std::uint32_t date_yymmdd;
   std::uint32_t seconds_of_day;
 };
 

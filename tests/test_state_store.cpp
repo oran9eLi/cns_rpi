@@ -174,7 +174,7 @@ TEST_CASE("UpdateLoraStatus和UpdateRemoteIdStatus各自独立写入") {
 TEST_CASE("New uplink fields update independently") {
   state::StateStore store;
   state::MotorPulse pulse{{1000, 1250, 1500, 2000}, 123456000ULL};
-  state::GnssUtc utc{20260716, 45296};
+  state::GnssUtc utc{260716, 45296};
 
   store.UpdateMotorPulse(pulse);
   store.UpdateGnssUtc(utc);
@@ -188,7 +188,7 @@ TEST_CASE("New uplink fields update independently") {
   CHECK(snapshot.motor_pulse->time_usec == 123456000ULL);
 
   REQUIRE(snapshot.gnss_utc.has_value());
-  CHECK(snapshot.gnss_utc->date_yyyymmdd == 20260716U);
+  CHECK(snapshot.gnss_utc->date_yymmdd == 260716U);
   CHECK(snapshot.gnss_utc->seconds_of_day == 45296U);
 
   REQUIRE(snapshot.lora_counters.has_value());
