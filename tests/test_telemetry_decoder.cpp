@@ -204,3 +204,26 @@ TEST_CASE("不认识的消息类型被安静忽略，不影响其他已有字段
   CHECK(snapshot.heartbeat->type == 18);
   CHECK_FALSE(snapshot.gps_raw_int.has_value());
 }
+
+TEST_CASE("SERVO_OUTPUT_RAW decodes first four PWM pulse widths") {
+  mavlink_message_t msg{};
+  mavlink_msg_servo_output_raw_pack(kSystemId, kComponentId, &msg, /*time_usec=*/123456000,
+                                    /*port=*/0, /*servo1_raw=*/1000, /*servo2_raw=*/1250,
+                                    /*servo3_raw=*/1500, /*servo4_raw=*/2000,
+                                    /*servo5_raw=*/0, /*servo6_raw=*/0, /*servo7_raw=*/0,
+                                    /*servo8_raw=*/0, /*servo9_raw=*/0, /*servo10_raw=*/0,
+                                    /*servo11_raw=*/0, /*servo12_raw=*/0, /*servo13_raw=*/0,
+                                    /*servo14_raw=*/0, /*servo15_raw=*/0, /*servo16_raw=*/0);
+  state::StateStore store;
+
+  bool handled = protocol::DecodeAndStore(msg, store);
+
+  CHECK(handled);
+  auto snapshot = store.Snapshot();
+  REQUIRE(snapshot.motor_pulse.has_value());
+  CHECK(snapshot.motor_pulse->time_usec == 123456000U);
+  CHECK(snapshot.motor_pulse->pwm_us[0] == 1000);
+  CHECK(snapshot.motor_pulse->pwm_us[1] == 1250);
+  CHECK(snapshot.motor_pulse->pwm_us[2] == 1500);
+  CHECK(snapshot.motor_pulse->pwm_us[3] == 2000);
+}

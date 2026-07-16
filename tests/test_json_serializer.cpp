@@ -264,9 +264,12 @@ TEST_CASE("pressure字段换算,press_abs/press_diff已是hPa直接透传") {
 TEST_CASE("gnss_sat/humidity/motor/lora/remote_id自定义字段") {
   state::TelemetryState state{};
   state.gnss_sat = state::GnssSat{9, 8, 7, 6};
+  state.gnss_utc = state::GnssUtc{20260716, 45296};
   state.env_humidity = state::EnvHumidity{535};
   state.motor_pwm = state::MotorPwm{{45, 45, 50, 50}, true, 60};
+  state.motor_pulse = state::MotorPulse{{1000, 1250, 1500, 2000}, 123456000ULL};
   state.lora_status = state::LoraStatus{15, 9, true, 2};  // link_state=2 -> "ONLINE"
+  state.lora_counters = state::LoraCounters{12, 3456, 34, 4567};
   state.remote_id_status = state::RemoteIdStatus{120, 0, 987654};
 
   auto json = payload::ToJson(state, "NNUTC");
@@ -274,14 +277,24 @@ TEST_CASE("gnss_sat/humidity/motor/lora/remote_id自定义字段") {
 
   CHECK(t["gnss_sat"]["gps_visible"] == 9);
   CHECK(t["gnss_sat"]["beidou_used"] == 6);
+  CHECK(t["gnss_time"]["date_yyyymmdd"] == 20260716);
+  CHECK(t["gnss_time"]["seconds_of_day"] == 45296);
+  CHECK(t["gnss_time"]["date"] == "2026-07-16");
+  CHECK(t["gnss_time"]["time"] == "12:34:56");
   CHECK(t["humidity"]["humidity_percent"].get<double>() == doctest::Approx(53.5));
   CHECK(t["motor"]["duty_percent"] == std::vector<int>{45, 45, 50, 50});
   CHECK(t["motor"]["run_state"] == true);
   CHECK(t["motor"]["speed_level"] == 60);
+  CHECK(t["motor"]["pwm_us"] == std::vector<int>{1000, 1250, 1500, 2000});
+  CHECK(t["motor"]["pwm_time_usec"] == 123456000);
   CHECK(t["lora"]["loss_rate_percent"].get<double>() == doctest::Approx(1.5));
   CHECK(t["lora"]["node_id"] == 9);
   CHECK(t["lora"]["present"] == true);
   CHECK(t["lora"]["link_state"] == "ONLINE");
+  CHECK(t["lora"]["tx_frame_count"] == 12);
+  CHECK(t["lora"]["tx_last_ms"] == 3456);
+  CHECK(t["lora"]["rx_frame_count"] == 34);
+  CHECK(t["lora"]["rx_last_ms"] == 4567);
   CHECK(t["remote_id"]["location_count"] == 120);
   CHECK(t["remote_id"]["last_success_ms"] == 987654);
 }
@@ -511,9 +524,12 @@ TEST_CASE("全部字段同时填充,顶层结构完整,alarms/logs按截断数�
   state.scaled_pressure = pressure;
 
   state.gnss_sat = state::GnssSat{9, 8, 7, 6};
+  state.gnss_utc = state::GnssUtc{20260716, 45296};
   state.env_humidity = state::EnvHumidity{535};
   state.motor_pwm = state::MotorPwm{{45, 45, 50, 50}, true, 60};
+  state.motor_pulse = state::MotorPulse{{1000, 1250, 1500, 2000}, 123456000ULL};
   state.lora_status = state::LoraStatus{15, 9, true, 2};
+  state.lora_counters = state::LoraCounters{12, 3456, 34, 4567};
   state.remote_id_status = state::RemoteIdStatus{120, 0, 987654};
 
   std::array<std::uint8_t, 14> mods{};
@@ -571,6 +587,7 @@ TEST_CASE("全部字段同时填充,顶层结构完整,alarms/logs按截断数�
   CHECK(t.contains("battery2"));
   CHECK(t.contains("pressure"));
   CHECK(t.contains("gnss_sat"));
+  CHECK(t.contains("gnss_time"));
   CHECK(t.contains("humidity"));
   CHECK(t.contains("motor"));
   CHECK(t.contains("lora"));

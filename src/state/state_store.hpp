@@ -39,6 +39,11 @@ struct MotorPwm {
   std::uint8_t speed_level;
 };
 
+struct MotorPulse {
+  std::array<std::uint16_t, 4> pwm_us;
+  std::uint64_t time_usec;
+};
+
 /// LORASTAT 拆包结果：LoRa 链路状态(RPi 专属，只发 USART1，不上 LoRa)。
 /// link_state 跟 module_status[4](LORA 模块的粗粒度状态)语义重复，但两条帧
 /// 来自不同的固件消息、独立更新，不做一致性校验——state_store 存固件发的
@@ -48,6 +53,13 @@ struct LoraStatus {
   std::uint8_t node_id;
   bool present;
   std::uint8_t link_state;
+};
+
+struct LoraCounters {
+  std::uint32_t tx_frame_count;
+  std::uint32_t tx_last_ms;
+  std::uint32_t rx_frame_count;
+  std::uint32_t rx_last_ms;
 };
 
 /// RIDSTAT 拆包结果：RemoteID 广播状态(RPi 专属，只发 USART1)。
@@ -64,6 +76,11 @@ struct GnssSat {
   std::uint8_t beidou_visible;
   std::uint8_t gps_used;
   std::uint8_t beidou_used;
+};
+
+struct GnssUtc {
+  std::uint32_t date_yyyymmdd;
+  std::uint32_t seconds_of_day;
 };
 
 /// HUMIDITY 拆包结果：相对湿度 x10（原始刻度，535 表示 53.5%，不做单位换算）。
@@ -118,9 +135,12 @@ struct TelemetryState {
   /// MODSTAT0 只写 0-7 号，MODSTAT1 只写 8-13 号，两条帧合并成一份数据。
   std::optional<std::array<std::uint8_t, kModuleCount>> module_status;
   std::optional<MotorPwm> motor_pwm;
+  std::optional<MotorPulse> motor_pulse;
   std::optional<GnssSat> gnss_sat;
+  std::optional<GnssUtc> gnss_utc;
   std::optional<EnvHumidity> env_humidity;
   std::optional<LoraStatus> lora_status;
+  std::optional<LoraCounters> lora_counters;
   std::optional<RemoteIdStatus> remote_id_status;
   std::optional<AlarmTable> alarm_table;
   std::optional<MessageLog> message_log;
@@ -171,9 +191,13 @@ class StateStore {
   /// 只写 duty_percent 的 2-3 号索引(来自 MOTOR34)，语义同上。
   void UpdateMotorPwmHigh(std::uint8_t duty2, std::uint8_t duty3, bool run_state,
                            std::uint8_t speed_level);
+  void UpdateMotorPulse(const MotorPulse& value);
   void UpdateGnssSat(const GnssSat& value);
+  void UpdateGnssUtc(const GnssUtc& value);
   void UpdateEnvHumidity(const EnvHumidity& value);
   void UpdateLoraStatus(const LoraStatus& value);
+  void UpdateLoraTxCount(std::uint32_t tx_frame_count, std::uint32_t tx_last_ms);
+  void UpdateLoraRxCount(std::uint32_t rx_frame_count, std::uint32_t rx_last_ms);
   void UpdateRemoteIdStatus(const RemoteIdStatus& value);
   void UpdateAlarmTable(const AlarmTable& value);
   void UpdateMessageLog(const MessageLog& value);

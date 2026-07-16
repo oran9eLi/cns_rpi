@@ -114,6 +114,14 @@ void LogTelemetry(std::uint32_t msgid, const state::TelemetryState& snapshot) {
                   << " temperature=" << snapshot.scaled_pressure->temperature << std::endl;
       }
       break;
+    case MAVLINK_MSG_ID_SERVO_OUTPUT_RAW:
+      if (snapshot.motor_pulse) {
+        std::cout << "SERVO_OUTPUT_RAW: pwm_us=[" << snapshot.motor_pulse->pwm_us[0] << ","
+                  << snapshot.motor_pulse->pwm_us[1] << "," << snapshot.motor_pulse->pwm_us[2]
+                  << "," << snapshot.motor_pulse->pwm_us[3]
+                  << "] time_usec=" << snapshot.motor_pulse->time_usec << std::endl;
+      }
+      break;
     default:
       break;
   }
@@ -142,6 +150,10 @@ void LogExtension(std::uint32_t msgid, const state::TelemetryState& snapshot) {
         std::cout << "GNSS_SAT: gps_visible=" << static_cast<int>(snapshot.gnss_sat->gps_visible)
                   << " gps_used=" << static_cast<int>(snapshot.gnss_sat->gps_used) << std::endl;
       }
+      if (snapshot.gnss_utc) {
+        std::cout << "GNSSUTC: date_yyyymmdd=" << snapshot.gnss_utc->date_yyyymmdd
+                  << " seconds_of_day=" << snapshot.gnss_utc->seconds_of_day << std::endl;
+      }
       if (snapshot.env_humidity) {
         std::cout << "HUMIDITY: relative_humidity_x10=" << snapshot.env_humidity->relative_humidity_x10
                   << std::endl;
@@ -152,6 +164,12 @@ void LogExtension(std::uint32_t msgid, const state::TelemetryState& snapshot) {
                   << " present=" << snapshot.lora_status->present
                   << " link_state=" << static_cast<int>(snapshot.lora_status->link_state)
                   << std::endl;
+      }
+      if (snapshot.lora_counters) {
+        std::cout << "LORA_COUNT: tx_frame_count=" << snapshot.lora_counters->tx_frame_count
+                  << " tx_last_ms=" << snapshot.lora_counters->tx_last_ms
+                  << " rx_frame_count=" << snapshot.lora_counters->rx_frame_count
+                  << " rx_last_ms=" << snapshot.lora_counters->rx_last_ms << std::endl;
       }
       if (snapshot.remote_id_status) {
         std::cout << "RIDSTAT: location_count=" << snapshot.remote_id_status->location_count

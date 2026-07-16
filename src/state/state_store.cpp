@@ -88,9 +88,19 @@ void StateStore::UpdateMotorPwmHigh(std::uint8_t duty2, std::uint8_t duty3, bool
   state_.motor_pwm->speed_level = speed_level;
 }
 
+void StateStore::UpdateMotorPulse(const MotorPulse& value) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  state_.motor_pulse = value;
+}
+
 void StateStore::UpdateGnssSat(const GnssSat& value) {
   std::lock_guard<std::mutex> lock(mutex_);
   state_.gnss_sat = value;
+}
+
+void StateStore::UpdateGnssUtc(const GnssUtc& value) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  state_.gnss_utc = value;
 }
 
 void StateStore::UpdateEnvHumidity(const EnvHumidity& value) {
@@ -101,6 +111,24 @@ void StateStore::UpdateEnvHumidity(const EnvHumidity& value) {
 void StateStore::UpdateLoraStatus(const LoraStatus& value) {
   std::lock_guard<std::mutex> lock(mutex_);
   state_.lora_status = value;
+}
+
+void StateStore::UpdateLoraTxCount(std::uint32_t tx_frame_count, std::uint32_t tx_last_ms) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!state_.lora_counters.has_value()) {
+    state_.lora_counters = LoraCounters{};
+  }
+  state_.lora_counters->tx_frame_count = tx_frame_count;
+  state_.lora_counters->tx_last_ms = tx_last_ms;
+}
+
+void StateStore::UpdateLoraRxCount(std::uint32_t rx_frame_count, std::uint32_t rx_last_ms) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (!state_.lora_counters.has_value()) {
+    state_.lora_counters = LoraCounters{};
+  }
+  state_.lora_counters->rx_frame_count = rx_frame_count;
+  state_.lora_counters->rx_last_ms = rx_last_ms;
 }
 
 void StateStore::UpdateRemoteIdStatus(const RemoteIdStatus& value) {

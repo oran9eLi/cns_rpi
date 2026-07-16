@@ -51,6 +51,16 @@ bool DecodeAndStore(const mavlink_message_t& msg, state::StateStore& store) {
       store.UpdateScaledPressure(decoded);
       return true;
     }
+    case MAVLINK_MSG_ID_SERVO_OUTPUT_RAW: {
+      mavlink_servo_output_raw_t decoded{};
+      mavlink_msg_servo_output_raw_decode(&msg, &decoded);
+      state::MotorPulse pulse{};
+      pulse.time_usec = decoded.time_usec;
+      pulse.pwm_us = {decoded.servo1_raw, decoded.servo2_raw, decoded.servo3_raw,
+                      decoded.servo4_raw};
+      store.UpdateMotorPulse(pulse);
+      return true;
+    }
     default:
       return false;
   }

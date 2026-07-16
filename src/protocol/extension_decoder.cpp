@@ -126,6 +126,13 @@ bool DecodeNamedValueInt(const mavlink_named_value_int_t& value, state::StateSto
     store.UpdateGnssSat(sat);
     return true;
   }
+  if (name == "GNSSUTC") {
+    state::GnssUtc utc{};
+    utc.date_yyyymmdd = bits;
+    utc.seconds_of_day = value.time_boot_ms;
+    store.UpdateGnssUtc(utc);
+    return true;
+  }
   if (name == "HUMIDITY") {
     state::EnvHumidity hum{};
     hum.relative_humidity_x10 = static_cast<std::uint16_t>(bits);
@@ -151,6 +158,14 @@ bool DecodeNamedValueInt(const mavlink_named_value_int_t& value, state::StateSto
     lora.present = ((bits >> 24) & 0x1) != 0;
     lora.link_state = static_cast<std::uint8_t>((bits >> 25) & 0x7);
     store.UpdateLoraStatus(lora);
+    return true;
+  }
+  if (name == "LORATX") {
+    store.UpdateLoraTxCount(bits, value.time_boot_ms);
+    return true;
+  }
+  if (name == "LORARX") {
+    store.UpdateLoraRxCount(bits, value.time_boot_ms);
     return true;
   }
   if (name == "RIDSTAT") {

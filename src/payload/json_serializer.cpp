@@ -208,6 +208,38 @@ void AddGnssSat(nlohmann::json& telemetry, const state::TelemetryState& state) {
   };
 }
 
+std::string FormatDateYyyyMmDd(std::uint32_t date_yyyymmdd) {
+  const auto year = date_yyyymmdd / 10000U;
+  const auto month = (date_yyyymmdd / 100U) % 100U;
+  const auto day = date_yyyymmdd % 100U;
+  char buf[16];
+  std::snprintf(buf, sizeof(buf), "%04u-%02u-%02u", year, month, day);
+  return std::string(buf);
+}
+
+std::string FormatSecondsOfDay(std::uint32_t seconds_of_day) {
+  seconds_of_day %= 24U * 60U * 60U;
+  const auto hour = seconds_of_day / 3600U;
+  const auto minute = (seconds_of_day / 60U) % 60U;
+  const auto second = seconds_of_day % 60U;
+  char buf[16];
+  std::snprintf(buf, sizeof(buf), "%02u:%02u:%02u", hour, minute, second);
+  return std::string(buf);
+}
+
+void AddGnssTime(nlohmann::json& telemetry, const state::TelemetryState& state) {
+  if (!state.gnss_utc) {
+    return;
+  }
+  const auto& utc = *state.gnss_utc;
+  telemetry["gnss_time"] = {
+      {"date_yyyymmdd", utc.date_yyyymmdd},
+      {"seconds_of_day", utc.seconds_of_day},
+      {"date", FormatDateYyyyMmDd(utc.date_yyyymmdd)},
+      {"time", FormatSecondsOfDay(utc.seconds_of_day)},
+  };
+}
+
 void AddHumidity(nlohmann::json& telemetry, const state::TelemetryState& state) {
   if (!state.env_humidity) {
     return;
@@ -217,28 +249,42 @@ void AddHumidity(nlohmann::json& telemetry, const state::TelemetryState& state) 
 }
 
 void AddMotor(nlohmann::json& telemetry, const state::TelemetryState& state) {
-  if (!state.motor_pwm) {
+  if (!state.motor_pwm && !state.motor_pulse) {
     return;
   }
-  const auto& m = *state.motor_pwm;
-  telemetry["motor"] = {
-      {"duty_percent", m.duty_percent},
-      {"run_state", m.run_state},
-      {"speed_level", m.speed_level},
-  };
+  nlohmann::json motor = nlohmann::json::object();
+  if (state.motor_pwm) {
+    const auto& m = *state.motor_pwm;
+    motor["duty_percent"] = m.duty_percent;
+    motor["run_state"] = m.run_state;
+    motor["speed_level"] = m.speed_level;
+  }
+  if (state.motor_pulse) {
+    motor["pwm_us"] = state.motor_pulse->pwm_us;
+    motor["pwm_time_usec"] = state.motor_pulse->time_usec;
+  }
+  telemetry["motor"] = std::move(motor);
 }
 
 void AddLora(nlohmann::json& telemetry, const state::TelemetryState& state) {
-  if (!state.lora_status) {
+  if (!state.lora_status && !state.lora_counters) {
     return;
   }
-  const auto& l = *state.lora_status;
-  telemetry["lora"] = {
-      {"loss_rate_percent", static_cast<double>(l.loss_rate_x10) / 10.0},
-      {"node_id", l.node_id},
-      {"present", l.present},
-      {"link_state", ModuleStateToString(l.link_state)},
-  };
+  nlohmann::json lora = nlohmann::json::object();
+  if (state.lora_status) {
+    const auto& l = *state.lora_status;
+    lora["loss_rate_percent"] = static_cast<double>(l.loss_rate_x10) / 10.0;
+    lora["node_id"] = l.node_id;
+    lora["present"] = l.present;
+    lora["link_state"] = ModuleStateToString(l.link_state);
+  }
+  if (state.lora_counters) {
+    lora["tx_frame_count"] = state.lora_counters->tx_frame_count;
+    lora["tx_last_ms"] = state.lora_counters->tx_last_ms;
+    lora["rx_frame_count"] = state.lora_counters->rx_frame_count;
+    lora["rx_last_ms"] = state.lora_counters->rx_last_ms;
+  }
+  telemetry["lora"] = std::move(lora);
 }
 
 void AddRemoteId(nlohmann::json& telemetry, const state::TelemetryState& state) {
@@ -400,6 +446,7 @@ nlohmann::json ToJson(const state::TelemetryState& state, const std::string& sch
   AddBattery2(telemetry, state);
   AddPressure(telemetry, state);
   AddGnssSat(telemetry, state);
+  AddGnssTime(telemetry, state);
   AddHumidity(telemetry, state);
   AddMotor(telemetry, state);
   AddLora(telemetry, state);

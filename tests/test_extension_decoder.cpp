@@ -21,6 +21,13 @@ mavlink_message_t PackNamedValueInt(const char* name, std::int32_t value) {
   return msg;
 }
 
+mavlink_message_t PackNamedValueIntWithTime(const char* name, std::uint32_t time_boot_ms,
+                                            std::int32_t value) {
+  mavlink_message_t msg{};
+  mavlink_msg_named_value_int_pack(kSystemId, kComponentId, &msg, time_boot_ms, name, value);
+  return msg;
+}
+
 mavlink_message_t PackTunnel(std::uint16_t payload_type, std::uint8_t payload_length,
                               const std::array<std::uint8_t, 128>& payload) {
   mavlink_message_t msg{};
@@ -546,4 +553,36 @@ TEST_CASE("RIDSTAT解码拆出位置广播成功计数/错误计数,time_boot_ms
   CHECK(snapshot.remote_id_status->location_count == 50);
   CHECK(snapshot.remote_id_status->error_count == 3);
   CHECK(snapshot.remote_id_status->last_success_ms == 123456);
+}
+
+TEST_CASE("GNSSUTC decodes date and seconds-of-day") {
+  mavlink_message_t msg =
+      PackNamedValueIntWithTime("GNSSUTC", /*time_boot_ms=*/45296, /*value=*/20260716);
+  state::StateStore store;
+
+  bool handled = protocol::DecodeExtensionAndStore(msg, store);
+
+  CHECK(handled);
+  auto snapshot = store.Snapshot();
+  REQUIRE(snapshot.gnss_utc.has_value());
+  CHECK(snapshot.gnss_utc->date_yyyymmdd == 20260716U);
+  CHECK(snapshot.gnss_utc->seconds_of_day == 45296U);
+}
+
+TEST_CASE("LORATX and LORARX decode counters and last timestamps") {
+  state::StateStore store;
+
+  bool tx_handled = protocol::DecodeExtensionAndStore(
+      PackNamedValueIntWithTime("LORATX", /*time_boot_ms=*/3456, /*value=*/12), store);
+  bool rx_handled = protocol::DecodeExtensionAndStore(
+      PackNamedValueIntWithTime("LORARX", /*time_boot_ms=*/4567, /*value=*/34), store);
+
+  CHECK(tx_handled);
+  CHECK(rx_handled);
+  auto snapshot = store.Snapshot();
+  REQUIRE(snapshot.lora_counters.has_value());
+  CHECK(snapshot.lora_counters->tx_frame_count == 12U);
+  CHECK(snapshot.lora_counters->tx_last_ms == 3456U);
+  CHECK(snapshot.lora_counters->rx_frame_count == 34U);
+  CHECK(snapshot.lora_counters->rx_last_ms == 4567U);
 }
