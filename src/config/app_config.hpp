@@ -63,6 +63,8 @@ struct MqttTopicsConfig {
   MqttTopicConfig telemetry;
   MqttTopicConfig config_set;
   MqttTopicConfig config_ack;
+  MqttTopicConfig control_set{"control/set", 2};
+  MqttTopicConfig control_ack{"control/ack", 2};
 };
 
 struct MqttConfig {

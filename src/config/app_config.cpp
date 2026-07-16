@@ -95,6 +95,16 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
     const auto& config_ack = topics.at("config_ack");
     cfg.mqtt.topics.config_ack.suffix = config_ack.at("suffix").get<std::string>();
     cfg.mqtt.topics.config_ack.qos = config_ack.at("qos").get<int>();
+    if (topics.contains("control_set")) {
+      const auto& control_set = topics.at("control_set");
+      cfg.mqtt.topics.control_set.suffix = control_set.at("suffix").get<std::string>();
+      cfg.mqtt.topics.control_set.qos = control_set.at("qos").get<int>();
+    }
+    if (topics.contains("control_ack")) {
+      const auto& control_ack = topics.at("control_ack");
+      cfg.mqtt.topics.control_ack.suffix = control_ack.at("suffix").get<std::string>();
+      cfg.mqtt.topics.control_ack.qos = control_ack.at("qos").get<int>();
+    }
 
     const auto& logging = root.at("logging");
     cfg.logging.level = logging.at("level").get<std::string>();
@@ -133,7 +143,9 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
       !IsValidTopicSegment(topics.telemetry.suffix) || !IsValidQos(topics.registration.qos) ||
       !IsValidQos(topics.telemetry.qos) || !IsValidTopicPath(topics.config_set.suffix) ||
       !IsValidTopicPath(topics.config_ack.suffix) || topics.config_set.qos != 2 ||
-      topics.config_ack.qos != 2) {
+      topics.config_ack.qos != 2 || !IsValidTopicPath(topics.control_set.suffix) ||
+      !IsValidTopicPath(topics.control_ack.suffix) || topics.control_set.qos != 2 ||
+      topics.control_ack.qos != 2) {
     return std::unexpected(ConfigError::kInvalidValue);
   }
 

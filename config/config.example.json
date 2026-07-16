@@ -35,6 +35,14 @@
       "config_ack": {
         "suffix": "config/ack",
         "qos": 2
+      },
+      "control_set": {
+        "suffix": "control/set",
+        "qos": 2
+      },
+      "control_ack": {
+        "suffix": "control/ack",
+        "qos": 2
       }
     }
   },

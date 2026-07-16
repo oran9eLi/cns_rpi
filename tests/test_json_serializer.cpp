@@ -369,6 +369,21 @@ TEST_CASE("logs按count截断,time格式化成HH:MM:SS,未收到时不存在") {
   CHECK(json["logs"]["entries"][0]["severity"] == 1);
 }
 
+TEST_CASE("一键起飞传感器异常日志带服务器可读告警") {
+  state::TelemetryState state{};
+  state::MessageLog log{};
+  log.latest_seq = 33;
+  log.count = 1;
+  log.entries[0] = state::LogEntry{33, 32, {12, 34, 56}, 1};
+  state.message_log = log;
+
+  const auto json = payload::ToJson(state, "NNUTC");
+  const auto& entry = json["logs"]["entries"][0];
+  CHECK(entry["event"] == "takeoff_sensor_failure");
+  CHECK(entry["level"] == "warning");
+  CHECK(entry["message"] == "姿态或环境异常，一键起飞失败");
+}
+
 TEST_CASE("drone_id.basic_id:uas_id去除尾部空字符") {
   state::TelemetryState state{};
   mavlink_open_drone_id_basic_id_t basic{};

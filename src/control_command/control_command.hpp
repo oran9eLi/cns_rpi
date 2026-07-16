@@ -1,0 +1,40 @@
+#pragma once
+
+#include <array>
+#include <cstdint>
+#include <expected>
+#include <string>
+#include <string_view>
+
+#include <nlohmann/json.hpp>
+
+#include "common/mavlink.h"
+
+namespace control_command {
+
+constexpr std::uint16_t kSetMotorPwmUs = 31013;
+constexpr std::uint16_t kEmergencyStop = 31090;
+constexpr std::uint16_t kAutoTakeoff = 31091;
+constexpr std::uint16_t kAutoLanding = 31092;
+
+struct ControlCommand {
+  std::string command_id;
+  std::string command;
+  std::uint16_t mavlink_command = 0;
+  std::array<float, 4> params{};
+};
+
+struct CommandError {
+  std::string code;
+  std::string message;
+};
+
+std::expected<ControlCommand, CommandError> Parse(std::string_view payload);
+mavlink_message_t EncodeCommandLong(const ControlCommand& command, std::uint8_t source_system,
+                                    std::uint8_t source_component);
+nlohmann::json BuildRejectedAck(std::string_view command_id, std::string_view command,
+                                const CommandError& error);
+nlohmann::json BuildMavlinkAck(const ControlCommand& command, std::uint8_t result);
+nlohmann::json BuildTimeoutAck(const ControlCommand& command);
+
+}  // namespace control_command

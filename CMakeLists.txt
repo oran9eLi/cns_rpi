@@ -32,6 +32,7 @@ add_library(cns_rpi_core
     src/config_command/config_updater.cpp
     src/config_command/config_store.cpp
     src/config_command/command_processor.cpp
+    src/control_command/control_command.cpp
 )
 target_include_directories(cns_rpi_core PUBLIC src)
 # src/mavlink 是从固件仓库 Third_Party/mavlink/ 原样同步的官方生成头文件（common/standard/minimal），
@@ -104,6 +105,10 @@ add_test(NAME registration_state COMMAND test_registration_state)
 add_executable(test_command_parser tests/test_command_parser.cpp)
 target_link_libraries(test_command_parser PRIVATE cns_rpi_core)
 add_test(NAME command_parser COMMAND test_command_parser)
+
+add_executable(test_control_command tests/test_control_command.cpp)
+target_link_libraries(test_control_command PRIVATE cns_rpi_core)
+add_test(NAME control_command COMMAND test_control_command)
 
 add_executable(test_config_updater tests/test_config_updater.cpp)
 target_link_libraries(test_config_updater PRIVATE cns_rpi_core)

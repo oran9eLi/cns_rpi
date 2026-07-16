@@ -340,12 +340,32 @@ nlohmann::json BuildLogs(const state::MessageLog& log) {
   nlohmann::json entries = nlohmann::json::array();
   for (std::size_t i = 0; i < log.count; ++i) {
     const auto& e = log.entries[i];
-    entries.push_back({
+    nlohmann::json entry = {
         {"sequence", e.sequence},
         {"message_id", e.message_id},
         {"time", FormatTimeHhMmSs(e.time_hhmmss)},
         {"severity", e.severity},
-    });
+    };
+    switch (e.message_id) {
+      case 8:
+        entry["event"] = "attitude_lost";
+        entry["level"] = "warning";
+        entry["message"] = "姿态异常";
+        break;
+      case 10:
+        entry["event"] = "environment_lost";
+        entry["level"] = "warning";
+        entry["message"] = "环境异常";
+        break;
+      case 32:
+        entry["event"] = "takeoff_sensor_failure";
+        entry["level"] = "warning";
+        entry["message"] = "姿态或环境异常，一键起飞失败";
+        break;
+      default:
+        break;
+    }
+    entries.push_back(std::move(entry));
   }
   return {{"latest_seq", log.latest_seq}, {"entries", std::move(entries)}};
 }

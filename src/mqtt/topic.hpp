@@ -39,6 +39,14 @@ std::string BuildConfigSetTopic(const std::string& topic_namespace,
 std::string BuildConfigAckTopic(const std::string& topic_namespace,
                                 const std::string& vendor_id, const std::string& suffix);
 
+/// 拼服务器向设备下发飞行控制命令的 topic。
+std::string BuildControlSetTopic(const std::string& topic_namespace,
+                                 const std::string& vendor_id, const std::string& suffix);
+
+/// 拼设备返回单片机真实执行结果的 topic。
+std::string BuildControlAckTopic(const std::string& topic_namespace,
+                                 const std::string& vendor_id, const std::string& suffix);
+
 /// 拼本设备作为命令来源时向服务器提交请求的 topic。
 std::string BuildConfigRequestTopic(const std::string& topic_namespace,
                                     const std::string& source_vendor_id);
