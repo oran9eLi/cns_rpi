@@ -88,12 +88,18 @@ struct RuntimeConfig {
   std::vector<std::string> applied_command_ids;
 };
 
+struct CellularConfig {
+  std::string interface_name{"usb0"};
+  std::chrono::milliseconds heartbeat_interval{1000};
+};
+
 struct AppConfig {
   SerialConfig serial;
   MqttConfig mqtt;
   LoggingConfig logging;
   IdentityConfig identity;
   RuntimeConfig runtime;
+  CellularConfig cellular;
 };
 
 /**

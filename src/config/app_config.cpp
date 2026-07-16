@@ -120,6 +120,17 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
         std::chrono::milliseconds(runtime.at("heartbeat_interval_ms").get<int>());
     cfg.runtime.applied_command_ids =
         runtime.at("applied_command_ids").get<std::vector<std::string>>();
+
+    if (root.contains("cellular")) {
+      const auto& cellular = root.at("cellular");
+      if (cellular.contains("interface_name")) {
+        cfg.cellular.interface_name = cellular.at("interface_name").get<std::string>();
+      }
+      if (cellular.contains("heartbeat_interval_ms")) {
+        cfg.cellular.heartbeat_interval =
+            std::chrono::milliseconds(cellular.at("heartbeat_interval_ms").get<int>());
+      }
+    }
   } catch (const nlohmann::json::out_of_range&) {
     return std::unexpected(ConfigError::kMissingField);
   } catch (const nlohmann::json::type_error&) {
@@ -130,6 +141,7 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
   const auto& topics = cfg.mqtt.topics;
   const auto telemetry_ms = cfg.runtime.telemetry_publish_interval.count();
   const auto heartbeat_ms = cfg.runtime.heartbeat_interval.count();
+  const auto cellular_heartbeat_ms = cfg.cellular.heartbeat_interval.count();
   if (connection.host.empty() || connection.client_id_prefix.empty() || connection.port < 1 ||
       connection.port > 65535 || connection.keepalive_seconds <= 0 ||
       connection.reconnect.delay_seconds < 1 || connection.reconnect.delay_seconds > 3600 ||
@@ -138,6 +150,9 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
       connection.reconnect.delay_seconds > connection.reconnect.delay_max_seconds ||
       telemetry_ms < 100 || telemetry_ms > 60000 || heartbeat_ms < 100 ||
       heartbeat_ms > 60000 || cfg.runtime.applied_command_ids.size() > 32 ||
+      cfg.cellular.interface_name.empty() ||
+      cfg.cellular.interface_name.find_first_of("/ \t\r\n") != std::string::npos ||
+      cellular_heartbeat_ms < 100 || cellular_heartbeat_ms > 60000 ||
       !IsValidTopicSegment(topics.topic_namespace) ||
       !IsValidTopicSegment(topics.registration.suffix) ||
       !IsValidTopicSegment(topics.telemetry.suffix) || !IsValidQos(topics.registration.qos) ||

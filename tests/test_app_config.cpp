@@ -76,6 +76,8 @@ TEST_CASE("完整合法嵌套配置能正确解析") {
   CHECK(result->runtime.applied_command_ids.empty());
   CHECK(result->mqtt.connection.reconnect.delay_seconds == 1);
   CHECK(result->mqtt.connection.reconnect.delay_max_seconds == 30);
+  CHECK(result->cellular.interface_name == "usb0");
+  CHECK(result->cellular.heartbeat_interval == std::chrono::milliseconds(1000));
 }
 
 TEST_CASE("配置命令和ACK必须使用QoS2") {

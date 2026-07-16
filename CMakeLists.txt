@@ -33,6 +33,7 @@ add_library(cns_rpi_core
     src/config_command/config_store.cpp
     src/config_command/command_processor.cpp
     src/control_command/control_command.cpp
+    src/cellular/cellular_status.cpp
 )
 target_include_directories(cns_rpi_core PUBLIC src)
 # src/mavlink 是从固件仓库 Third_Party/mavlink/ 原样同步的官方生成头文件（common/standard/minimal），
@@ -109,6 +110,10 @@ add_test(NAME command_parser COMMAND test_command_parser)
 add_executable(test_control_command tests/test_control_command.cpp)
 target_link_libraries(test_control_command PRIVATE cns_rpi_core)
 add_test(NAME control_command COMMAND test_control_command)
+
+add_executable(test_cellular_status tests/test_cellular_status.cpp)
+target_link_libraries(test_cellular_status PRIVATE cns_rpi_core)
+add_test(NAME cellular_status COMMAND test_cellular_status)
 
 add_executable(test_config_updater tests/test_config_updater.cpp)
 target_link_libraries(test_config_updater PRIVATE cns_rpi_core)

@@ -16,6 +16,7 @@
 
 #include <chrono>
 #include <csignal>
+#include <cstdint>
 #include <cstdlib>
 #include <iostream>
 #include <optional>
@@ -24,6 +25,7 @@
 #include <utility>
 #include <vector>
 
+#include "cellular/cellular_status.hpp"
 #include "common/mavlink.h"
 #include "config/app_config.hpp"
 #include "config_command/config_store.hpp"
@@ -293,6 +295,7 @@ int main(int argc, char** argv) {
     state_store.UpdateRpiSerial(*serial);
   }
   auto last_heartbeat = std::chrono::steady_clock::now();
+  auto last_cellular_heartbeat = std::chrono::steady_clock::now();
   std::optional<mqtt::MqttClient> mqtt_client;
   registration::RegistrationState registration_state;
   std::optional<std::string> active_vendor_id;
@@ -336,6 +339,18 @@ int main(int argc, char** argv) {
       mavlink_message_t heartbeat = BuildHeartbeat();
       link->SendMessage(heartbeat);
       last_heartbeat = now;
+    }
+
+    if (now - last_cellular_heartbeat >= app_config->cellular.heartbeat_interval) {
+      const auto cellular_status = cellular::ProbeLink(app_config->cellular.interface_name);
+      const auto boot_ms = static_cast<std::uint32_t>(
+          std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
+      const auto heartbeat = cellular::BuildRpiCellularHeartbeat(
+          cellular_status, kSystemId, kComponentId, boot_ms);
+      if (!link->SendMessage(heartbeat)) {
+        std::cerr << "5G状态心跳发送到单片机失败" << std::endl;
+      }
+      last_cellular_heartbeat = now;
     }
 
     auto mqtt_snapshot = state_store.Snapshot();
