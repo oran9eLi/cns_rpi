@@ -151,7 +151,7 @@ void LogExtension(std::uint32_t msgid, const state::TelemetryState& snapshot) {
                   << " gps_used=" << static_cast<int>(snapshot.gnss_sat->gps_used) << std::endl;
       }
       if (snapshot.gnss_utc) {
-        std::cout << "GNSSUTC: date_yyyymmdd=" << snapshot.gnss_utc->date_yyyymmdd
+        std::cout << "GNSSUTC: date_yymmdd=" << snapshot.gnss_utc->date_yymmdd
                   << " seconds_of_day=" << snapshot.gnss_utc->seconds_of_day << std::endl;
       }
       if (snapshot.env_humidity) {
