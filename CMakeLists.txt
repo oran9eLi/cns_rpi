@@ -62,6 +62,9 @@ add_test(NAME mqtt_client COMMAND test_mqtt_client)
 add_executable(cns_rpi src/main.cpp)
 target_link_libraries(cns_rpi PRIVATE cns_rpi_core cns_rpi_mqtt)
 
+add_executable(cns_control_test src/control_test/main.cpp)
+target_link_libraries(cns_control_test PRIVATE cns_rpi_core)
+
 add_executable(test_mavlink_link tests/test_mavlink_link.cpp)
 target_link_libraries(test_mavlink_link PRIVATE cns_rpi_core)
 add_test(NAME mavlink_link COMMAND test_mavlink_link)

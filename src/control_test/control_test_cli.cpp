@@ -114,4 +114,9 @@ nlohmann::json BuildDryRunResult(
                           packet.param7})}};
 }
 
+int ExitCodeForFinalAck(const nlohmann::json& ack) {
+  const auto status = ack.find("status");
+  return status != ack.end() && status->is_string() && *status == "accepted" ? 0 : 1;
+}
+
 }  // namespace control_test

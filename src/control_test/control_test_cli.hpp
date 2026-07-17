@@ -31,4 +31,6 @@ std::expected<std::string, CliError> LoadPayload(const CliOptions& options);
 nlohmann::json BuildDryRunResult(
     const control_command::ControlCommand& command);
 
+int ExitCodeForFinalAck(const nlohmann::json& ack);
+
 }  // namespace control_test

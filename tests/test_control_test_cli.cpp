@@ -147,3 +147,10 @@ TEST_CASE("空运行输出实际MAVLink映射但不伪造目标系统编号") {
   CHECK(result["params"] ==
         nlohmann::json::array({1500, 1510, 1520, 1530, 0, 0, 0}));
 }
+
+TEST_CASE("最终回执只在接受时返回成功退出码") {
+  CHECK(control_test::ExitCodeForFinalAck({{"status", "accepted"}}) == 0);
+  CHECK(control_test::ExitCodeForFinalAck({{"status", "rejected"}}) == 1);
+  CHECK(control_test::ExitCodeForFinalAck({{"status", "timeout"}}) == 1);
+  CHECK(control_test::ExitCodeForFinalAck(nlohmann::json::object()) == 1);
+}
