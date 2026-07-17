@@ -114,9 +114,21 @@ nlohmann::json BuildDryRunResult(
                           packet.param7})}};
 }
 
-int ExitCodeForFinalAck(const nlohmann::json& ack) {
+int ExitCodeForFinalAck(const nlohmann::json& ack, bool uart_write_failed) {
+  if (uart_write_failed) {
+    return 3;
+  }
   const auto status = ack.find("status");
   return status != ack.end() && status->is_string() && *status == "accepted" ? 0 : 1;
+}
+
+std::string UartOpenErrorMessage(uart::UartError error,
+                                 std::string_view device) {
+  if (error == uart::UartError::kDeviceBusy) {
+    return "串口已被占用：" + std::string(device) +
+           "；请先执行 systemctl stop cns-rpi.service 停止主服务";
+  }
+  return "打开串口失败：" + std::string(device);
 }
 
 }  // namespace control_test

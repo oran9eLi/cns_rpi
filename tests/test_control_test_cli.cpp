@@ -8,6 +8,7 @@
 
 #include "control_command/control_command.hpp"
 #include "control_test/control_test_cli.hpp"
+#include "uart/serial_port.hpp"
 
 TEST_CASE("直接命令内容默认仅解析而不发送") {
   const std::array<std::string_view, 2> args{
@@ -153,4 +154,16 @@ TEST_CASE("最终回执只在接受时返回成功退出码") {
   CHECK(control_test::ExitCodeForFinalAck({{"status", "rejected"}}) == 1);
   CHECK(control_test::ExitCodeForFinalAck({{"status", "timeout"}}) == 1);
   CHECK(control_test::ExitCodeForFinalAck(nlohmann::json::object()) == 1);
+}
+
+TEST_CASE("串口写入失败时即使输出拒绝回执也返回串口错误退出码") {
+  CHECK(control_test::ExitCodeForFinalAck({{"status", "rejected"}}, true) == 3);
+}
+
+TEST_CASE("串口被占用时诊断信息明确提示停止主服务") {
+  const auto message = control_test::UartOpenErrorMessage(
+      uart::UartError::kDeviceBusy, "/dev/ttyUSB0");
+
+  CHECK(message.find("串口已被占用") != std::string::npos);
+  CHECK(message.find("systemctl stop cns-rpi.service") != std::string::npos);
 }

@@ -1,6 +1,14 @@
 #define DOCTEST_CONFIG_IMPLEMENT_WITH_MAIN
 #include <doctest/doctest.h>
 
+#include <cstdlib>
+#include <memory>
+#include <string>
+#include <utility>
+
+#include <fcntl.h>
+#include <unistd.h>
+
 #include <array>
 #include <cstdint>
 #include <span>
@@ -23,6 +31,35 @@ std::vector<std::uint8_t> PackHeartbeatBytes() {
 }
 
 }  // namespace
+
+TEST_CASE("串口设备只能被一个进程实例独占打开") {
+  const int master_fd = ::posix_openpt(O_RDWR | O_NOCTTY);
+  REQUIRE(master_fd >= 0);
+  const auto close_master = std::unique_ptr<int, void (*)(int*)>(
+      new int(master_fd), [](int* fd) {
+        ::close(*fd);
+        delete fd;
+      });
+  REQUIRE(::grantpt(master_fd) == 0);
+  REQUIRE(::unlockpt(master_fd) == 0);
+  const char* slave_name = ::ptsname(master_fd);
+  REQUIRE(slave_name != nullptr);
+  const std::string device(slave_name);
+
+  {
+    auto first = uart::SerialPort::Open(device, 115200);
+    REQUIRE(first.has_value());
+
+    // 移动后锁必须跟随文件描述符，不能因临时对象析构而提前释放。
+    auto moved = std::move(*first);
+    auto second = uart::SerialPort::Open(device, 115200);
+    REQUIRE_FALSE(second.has_value());
+    CHECK(second.error() == uart::UartError::kDeviceBusy);
+  }
+
+  auto third = uart::SerialPort::Open(device, 115200);
+  CHECK(third.has_value());
+}
 
 TEST_CASE("完整合法帧一次性喂入能被正确解出") {
   uart::MavlinkFrameAssembler assembler;

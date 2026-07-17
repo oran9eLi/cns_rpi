@@ -70,7 +70,9 @@ int Run(int argc, char** argv) {
   auto link = uart::MavlinkLink::Open(app_config->serial.device,
                                       app_config->serial.baud);
   if (!link) {
-    std::cerr << "打开串口失败：" << app_config->serial.device << '\n';
+    std::cerr << control_test::UartOpenErrorMessage(
+                     link.error(), app_config->serial.device)
+              << '\n';
     return kUartError;
   }
 
@@ -108,7 +110,9 @@ int Run(int argc, char** argv) {
   const auto message = control_command::EncodeCommandLong(
       *command, kControlSystemId, kControlComponentId, endpoint->system_id,
       endpoint->component_id);
+  bool uart_write_failed = false;
   if (!link->SendMessage(message)) {
+    uart_write_failed = true;
     (void)transaction.HandleLocalFailure(
         {.code = "uart_send_failed", .message = "控制命令发送到单片机失败"});
   }
@@ -133,7 +137,7 @@ int Run(int argc, char** argv) {
       PrintAck(output);
       transaction.ConfirmAckPublished();
       if (is_final) {
-        return control_test::ExitCodeForFinalAck(output);
+        return control_test::ExitCodeForFinalAck(output, uart_write_failed);
       }
     }
   }
