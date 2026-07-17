@@ -7,6 +7,10 @@
 #include <string>
 #include <string_view>
 
+#include <nlohmann/json.hpp>
+
+#include "control_command/control_command.hpp"
+
 namespace control_test {
 
 struct CliOptions {
@@ -24,5 +28,7 @@ struct CliError {
 std::expected<CliOptions, CliError> ParseArguments(
     std::span<const std::string_view> arguments);
 std::expected<std::string, CliError> LoadPayload(const CliOptions& options);
+nlohmann::json BuildDryRunResult(
+    const control_command::ControlCommand& command);
 
 }  // namespace control_test

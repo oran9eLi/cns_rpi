@@ -6,6 +6,7 @@
 #include <fstream>
 #include <string_view>
 
+#include "control_command/control_command.hpp"
 #include "control_test/control_test_cli.hpp"
 
 TEST_CASE("直接命令内容默认仅解析而不发送") {
@@ -129,4 +130,20 @@ TEST_CASE("读取直接命令内容和命令文件") {
     REQUIRE_FALSE(result.has_value());
     CHECK(result.error().code == "payload_file_unreadable");
   }
+}
+
+TEST_CASE("空运行输出实际MAVLink映射但不伪造目标系统编号") {
+  auto command = control_command::Parse(
+      R"({"command_id":"local-1","command":"set_motor_pwm","parameters":{"pwm_us":[1500,1510,1520,1530]}})");
+  REQUIRE(command.has_value());
+
+  const auto result = control_test::BuildDryRunResult(*command);
+
+  CHECK(result["status"] == "dry_run");
+  CHECK(result["command_id"] == "local-1");
+  CHECK(result["mavlink_command"] == control_command::kSetMotorPwmUs);
+  CHECK(result["target_system"] == nullptr);
+  CHECK(result["target_component"] == 193);
+  CHECK(result["params"] ==
+        nlohmann::json::array({1500, 1510, 1520, 1530, 0, 0, 0}));
 }

@@ -3,6 +3,8 @@
 #include <fstream>
 #include <iterator>
 
+#include "control_command/control_endpoint.hpp"
+
 namespace control_test {
 namespace {
 
@@ -91,6 +93,25 @@ std::expected<std::string, CliError> LoadPayload(const CliOptions& options) {
     return Error("empty_payload", "命令文件为空");
   }
   return payload;
+}
+
+nlohmann::json BuildDryRunResult(
+    const control_command::ControlCommand& command) {
+  const auto message = control_command::EncodeCommandLong(
+      command, 250, MAV_COMP_ID_ONBOARD_COMPUTER, 0,
+      control_command::kStm32Usart6ComponentId);
+  mavlink_command_long_t packet{};
+  mavlink_msg_command_long_decode(&message, &packet);
+
+  return {{"status", "dry_run"},
+          {"command_id", command.command_id},
+          {"mavlink_command", packet.command},
+          {"target_system", nullptr},
+          {"target_component", packet.target_component},
+          {"params", nlohmann::json::array(
+                         {packet.param1, packet.param2, packet.param3,
+                          packet.param4, packet.param5, packet.param6,
+                          packet.param7})}};
 }
 
 }  // namespace control_test
