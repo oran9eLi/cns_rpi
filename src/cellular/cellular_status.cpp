@@ -1,6 +1,6 @@
 /**
  * @file cellular_status.cpp
- * @brief cellular_status.hpp implementation.
+ * @brief 移动网络链路状态探测与心跳编码实现。
  */
 
 #include "cellular/cellular_status.hpp"

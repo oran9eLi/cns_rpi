@@ -33,6 +33,8 @@
 #include "config_command/command_processor.hpp"
 #include "config_command/config_updater.hpp"
 #include "control_command/control_command.hpp"
+#include "control_command/control_endpoint.hpp"
+#include "control_command/control_transaction.hpp"
 #include "mqtt/mqtt_client.hpp"
 #include "mqtt/topic.hpp"
 #include "payload/json_serializer.hpp"
@@ -48,13 +50,9 @@ namespace {
 
 constexpr std::uint8_t kSystemId = 1;
 constexpr std::uint8_t kComponentId = MAV_COMP_ID_ONBOARD_COMPUTER;
+// 控制事务使用独立 source system，便于 STM32 将 COMMAND_ACK 定向回复给 RPi。
 constexpr std::uint8_t kControlSystemId = 250;
 constexpr auto kControlAckTimeout = std::chrono::seconds(2);
-
-struct PendingControlCommand {
-  control_command::ControlCommand command;
-  std::chrono::steady_clock::time_point sent_at;
-};
 
 volatile std::sig_atomic_t g_exit_requested = 0;
 
@@ -306,24 +304,22 @@ int main(int argc, char** argv) {
   std::string config_ack_topic;
   std::string control_set_topic;
   std::string control_ack_topic;
-  std::optional<PendingControlCommand> pending_control;
+  control_command::ControlTransaction control_transaction(kControlAckTimeout);
+  std::optional<control_command::MavlinkEndpoint> stm32_endpoint;
   bool restart_requested = false;
   auto last_telemetry_publish = std::chrono::steady_clock::now();
   while (!g_exit_requested) {
     if (auto msg = link->ReceiveMessage()) {
-      if ((msg->msgid == MAVLINK_MSG_ID_COMMAND_ACK) && pending_control && mqtt_client) {
+      stm32_endpoint = control_command::ObserveFlightControllerHeartbeat(
+          *msg, stm32_endpoint);
+      if (stm32_endpoint && mqtt_client && control_command::IsExpectedCommandAck(
+                                                *msg, *stm32_endpoint,
+                                                kControlSystemId, kComponentId)) {
         mavlink_command_ack_t ack{};
         mavlink_msg_command_ack_decode(&*msg, &ack);
-        if (ack.command == pending_control->command.mavlink_command) {
-          const auto payload =
-              control_command::BuildMavlinkAck(pending_control->command, ack.result).dump();
-          if (!mqtt_client->Publish(control_ack_topic, payload,
-                                    app_config->mqtt.topics.control_ack.qos,
-                                    /*retain=*/false)) {
-            std::cerr << "控制命令ACK发布失败" << std::endl;
-          }
-          pending_control.reset();
-        }
+        (void)control_transaction.HandleMavlinkAck(
+            ack.command, ack.result, ack.progress, ack.result_param2,
+            std::chrono::steady_clock::now());
       }
       state_store.UpdateDcdwLabel(protocol::FormatDcdwLabel(msg->sysid));
       if (protocol::DecodeAndStore(*msg, state_store)) {
@@ -356,20 +352,25 @@ int main(int argc, char** argv) {
     auto mqtt_snapshot = state_store.Snapshot();
     if (mqtt_client && active_vendor_id && mqtt_snapshot.vendor_id &&
         *mqtt_snapshot.vendor_id != *active_vendor_id) {
-      mqtt_client->PublishAndWait(registration_topic, offline_payload,
-                                  app_config->mqtt.topics.registration.qos,
-                                  /*retain=*/true, std::chrono::seconds(2));
-      mqtt_client.reset();
-      registration_state = registration::RegistrationState{};
-      active_vendor_id.reset();
-      registration_topic.clear();
-      telemetry_topic.clear();
-      config_set_topic.clear();
-      config_ack_topic.clear();
-      control_set_topic.clear();
-      control_ack_topic.clear();
-      pending_control.reset();
-      offline_payload.clear();
+      if (control_transaction.HasPending()) {
+        (void)control_transaction.HandleLocalFailure(
+            {.code = "device_identity_changed", .message = "设备身份发生变化，取消当前控制事务"});
+      } else {
+        control_transaction.ResetIdentityScope();
+        mqtt_client->PublishAndWait(registration_topic, offline_payload,
+                                    app_config->mqtt.topics.registration.qos,
+                                    /*retain=*/true, std::chrono::seconds(2));
+        mqtt_client.reset();
+        registration_state = registration::RegistrationState{};
+        active_vendor_id.reset();
+        registration_topic.clear();
+        telemetry_topic.clear();
+        config_set_topic.clear();
+        config_ack_topic.clear();
+        control_set_topic.clear();
+        control_ack_topic.clear();
+        offline_payload.clear();
+      }
     }
 
     if (!mqtt_client) {
@@ -424,7 +425,8 @@ int main(int argc, char** argv) {
       }
     }
 
-    if (mqtt_client) {
+    if (mqtt_client && active_vendor_id && mqtt_snapshot.vendor_id &&
+        *active_vendor_id == *mqtt_snapshot.vendor_id) {
       auto snapshot = state_store.Snapshot();
       if (snapshot.vendor_id) {
         const auto online_payload = registration::BuildOnlinePayload({
@@ -444,9 +446,10 @@ int main(int argc, char** argv) {
       }
     }
 
-    if (mqtt_client) {
+    if (mqtt_client && active_vendor_id && mqtt_snapshot.vendor_id &&
+        *active_vendor_id == *mqtt_snapshot.vendor_id) {
       if (auto message = mqtt_client->TryPopMessage()) {
-        if (message->topic == config_set_topic) {
+        if (message->topic == config_set_topic && !restart_requested) {
           config_command::CommandProcessResult result;
           auto parsed = config_command::ParseConfigCommand(message->payload);
           if (!parsed) {
@@ -457,6 +460,11 @@ int main(int argc, char** argv) {
                   return std::unexpected(config_command::CommandError{
                       .code = "config_write_failed", .message = "不可达的持久化分支"});
                 });
+          } else if (control_transaction.HasPending()) {
+            result.ack = config_command::BuildRejectedAck(
+                parsed->command_id,
+                {.code = "control_command_busy",
+                 .message = "存在未结束的飞控命令，暂不修改运行参数"});
           } else {
             auto current = config_command::LoadConfigJson(config_path);
             if (!current) {
@@ -478,36 +486,32 @@ int main(int argc, char** argv) {
           }
           if (result.should_exit) {
             restart_requested = true;
-            break;
           }
-        } else if (message->topic == control_set_topic) {
+        } else if (message->topic == control_set_topic && !restart_requested) {
           auto command = control_command::Parse(message->payload);
           if (!command) {
             const auto ack = control_command::BuildRejectedAck(
-                /*command_id=*/"", /*command=*/"", command.error());
-            (void)mqtt_client->Publish(control_ack_topic, ack.dump(),
-                                       app_config->mqtt.topics.control_ack.qos,
-                                       /*retain=*/false);
-          } else if (pending_control) {
-            const auto ack = control_command::BuildRejectedAck(
-                command->command_id, command->command,
-                {.code = "command_busy", .message = "上一条控制命令仍在等待单片机应答"});
+                command.error().command_id, command.error().command, command.error());
             (void)mqtt_client->Publish(control_ack_topic, ack.dump(),
                                        app_config->mqtt.topics.control_ack.qos,
                                        /*retain=*/false);
           } else {
-            const auto mavlink_message = control_command::EncodeCommandLong(
-                *command, kControlSystemId, kComponentId);
-            if (!link->SendMessage(mavlink_message)) {
-              const auto ack = control_command::BuildRejectedAck(
-                  command->command_id, command->command,
-                  {.code = "uart_send_failed", .message = "控制命令发送到单片机失败"});
-              (void)mqtt_client->Publish(control_ack_topic, ack.dump(),
+            const auto submission = control_transaction.Submit(*command, now);
+            if (submission.ack) {
+              (void)mqtt_client->Publish(control_ack_topic, submission.ack->dump(),
                                          app_config->mqtt.topics.control_ack.qos,
                                          /*retain=*/false);
-            } else {
-              pending_control = PendingControlCommand{.command = std::move(*command),
-                                                      .sent_at = now};
+            } else if (submission.should_send_to_mcu && !stm32_endpoint) {
+              (void)control_transaction.HandleLocalFailure(
+                  {.code = "stm32_identity_unknown", .message = "尚未收到STM32心跳"});
+            } else if (submission.should_send_to_mcu) {
+              const auto mavlink_message = control_command::EncodeCommandLong(
+                  *command, kControlSystemId, kComponentId, stm32_endpoint->system_id,
+                  stm32_endpoint->component_id);
+              if (!link->SendMessage(mavlink_message)) {
+                (void)control_transaction.HandleLocalFailure(
+                    {.code = "uart_send_failed", .message = "控制命令发送到单片机失败"});
+              }
             }
           }
         } else {
@@ -516,16 +520,30 @@ int main(int argc, char** argv) {
       }
     }
 
-    if (mqtt_client && pending_control &&
-        now - pending_control->sent_at >= kControlAckTimeout) {
-      const auto ack = control_command::BuildTimeoutAck(pending_control->command);
-      (void)mqtt_client->Publish(control_ack_topic, ack.dump(),
-                                 app_config->mqtt.topics.control_ack.qos,
-                                 /*retain=*/false);
-      pending_control.reset();
+    (void)control_transaction.CheckTimeout(now);
+    if (mqtt_client && control_transaction.PendingAck() != nullptr) {
+      const bool published = control_transaction.PendingAckIsFinal()
+                                 ? mqtt_client->PublishAndWait(
+                                       control_ack_topic,
+                                       control_transaction.PendingAck()->dump(),
+                                       app_config->mqtt.topics.control_ack.qos,
+                                       /*retain=*/false, std::chrono::seconds(2))
+                                 : mqtt_client->Publish(
+                                       control_ack_topic,
+                                       control_transaction.PendingAck()->dump(),
+                                       app_config->mqtt.topics.control_ack.qos,
+                                       /*retain=*/false);
+      if (published) {
+        control_transaction.ConfirmAckPublished();
+      }
     }
 
-    if (mqtt_client && mqtt_client->IsConnected() &&
+    if (restart_requested && !control_transaction.HasPending()) {
+      break;
+    }
+
+    if (mqtt_client && active_vendor_id && mqtt_snapshot.vendor_id &&
+        *active_vendor_id == *mqtt_snapshot.vendor_id && mqtt_client->IsConnected() &&
         now - last_telemetry_publish >= app_config->runtime.telemetry_publish_interval) {
       std::string json_str =
           payload::ToJson(state_store.Snapshot(), app_config->identity.school_name).dump();

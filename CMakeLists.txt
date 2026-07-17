@@ -33,6 +33,8 @@ add_library(cns_rpi_core
     src/config_command/config_store.cpp
     src/config_command/command_processor.cpp
     src/control_command/control_command.cpp
+    src/control_command/control_transaction.cpp
+    src/control_command/control_endpoint.cpp
     src/cellular/cellular_status.cpp
 )
 target_include_directories(cns_rpi_core PUBLIC src)
@@ -110,6 +112,14 @@ add_test(NAME command_parser COMMAND test_command_parser)
 add_executable(test_control_command tests/test_control_command.cpp)
 target_link_libraries(test_control_command PRIVATE cns_rpi_core)
 add_test(NAME control_command COMMAND test_control_command)
+
+add_executable(test_control_transaction tests/test_control_transaction.cpp)
+target_link_libraries(test_control_transaction PRIVATE cns_rpi_core)
+add_test(NAME control_transaction COMMAND test_control_transaction)
+
+add_executable(test_control_endpoint tests/test_control_endpoint.cpp)
+target_link_libraries(test_control_endpoint PRIVATE cns_rpi_core)
+add_test(NAME control_endpoint COMMAND test_control_endpoint)
 
 add_executable(test_cellular_status tests/test_cellular_status.cpp)
 target_link_libraries(test_cellular_status PRIVATE cns_rpi_core)

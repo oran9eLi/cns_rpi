@@ -2,10 +2,9 @@
 
 /**
  * @file cellular_status.hpp
- * @brief Probe the Raspberry Pi cellular link and encode it for the MCU.
+ * @brief 探测树莓派移动网络链路状态，并编码后发送给单片机。
  *
- * The MCU only needs a compact heartbeat, but the individual bits are kept so
- * bench logs can explain why the link is considered offline.
+ * 单片机只需要紧凑的心跳值，同时保留各项状态位，便于联调时定位离线原因。
  */
 
 #include <cstdint>

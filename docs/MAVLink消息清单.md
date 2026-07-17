@@ -61,6 +61,30 @@ RPi 是"汇总遥测+身份数据的总入口"（`docs/V1设计文档.md` §1）
 
 命令是事件驱动的，不适用"频率"这个概念，来一条处理一条。
 
+### 4.1 端点身份与应答校验
+
+- RPi 控制命令的 source system 固定为 `250`，component 为
+  `MAV_COMP_ID_ONBOARD_COMPUTER`。这个身份专用于命令事务，与现有 RPi
+  状态心跳的 system id 分开。
+- RPi 只从 `type=MAV_TYPE_ONBOARD_CONTROLLER(18)`、USART6 帧头
+  `compid=193` 的首条 `HEARTBEAT` 学习 STM32 动态 `sysid`（范围
+  `1..250`）。固件正确使用 `autopilot=MAV_AUTOPILOT_INVALID(8)`，RPi 不得
+  把 `autopilot != INVALID` 作为识别条件。端点学习后不被其他心跳覆盖。
+- `COMMAND_LONG` 定向发送到已学习的 STM32 端点，不再使用
+  `target_system=0`/`target_component=0` 广播。
+- `COMMAND_ACK` 只有在帧头来源匹配 STM32，且 payload 目标为
+  `0/0` 或本 RPi 控制身份时才会进入命令状态机。
+
+### 4.2 命令事务规则
+
+- 同时只允许一条命令等待 STM32，`command_id` 用于业务幂等。
+- 执行中的重复 `command_id` 不重复写 UART；已完成的重复请求重放原 ACK。
+- `MAV_RESULT_IN_PROGRESS` 不是终态，会刷新等待超时时间；其他
+  MAVLink result 作为终态回执。
+- 终态 ACK 必须等待 MQTT QoS 完成回调后才能清理事务。
+- STM32 超时后，同 MAVLink command 在 `5 × 超时时间` 内禁止重新下发，
+  用于隔离无法携带 `command_id` 的迟到 `COMMAND_ACK`。
+
 ## 5. 开放问题
 
 - 第1、2节的频率是否直接沿用 LoRa 现有值，还是给 RPi 链路重新定一套（建议：直连 UART 带宽够，可以定得更高，尤其 `GNSS_SAT`/`STATUSTEXT` 这种现在压得很低的）——待你决定

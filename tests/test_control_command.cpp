@@ -11,11 +11,13 @@ TEST_CASE("四路PWM命令解析并编码为31013") {
   CHECK(command->params[0] == 1650.0F);
   CHECK(command->params[3] == 1530.0F);
 
-  const auto message = control_command::EncodeCommandLong(*command, 250, MAV_COMP_ID_ONBOARD_COMPUTER);
+  const auto message = control_command::EncodeCommandLong(
+      *command, 250, MAV_COMP_ID_ONBOARD_COMPUTER, 1, MAV_COMP_ID_AUTOPILOT1);
   mavlink_command_long_t packet{};
   mavlink_msg_command_long_decode(&message, &packet);
   CHECK(packet.command == 31013);
-  CHECK(packet.target_system == 0);
+  CHECK(packet.target_system == 1);
+  CHECK(packet.target_component == MAV_COMP_ID_AUTOPILOT1);
   CHECK(packet.param2 == 1651.0F);
 }
 
@@ -48,4 +50,39 @@ TEST_CASE("按COMMAND_ACK生成服务器回执") {
   auto rejected = control_command::BuildMavlinkAck(*command, MAV_RESULT_TEMPORARILY_REJECTED);
   CHECK(rejected["status"] == "rejected");
   CHECK(rejected["result_code"] == "temporarily_rejected");
+
+  auto progress = control_command::BuildMavlinkAck(*command, MAV_RESULT_IN_PROGRESS, 30, 7);
+  CHECK(progress["status"] == "in_progress");
+  CHECK(progress["progress"] == 30);
+  CHECK(progress["result_param2"] == 7);
+}
+
+TEST_CASE("无参数命令拒绝多余参数") {
+  const auto command = control_command::Parse(
+      R"({"command_id":"1","command":"takeoff","parameters":{"height":10}})");
+  REQUIRE_FALSE(command.has_value());
+  CHECK(command.error().code == "invalid_parameter");
+}
+
+TEST_CASE("解析失败保留可用的命令关联信息") {
+  const auto invalid_parameters = control_command::Parse(
+      R"({"command_id":"pwm-invalid","command":"set_motor_pwm","parameters":{"pwm_us":[1500]}})");
+  REQUIRE_FALSE(invalid_parameters.has_value());
+  CHECK(invalid_parameters.error().command_id == "pwm-invalid");
+  CHECK(invalid_parameters.error().command == "set_motor_pwm");
+
+  const auto invalid_command = control_command::Parse(
+      R"({"command_id":"bad-command","command":42})");
+  REQUIRE_FALSE(invalid_command.has_value());
+  CHECK(invalid_command.error().command_id == "bad-command");
+  CHECK(invalid_command.error().command.empty());
+}
+
+TEST_CASE("PWM命令拒绝pwm_us以外的参数") {
+  const auto command = control_command::Parse(
+      R"({"command_id":"pwm-extra","command":"set_motor_pwm","parameters":{"pwm_us":[1500,1500,1500,1500],"motor_index":1}})");
+  REQUIRE_FALSE(command.has_value());
+  CHECK(command.error().code == "invalid_parameter");
+  CHECK(command.error().command_id == "pwm-extra");
+  CHECK(command.error().command == "set_motor_pwm");
 }
