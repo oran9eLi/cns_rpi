@@ -44,6 +44,18 @@ std::expected<std::optional<mavlink_message_t>, UartError> MavlinkLink::ReceiveM
   return assembler_.Feed(std::span<const std::uint8_t>(buffer.data(), *count));
 }
 
+std::expected<std::optional<mavlink_message_t>, UartError>
+MavlinkLink::ReceiveMessage(std::chrono::milliseconds max_wait) {
+  auto readable = port_.WaitReadable(max_wait);
+  if (!readable) {
+    return std::unexpected(readable.error());
+  }
+  if (!*readable) {
+    return std::nullopt;
+  }
+  return ReceiveMessage();
+}
+
 std::expected<void, UartError> MavlinkLink::SendMessage(const mavlink_message_t& message) {
   std::array<std::uint8_t, MAVLINK_MAX_PACKET_LEN> buffer{};
   const std::uint16_t length = mavlink_msg_to_send_buffer(buffer.data(), &message);

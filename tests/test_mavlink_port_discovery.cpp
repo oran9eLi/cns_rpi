@@ -175,6 +175,23 @@ TEST_CASE("停止回调及时中止本轮探测") {
   CHECK(elapsed < std::chrono::milliseconds(500));
 }
 
+TEST_CASE("短超时不会为每个候选阻塞一百毫秒") {
+  auto first = OpenPtyPair();
+  auto second = OpenPtyPair();
+  auto third = OpenPtyPair();
+  const std::vector<std::string> candidates{
+      first.slave_path, second.slave_path, third.slave_path};
+
+  const auto start = std::chrono::steady_clock::now();
+  auto attempt = uart::ProbeMavlinkCandidates(
+      candidates, 115200, std::chrono::milliseconds(1),
+      [] { return false; });
+  const auto elapsed = std::chrono::steady_clock::now() - start;
+
+  CHECK_FALSE(attempt.found.has_value());
+  CHECK(elapsed < std::chrono::milliseconds(50));
+}
+
 TEST_CASE("首个设备忙时记录失败原因并继续探测") {
   auto busy = OpenPtyPair();
   auto held = uart::MavlinkLink::Open(busy.slave_path, 115200);

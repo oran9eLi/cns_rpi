@@ -123,7 +123,9 @@ DiscoveryAttempt ProbeMavlinkCandidates(
         return attempt;
       }
 
-      auto received = link->ReceiveMessage();
+      const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+          deadline - std::chrono::steady_clock::now());
+      auto received = link->ReceiveMessage(remaining);
       if (!received) {
         attempt.failures.push_back({device, received.error()});
         break;

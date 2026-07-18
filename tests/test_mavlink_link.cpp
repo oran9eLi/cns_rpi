@@ -10,6 +10,7 @@
 #include <unistd.h>
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <span>
 #include <vector>
@@ -82,6 +83,34 @@ TEST_CASE("串口写故障返回明确UartError") {
   const auto disconnected = link->SendMessage(message);
   REQUIRE_FALSE(disconnected.has_value());
   CHECK(disconnected.error() == uart::UartError::kWriteError);
+}
+
+TEST_CASE("有界接收按调用方给定的短等待时间返回") {
+  auto pty = OpenPtyPair();
+  auto link = uart::MavlinkLink::Open(pty.slave_path, 115200);
+  REQUIRE(link.has_value());
+
+  const auto start = std::chrono::steady_clock::now();
+  const auto idle = link->ReceiveMessage(std::chrono::milliseconds(1));
+  const auto elapsed = std::chrono::steady_clock::now() - start;
+
+  REQUIRE(idle.has_value());
+  CHECK_FALSE(idle->has_value());
+  CHECK(elapsed < std::chrono::milliseconds(50));
+}
+
+TEST_CASE("有界接收把串口挂断报告为读错误") {
+  auto pty = OpenPtyPair();
+  auto link = uart::MavlinkLink::Open(pty.slave_path, 115200);
+  REQUIRE(link.has_value());
+  ::close(pty.master_fd);
+  pty.master_fd = -1;
+
+  const auto disconnected =
+      link->ReceiveMessage(std::chrono::milliseconds(20));
+
+  REQUIRE_FALSE(disconnected.has_value());
+  CHECK(disconnected.error() == uart::UartError::kReadError);
 }
 
 }  // namespace

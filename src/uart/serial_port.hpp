@@ -11,6 +11,7 @@
  */
 
 #include <cstddef>
+#include <chrono>
 #include <cstdint>
 #include <expected>
 #include <span>
@@ -53,6 +54,13 @@ class SerialPort {
    * @return 实际读到的字节数（可能是 0）；系统调用失败返回 kReadError。
    */
   std::expected<std::size_t, UartError> Read(std::span<std::uint8_t> buffer);
+
+  /**
+   * @brief 在调用方给定的最长时间内等待串口可读。
+   * @return 可读返回 true，超时返回 false；挂断或 poll 故障返回 kReadError。
+   */
+  std::expected<bool, UartError> WaitReadable(
+      std::chrono::milliseconds max_wait);
 
   /**
    * @brief 把 data 全部写入串口，内部处理短写（循环写完为止）。

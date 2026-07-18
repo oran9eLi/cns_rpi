@@ -14,6 +14,7 @@
  */
 
 #include <cstdint>
+#include <chrono>
 #include <optional>
 #include <queue>
 #include <span>
@@ -68,6 +69,13 @@ class MavlinkLink {
    * 读到0字节或没有完整帧时成功返回 std::nullopt。
    */
   std::expected<std::optional<mavlink_message_t>, UartError> ReceiveMessage();
+
+  /**
+   * @brief 最多等待 max_wait 后读取并尝试组帧，供有严格 deadline 的发现流程使用。
+   * @return 等待超时与暂未组出完整帧均返回成功的 std::nullopt。
+   */
+  std::expected<std::optional<mavlink_message_t>, UartError> ReceiveMessage(
+      std::chrono::milliseconds max_wait);
 
   /**
    * @brief 把一条已经 pack 好的帧编码并写入串口。

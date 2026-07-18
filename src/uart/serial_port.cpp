@@ -5,12 +5,17 @@
 
 #include "uart/serial_port.hpp"
 
+#include <algorithm>
 #include <fcntl.h>
+#include <poll.h>
 #include <sys/file.h>
 #include <termios.h>
 #include <unistd.h>
 
 #include <cerrno>
+#include <chrono>
+#include <cstdint>
+#include <limits>
 #include <utility>
 
 namespace uart {
@@ -119,6 +124,37 @@ std::expected<std::size_t, UartError> SerialPort::Read(std::span<std::uint8_t> b
     return std::unexpected(UartError::kReadError);
   }
   return static_cast<std::size_t>(n);
+}
+
+std::expected<bool, UartError> SerialPort::WaitReadable(
+    std::chrono::milliseconds max_wait) {
+  using Clock = std::chrono::steady_clock;
+  const auto deadline = Clock::now() + std::max(max_wait, max_wait.zero());
+
+  while (true) {
+    const auto remaining = deadline - Clock::now();
+    const auto rounded = std::chrono::ceil<std::chrono::milliseconds>(remaining);
+    const auto timeout = std::clamp<std::int64_t>(
+        rounded.count(), 0, std::numeric_limits<int>::max());
+    pollfd descriptor{fd_, POLLIN, 0};
+    const int result = ::poll(&descriptor, 1, static_cast<int>(timeout));
+    if (result == 0) {
+      return false;
+    }
+    if (result < 0) {
+      if (errno == EINTR) {
+        if (Clock::now() >= deadline) {
+          return false;
+        }
+        continue;
+      }
+      return std::unexpected(UartError::kReadError);
+    }
+    if ((descriptor.revents & (POLLERR | POLLHUP | POLLNVAL)) != 0) {
+      return std::unexpected(UartError::kReadError);
+    }
+    return (descriptor.revents & POLLIN) != 0;
+  }
 }
 
 std::expected<std::size_t, UartError> SerialPort::Write(std::span<const std::uint8_t> data) {
