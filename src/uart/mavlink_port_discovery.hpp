@@ -12,6 +12,38 @@
 
 namespace uart {
 
+/// 限制等待发现串口时的重复日志；首次立即放行，之后按间隔放行。
+class DiscoveryLogLimiter {
+ public:
+  using Clock = std::chrono::steady_clock;
+
+  explicit DiscoveryLogLimiter(Clock::duration interval)
+      : interval_(interval) {}
+
+  bool ShouldLog(Clock::time_point now);
+
+ private:
+  Clock::duration interval_;
+  std::optional<Clock::time_point> last_log_;
+};
+
+/// 从首个合法 MAVLink 帧开始监测静默时长。
+class MavlinkSilenceWatchdog {
+ public:
+  using Clock = std::chrono::steady_clock;
+
+  explicit MavlinkSilenceWatchdog(Clock::duration timeout)
+      : timeout_(timeout) {}
+
+  void ObserveValidFrame(Clock::time_point now) { last_frame_ = now; }
+  bool Expired(Clock::time_point now) const;
+  void Reset() { last_frame_.reset(); }
+
+ private:
+  Clock::duration timeout_;
+  std::optional<Clock::time_point> last_frame_;
+};
+
 std::vector<std::string> OrderSerialCandidates(
     std::span<const std::string> candidates);
 

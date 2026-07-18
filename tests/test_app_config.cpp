@@ -50,7 +50,20 @@ std::string ReplaceOnce(std::string text, const std::string& from, const std::st
   return text;
 }
 
+std::string ValidConfigWithSerialDevice(const std::string& device) {
+  return ReplaceOnce(ValidConfig(), "\"device\": \"/dev/ttyUSB0\"",
+                     "\"device\": \"" + device + "\"");
+}
+
 }  // namespace
+
+TEST_CASE("auto是合法串口配置值") {
+  auto result = config::LoadAppConfig(
+      WriteTempConfig(ValidConfigWithSerialDevice("auto")));
+
+  REQUIRE(result.has_value());
+  CHECK(result->serial.device == "auto");
+}
 
 TEST_CASE("完整合法嵌套配置能正确解析") {
   auto result = config::LoadAppConfig(WriteTempConfig(ValidConfig()));

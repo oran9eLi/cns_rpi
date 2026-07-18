@@ -62,6 +62,18 @@ std::vector<std::string> AlternateEnds(std::vector<NumberedPath> paths) {
 
 }  // 匿名命名空间
 
+bool DiscoveryLogLimiter::ShouldLog(Clock::time_point now) {
+  if (!last_log_ || now - *last_log_ >= interval_) {
+    last_log_ = now;
+    return true;
+  }
+  return false;
+}
+
+bool MavlinkSilenceWatchdog::Expired(Clock::time_point now) const {
+  return last_frame_.has_value() && now - *last_frame_ >= timeout_;
+}
+
 std::vector<std::string> OrderSerialCandidates(
     std::span<const std::string> candidates) {
   constexpr std::string_view kUsbPrefix = "/dev/ttyUSB";

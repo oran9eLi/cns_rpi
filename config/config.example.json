@@ -1,6 +1,6 @@
 {
   "serial": {
-    "device": "/dev/ttyUSB0",
+    "device": "auto",
     "baud": 115200
   },
   "mqtt": {

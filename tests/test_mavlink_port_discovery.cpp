@@ -90,6 +90,37 @@ mavlink_message_t PackSystemTime(std::uint8_t system_id) {
 
 }  // 匿名命名空间
 
+TEST_CASE("串口等待告警十秒内只允许一次") {
+  uart::DiscoveryLogLimiter limiter(std::chrono::seconds(10));
+  const auto start = uart::DiscoveryLogLimiter::Clock::time_point{};
+
+  CHECK(limiter.ShouldLog(start));
+  CHECK_FALSE(limiter.ShouldLog(start + std::chrono::seconds(9)));
+  CHECK(limiter.ShouldLog(start + std::chrono::seconds(10)));
+}
+
+TEST_CASE("MAVLink静默达到十秒才判定失联") {
+  uart::MavlinkSilenceWatchdog watchdog(std::chrono::seconds(10));
+  const auto start = uart::MavlinkSilenceWatchdog::Clock::time_point{};
+
+  watchdog.ObserveValidFrame(start);
+  CHECK_FALSE(watchdog.Expired(start + std::chrono::seconds(9)));
+  CHECK(watchdog.Expired(start + std::chrono::seconds(10)));
+  watchdog.ObserveValidFrame(start + std::chrono::seconds(11));
+  CHECK_FALSE(watchdog.Expired(start + std::chrono::seconds(20)));
+}
+
+TEST_CASE("MAVLink静默看门狗未见首帧和重置后不误报") {
+  uart::MavlinkSilenceWatchdog watchdog(std::chrono::seconds(10));
+  const auto start = uart::MavlinkSilenceWatchdog::Clock::time_point{};
+
+  CHECK_FALSE(watchdog.Expired(start + std::chrono::hours(1)));
+  watchdog.ObserveValidFrame(start);
+  REQUIRE(watchdog.Expired(start + std::chrono::seconds(10)));
+  watchdog.Reset();
+  CHECK_FALSE(watchdog.Expired(start + std::chrono::hours(1)));
+}
+
 TEST_CASE("USB候选按数值自然排序后从两端交替") {
   const std::vector<std::string> input{
       "/dev/ttyUSB10", "/dev/ttyUSB2", "/dev/ttyUSB1",

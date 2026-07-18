@@ -32,7 +32,7 @@ enum class ConfigError {
 std::string_view ConfigErrorMessage(ConfigError error);
 
 struct SerialConfig {
-  std::string device;  ///< 字符设备路径，例如 "/dev/ttyUSB0"
+  std::string device;  ///< `auto` 或明确字符设备路径，例如 "/dev/ttyUSB0"
   int baud = 0;        ///< 波特率
 };
 
