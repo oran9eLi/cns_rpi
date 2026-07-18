@@ -195,6 +195,17 @@ TEST_CASE("UART发送失败生成最终回执且发布后可重放") {
   CHECK((*replay.ack)["error_code"] == "uart_send_failed");
 }
 
+TEST_CASE("STM32链路不可用形成明确最终回执") {
+  ControlTransaction transaction(2s);
+  const auto now = ControlTransaction::TimePoint{};
+  REQUIRE(transaction.Submit(Takeoff("link-down-1"), now).should_send_to_mcu);
+
+  REQUIRE(transaction.HandleLocalFailure(
+      {.code = "stm32_link_unavailable", .message = "STM32串口链路不可用"}));
+  REQUIRE(transaction.PendingAck() != nullptr);
+  CHECK((*transaction.PendingAck())["error_code"] == "stm32_link_unavailable");
+}
+
 TEST_CASE("无pending或已有终态时忽略本地失败") {
   ControlTransaction transaction(2s);
   const auto now = ControlTransaction::TimePoint{};

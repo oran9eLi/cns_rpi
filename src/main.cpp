@@ -20,6 +20,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -43,12 +44,16 @@
 #include "registration/registration_payload.hpp"
 #include "registration/registration_state.hpp"
 #include "state/state_store.hpp"
-#include "uart/mavlink_link.hpp"
+#include "uart/mavlink_port_discovery.hpp"
 
 namespace {
 
 constexpr std::uint8_t kComponentId = MAV_COMP_ID_ONBOARD_COMPUTER;
 constexpr auto kControlAckTimeout = std::chrono::seconds(2);
+constexpr auto kDiscoveryProbeTimeout = std::chrono::milliseconds(300);
+constexpr auto kDiscoveryRetryInterval = std::chrono::seconds(1);
+constexpr auto kDiscoveryWarningInterval = std::chrono::seconds(10);
+constexpr auto kMavlinkSilenceTimeout = std::chrono::seconds(10);
 
 volatile std::sig_atomic_t g_exit_requested = 0;
 
@@ -112,13 +117,7 @@ int main(int argc, char** argv) {
     return EXIT_FAILURE;
   }
 
-  auto link = uart::MavlinkLink::Open(app_config->serial.device, app_config->serial.baud);
-  if (!link) {
-    (*logger)->Error("打开串口失败: " + app_config->serial.device);
-    return EXIT_FAILURE;
-  }
-
-  (*logger)->Info("cns_rpi M3c 启动，串口=" + app_config->serial.device +
+  (*logger)->Info("cns_rpi M3c 启动，串口配置=" + app_config->serial.device +
                   " 波特率=" + std::to_string(app_config->serial.baud));
 
   state::StateStore state_store;
@@ -139,48 +138,114 @@ int main(int argc, char** argv) {
   std::string control_ack_topic;
   control_command::ControlTransaction control_transaction(kControlAckTimeout);
   std::optional<control_command::MavlinkEndpoint> stm32_endpoint;
+  std::optional<uart::MavlinkLink> link;
+  std::string active_serial_device;
+  std::optional<mavlink_message_t> pending_first_message;
+  uart::DiscoveryLogLimiter discovery_log_limiter(kDiscoveryWarningInterval);
+  uart::MavlinkSilenceWatchdog silence_watchdog(kMavlinkSilenceTimeout);
+  auto next_discovery = std::chrono::steady_clock::now();
   bool restart_requested = false;
   auto last_telemetry_publish = std::chrono::steady_clock::now();
+
+  auto mark_link_disconnected = [&] {
+    (*logger)->Error("STM32串口断开: " + active_serial_device);
+    link.reset();
+    active_serial_device.clear();
+    pending_first_message.reset();
+    stm32_endpoint.reset();
+    silence_watchdog.Reset();
+    next_discovery = std::chrono::steady_clock::now();
+    if (control_transaction.HasPending()) {
+      (void)control_transaction.HandleLocalFailure(
+          {.code = "stm32_link_unavailable", .message = "STM32串口链路不可用"});
+    }
+  };
+
+  auto process_mavlink_message = [&](const mavlink_message_t& message,
+                                     std::chrono::steady_clock::time_point now) {
+    silence_watchdog.ObserveValidFrame(now);
+    stm32_endpoint =
+        control_command::ObserveFlightControllerHeartbeat(message, stm32_endpoint);
+    const auto rpi_system_id = control_command::LearnedSystemId(stm32_endpoint);
+    if (rpi_system_id && mqtt_client &&
+        control_command::IsExpectedCommandAck(message, *stm32_endpoint, *rpi_system_id,
+                                              kComponentId)) {
+      mavlink_command_ack_t ack{};
+      mavlink_msg_command_ack_decode(&message, &ack);
+      (void)control_transaction.HandleMavlinkAck(
+          ack.command, ack.result, ack.progress, ack.result_param2, now);
+    }
+    state_store.UpdateDcdwLabel(protocol::FormatDcdwLabel(message.sysid));
+    if (!protocol::DecodeAndStore(message, state_store)) {
+      (void)protocol::DecodeExtensionAndStore(message, state_store);
+    }
+  };
+
   while (!g_exit_requested) {
-    if (auto msg = link->ReceiveMessage(); msg.has_value() && msg->has_value()) {
-      stm32_endpoint = control_command::ObserveFlightControllerHeartbeat(
-          **msg, stm32_endpoint);
-      const auto rpi_system_id = control_command::LearnedSystemId(stm32_endpoint);
-      if (rpi_system_id && mqtt_client &&
-          control_command::IsExpectedCommandAck(**msg, *stm32_endpoint, *rpi_system_id,
-                                                kComponentId)) {
-        mavlink_command_ack_t ack{};
-        mavlink_msg_command_ack_decode(&**msg, &ack);
-        (void)control_transaction.HandleMavlinkAck(
-            ack.command, ack.result, ack.progress, ack.result_param2,
-            std::chrono::steady_clock::now());
-      }
-      state_store.UpdateDcdwLabel(protocol::FormatDcdwLabel((**msg).sysid));
-      if (!protocol::DecodeAndStore(**msg, state_store)) {
-        (void)protocol::DecodeExtensionAndStore(**msg, state_store);
+    auto now = std::chrono::steady_clock::now();
+    if (!link && now >= next_discovery) {
+      auto attempt = uart::DiscoverMavlinkPortOnce(
+          app_config->serial.device, app_config->serial.baud,
+          kDiscoveryProbeTimeout, [] { return g_exit_requested != 0; });
+      if (attempt.found) {
+        active_serial_device = std::move(attempt.found->device);
+        pending_first_message = attempt.found->first_message;
+        link.emplace(std::move(attempt.found->link));
+        silence_watchdog.ObserveValidFrame(std::chrono::steady_clock::now());
+        (*logger)->Info("已发现STM32 MAVLink串口: " + active_serial_device);
+      } else if (!g_exit_requested) {
+        const auto discovery_finished = std::chrono::steady_clock::now();
+        if (discovery_log_limiter.ShouldLog(discovery_finished)) {
+          (*logger)->Warn("尚未发现STM32 MAVLink串口，继续等待");
+        }
+        next_discovery = discovery_finished + kDiscoveryRetryInterval;
       }
     }
 
-    auto now = std::chrono::steady_clock::now();
+    now = std::chrono::steady_clock::now();
+    if (link) {
+      if (pending_first_message) {
+        const auto first_message = *pending_first_message;
+        pending_first_message.reset();
+        process_mavlink_message(first_message, now);
+      } else {
+        auto received = link->ReceiveMessage();
+        if (!received) {
+          mark_link_disconnected();
+        } else if (*received) {
+          process_mavlink_message(**received, now);
+        }
+      }
+      if (link && silence_watchdog.Expired(std::chrono::steady_clock::now())) {
+        (*logger)->Error("连续10秒未收到合法MAVLink帧");
+        mark_link_disconnected();
+      }
+    }
+
+    now = std::chrono::steady_clock::now();
     const auto rpi_system_id = control_command::LearnedSystemId(stm32_endpoint);
-    if (rpi_system_id &&
+    if (link && rpi_system_id &&
         now - last_heartbeat >= app_config->runtime.heartbeat_interval) {
       mavlink_message_t heartbeat = BuildHeartbeat(*rpi_system_id);
-      link->SendMessage(heartbeat);
-      last_heartbeat = now;
+      if (!link->SendMessage(heartbeat)) {
+        mark_link_disconnected();
+      } else {
+        last_heartbeat = now;
+      }
     }
 
-    if (rpi_system_id &&
+    if (link && rpi_system_id &&
         now - last_cellular_heartbeat >= app_config->cellular.heartbeat_interval) {
       const auto cellular_status = cellular::ProbeLink(app_config->cellular.interface_name);
       const auto boot_ms = static_cast<std::uint32_t>(
           std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
       const auto heartbeat = cellular::BuildRpiCellularHeartbeat(
           cellular_status, *rpi_system_id, kComponentId, boot_ms);
-      if (!link->SendMessage(heartbeat).has_value()) {
-        (*logger)->Warn("5G状态心跳发送到单片机失败");
+      if (!link->SendMessage(heartbeat)) {
+        mark_link_disconnected();
+      } else {
+        last_cellular_heartbeat = now;
       }
-      last_cellular_heartbeat = now;
     }
 
     auto mqtt_snapshot = state_store.Snapshot();
@@ -213,23 +278,22 @@ int main(int argc, char** argv) {
         if (!registration::IsValidDeviceIdentity(
                 app_config->mqtt.connection.client_id_prefix, *snapshot.vendor_id)) {
           (*logger)->Warn("vendor_id或MQTT Client ID前缀含非法字符，暂不连接MQTT");
-          continue;
-        }
-        const auto& topics = app_config->mqtt.topics;
-        registration_topic = mqtt::BuildRegistrationTopic(
-            topics.topic_namespace, *snapshot.vendor_id, topics.registration.suffix);
-        telemetry_topic = mqtt::BuildTelemetryTopic(
-            topics.topic_namespace, *snapshot.vendor_id, topics.telemetry.suffix);
-        config_set_topic = mqtt::BuildConfigSetTopic(
-            topics.topic_namespace, *snapshot.vendor_id, topics.config_set.suffix);
-        config_ack_topic = mqtt::BuildConfigAckTopic(
-            topics.topic_namespace, *snapshot.vendor_id, topics.config_ack.suffix);
-        control_set_topic = mqtt::BuildControlSetTopic(
-            topics.topic_namespace, *snapshot.vendor_id, topics.control_set.suffix);
-        control_ack_topic = mqtt::BuildControlAckTopic(
-            topics.topic_namespace, *snapshot.vendor_id, topics.control_ack.suffix);
-        offline_payload = registration::BuildOfflinePayload(*snapshot.vendor_id);
-        mqtt_client = mqtt::MqttClient::Open({
+        } else {
+          const auto& topics = app_config->mqtt.topics;
+          registration_topic = mqtt::BuildRegistrationTopic(
+              topics.topic_namespace, *snapshot.vendor_id, topics.registration.suffix);
+          telemetry_topic = mqtt::BuildTelemetryTopic(
+              topics.topic_namespace, *snapshot.vendor_id, topics.telemetry.suffix);
+          config_set_topic = mqtt::BuildConfigSetTopic(
+              topics.topic_namespace, *snapshot.vendor_id, topics.config_set.suffix);
+          config_ack_topic = mqtt::BuildConfigAckTopic(
+              topics.topic_namespace, *snapshot.vendor_id, topics.config_ack.suffix);
+          control_set_topic = mqtt::BuildControlSetTopic(
+              topics.topic_namespace, *snapshot.vendor_id, topics.control_set.suffix);
+          control_ack_topic = mqtt::BuildControlAckTopic(
+              topics.topic_namespace, *snapshot.vendor_id, topics.control_ack.suffix);
+          offline_payload = registration::BuildOfflinePayload(*snapshot.vendor_id);
+          mqtt_client = mqtt::MqttClient::Open({
             .broker_host = app_config->mqtt.connection.host,
             .broker_port = app_config->mqtt.connection.port,
             .client_id = registration::BuildClientId(
@@ -248,13 +312,14 @@ int main(int argc, char** argv) {
             },
             .subscriptions = {{config_set_topic, topics.config_set.qos},
                               {control_set_topic, topics.control_set.qos}},
-        }, **logger);
-        if (mqtt_client) {
-          active_vendor_id = *snapshot.vendor_id;
-          (*logger)->Info("MQTT连接中: broker=" + app_config->mqtt.connection.host +
-                          " topic=" + telemetry_topic);
-        } else {
-          (*logger)->Warn("MQTT客户端创建失败，下一轮重试");
+          }, **logger);
+          if (mqtt_client) {
+            active_vendor_id = *snapshot.vendor_id;
+            (*logger)->Info("MQTT连接中: broker=" + app_config->mqtt.connection.host +
+                            " topic=" + telemetry_topic);
+          } else {
+            (*logger)->Warn("MQTT客户端创建失败，下一轮重试");
+          }
         }
       }
     }
@@ -335,6 +400,9 @@ int main(int argc, char** argv) {
               (void)mqtt_client->Publish(control_ack_topic, submission.ack->dump(),
                                          app_config->mqtt.topics.control_ack.qos,
                                          /*retain=*/false);
+            } else if (submission.should_send_to_mcu && !link) {
+              (void)control_transaction.HandleLocalFailure(
+                  {.code = "stm32_link_unavailable", .message = "STM32串口链路不可用"});
             } else if (submission.should_send_to_mcu && !rpi_system_id) {
               (void)control_transaction.HandleLocalFailure(
                   {.code = "stm32_identity_unknown", .message = "尚未收到STM32心跳"});
@@ -342,9 +410,8 @@ int main(int argc, char** argv) {
               const auto mavlink_message = control_command::EncodeCommandLong(
                   *command, *rpi_system_id, kComponentId, stm32_endpoint->system_id,
                   stm32_endpoint->component_id);
-              if (!link->SendMessage(mavlink_message).has_value()) {
-                (void)control_transaction.HandleLocalFailure(
-                    {.code = "uart_send_failed", .message = "控制命令发送到单片机失败"});
+              if (!link->SendMessage(mavlink_message)) {
+                mark_link_disconnected();
               }
             }
           }
@@ -388,6 +455,10 @@ int main(int argc, char** argv) {
         (*logger)->Warn("MQTT发布失败，下个节拍重试");
       }
       last_telemetry_publish = now;
+    }
+
+    if (!link && std::chrono::steady_clock::now() < next_discovery) {
+      std::this_thread::sleep_for(std::chrono::milliseconds(100));
     }
   }
 
