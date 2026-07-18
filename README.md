@@ -6,7 +6,7 @@ CNS（通信/导航/监视）实训箱的树莓派端数据汇聚与回传节点
 
 ## 当前状态
 
-M1-M3c 已完成：CMake 工程骨架、UART/MAVLink 双向收发帧层、基础遥测解码（HEARTBEAT/GPS/姿态/电池等标准消息）、扩展帧解码（`NAMED_VALUE_INT`/`TUNNEL` 借用帧）、身份帧解码（`OPEN_DRONE_ID_*` + DCDW 角色号 + RPi 序列号）均已实现并在真机验证通过。JSON 序列化（M4）、MQTT 发布（M5）尚未接入。完整里程碑列表和每个里程碑的实施计划见 `docs/V1设计文档.md` 第 10 节。
+M1-M6 已完成：UART/MAVLink 双向收发、遥测与身份解码、JSON 序列化、MQTT 遥测与注册、运行时配置命令、飞控命令下行均已接入。STM32 串口支持按合法 MAVLink 帧自动发现，USB 设备号变化或运行中插拔后可自动恢复；树莓派 ARM64 已完成 26 项自动化测试，并完成串口拔插恢复和真实 `COMMAND_ACK` 联调。M7 已完成独立有界日志、主程序/拨号服务和幂等部署脚本，OverlayFS、journald 限额和 systemd watchdog 仍待实施。完整状态见 `docs/V1设计文档.md` 第 10 节。
 
 首次在新 RPi 上搭建环境：
 
