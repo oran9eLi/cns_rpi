@@ -5,7 +5,7 @@
   },
   "mqtt": {
     "connection": {
-      "host": "localhost",
+      "host": "112.124.52.232",
       "port": 1883,
       "keepalive": 60,
       "client_id": "cns-rpi",
