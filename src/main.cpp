@@ -142,22 +142,22 @@ int main(int argc, char** argv) {
   bool restart_requested = false;
   auto last_telemetry_publish = std::chrono::steady_clock::now();
   while (!g_exit_requested) {
-    if (auto msg = link->ReceiveMessage()) {
+    if (auto msg = link->ReceiveMessage(); msg.has_value() && msg->has_value()) {
       stm32_endpoint = control_command::ObserveFlightControllerHeartbeat(
-          *msg, stm32_endpoint);
+          **msg, stm32_endpoint);
       const auto rpi_system_id = control_command::LearnedSystemId(stm32_endpoint);
       if (rpi_system_id && mqtt_client &&
-          control_command::IsExpectedCommandAck(*msg, *stm32_endpoint, *rpi_system_id,
+          control_command::IsExpectedCommandAck(**msg, *stm32_endpoint, *rpi_system_id,
                                                 kComponentId)) {
         mavlink_command_ack_t ack{};
-        mavlink_msg_command_ack_decode(&*msg, &ack);
+        mavlink_msg_command_ack_decode(&**msg, &ack);
         (void)control_transaction.HandleMavlinkAck(
             ack.command, ack.result, ack.progress, ack.result_param2,
             std::chrono::steady_clock::now());
       }
-      state_store.UpdateDcdwLabel(protocol::FormatDcdwLabel(msg->sysid));
-      if (!protocol::DecodeAndStore(*msg, state_store)) {
-        (void)protocol::DecodeExtensionAndStore(*msg, state_store);
+      state_store.UpdateDcdwLabel(protocol::FormatDcdwLabel((**msg).sysid));
+      if (!protocol::DecodeAndStore(**msg, state_store)) {
+        (void)protocol::DecodeExtensionAndStore(**msg, state_store);
       }
     }
 
@@ -177,7 +177,7 @@ int main(int argc, char** argv) {
           std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
       const auto heartbeat = cellular::BuildRpiCellularHeartbeat(
           cellular_status, *rpi_system_id, kComponentId, boot_ms);
-      if (!link->SendMessage(heartbeat)) {
+      if (!link->SendMessage(heartbeat).has_value()) {
         (*logger)->Warn("5G状态心跳发送到单片机失败");
       }
       last_cellular_heartbeat = now;
@@ -342,7 +342,7 @@ int main(int argc, char** argv) {
               const auto mavlink_message = control_command::EncodeCommandLong(
                   *command, *rpi_system_id, kComponentId, stm32_endpoint->system_id,
                   stm32_endpoint->component_id);
-              if (!link->SendMessage(mavlink_message)) {
+              if (!link->SendMessage(mavlink_message).has_value()) {
                 (void)control_transaction.HandleLocalFailure(
                     {.code = "uart_send_failed", .message = "控制命令发送到单片机失败"});
               }

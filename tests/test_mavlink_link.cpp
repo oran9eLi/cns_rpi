@@ -19,15 +19,69 @@
 
 namespace {
 
+struct PtyPair {
+  int master_fd{-1};
+  std::string slave_path;
+
+  PtyPair() = default;
+  PtyPair(const PtyPair&) = delete;
+  PtyPair& operator=(const PtyPair&) = delete;
+  PtyPair(PtyPair&& other) noexcept
+      : master_fd(std::exchange(other.master_fd, -1)),
+        slave_path(std::move(other.slave_path)) {}
+  PtyPair& operator=(PtyPair&&) = delete;
+
+  ~PtyPair() {
+    if (master_fd >= 0) {
+      ::close(master_fd);
+    }
+  }
+};
+
+PtyPair OpenPtyPair() {
+  PtyPair pty;
+  pty.master_fd = ::posix_openpt(O_RDWR | O_NOCTTY);
+  REQUIRE(pty.master_fd >= 0);
+  REQUIRE(::grantpt(pty.master_fd) == 0);
+  REQUIRE(::unlockpt(pty.master_fd) == 0);
+  const char* slave_name = ::ptsname(pty.master_fd);
+  REQUIRE(slave_name != nullptr);
+  pty.slave_path = slave_name;
+  return pty;
+}
+
+mavlink_message_t PackHeartbeatMessage() {
+  mavlink_message_t message{};
+  mavlink_msg_heartbeat_pack(
+      1, MAV_COMP_ID_ONBOARD_COMPUTER, &message,
+      MAV_TYPE_ONBOARD_CONTROLLER, MAV_AUTOPILOT_INVALID,
+      0, 0, MAV_STATE_ACTIVE);
+  return message;
+}
+
 /// 用官方 pack/to_send_buffer 现造一条合法的 HEARTBEAT 帧字节序列，测试不手写帧格式。
 std::vector<std::uint8_t> PackHeartbeatBytes() {
-  mavlink_message_t msg{};
-  mavlink_msg_heartbeat_pack(/*system_id=*/1, /*component_id=*/MAV_COMP_ID_ONBOARD_COMPUTER, &msg,
-                              MAV_TYPE_ONBOARD_CONTROLLER, MAV_AUTOPILOT_INVALID,
-                              /*base_mode=*/0, /*custom_mode=*/0, MAV_STATE_ACTIVE);
+  const auto msg = PackHeartbeatMessage();
   std::array<std::uint8_t, MAVLINK_MAX_PACKET_LEN> buffer{};
   std::uint16_t len = mavlink_msg_to_send_buffer(buffer.data(), &msg);
   return std::vector<std::uint8_t>(buffer.begin(), buffer.begin() + len);
+}
+
+TEST_CASE("串口写故障返回明确UartError") {
+  auto pty = OpenPtyPair();
+  auto link = uart::MavlinkLink::Open(pty.slave_path, 115200);
+  REQUIRE(link.has_value());
+
+  const auto idle = link->ReceiveMessage();
+  REQUIRE(idle.has_value());
+  CHECK_FALSE(idle->has_value());
+
+  ::close(pty.master_fd);
+  pty.master_fd = -1;
+  const auto message = PackHeartbeatMessage();
+  const auto disconnected = link->SendMessage(message);
+  REQUIRE_FALSE(disconnected.has_value());
+  CHECK(disconnected.error() == uart::UartError::kWriteError);
 }
 
 }  // namespace

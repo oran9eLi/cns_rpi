@@ -35,18 +35,26 @@ std::expected<MavlinkLink, UartError> MavlinkLink::Open(const std::string& devic
   return MavlinkLink(std::move(*port));
 }
 
-std::optional<mavlink_message_t> MavlinkLink::ReceiveMessage() {
+std::expected<std::optional<mavlink_message_t>, UartError> MavlinkLink::ReceiveMessage() {
   std::array<std::uint8_t, 256> buffer{};
-  auto n = port_.Read(buffer);
-  std::size_t count = n.value_or(0);
-  return assembler_.Feed(std::span<const std::uint8_t>(buffer.data(), count));
+  auto count = port_.Read(buffer);
+  if (!count) {
+    return std::unexpected(count.error());
+  }
+  return assembler_.Feed(std::span<const std::uint8_t>(buffer.data(), *count));
 }
 
-bool MavlinkLink::SendMessage(const mavlink_message_t& message) {
+std::expected<void, UartError> MavlinkLink::SendMessage(const mavlink_message_t& message) {
   std::array<std::uint8_t, MAVLINK_MAX_PACKET_LEN> buffer{};
-  std::uint16_t len = mavlink_msg_to_send_buffer(buffer.data(), &message);
-  auto result = port_.Write(std::span<const std::uint8_t>(buffer.data(), len));
-  return result.has_value() && *result == len;
+  const std::uint16_t length = mavlink_msg_to_send_buffer(buffer.data(), &message);
+  auto written = port_.Write(std::span<const std::uint8_t>(buffer.data(), length));
+  if (!written) {
+    return std::unexpected(written.error());
+  }
+  if (*written != length) {
+    return std::unexpected(UartError::kWriteError);
+  }
+  return {};
 }
 
 }  // namespace uart

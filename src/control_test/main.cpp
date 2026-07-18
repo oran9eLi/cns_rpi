@@ -79,8 +79,9 @@ int Run(int argc, char** argv) {
   const auto heartbeat_deadline =
       std::chrono::steady_clock::now() + kHeartbeatWaitTimeout;
   while (!endpoint && std::chrono::steady_clock::now() < heartbeat_deadline) {
-    if (const auto message = link->ReceiveMessage()) {
-      endpoint = control_command::ObserveFlightControllerHeartbeat(*message, endpoint);
+    if (const auto message = link->ReceiveMessage();
+        message.has_value() && message->has_value()) {
+      endpoint = control_command::ObserveFlightControllerHeartbeat(**message, endpoint);
     }
   }
   if (!endpoint) {
@@ -111,7 +112,7 @@ int Run(int argc, char** argv) {
       *command, *rpi_system_id, kControlComponentId, endpoint->system_id,
       endpoint->component_id);
   bool uart_write_failed = false;
-  if (!link->SendMessage(message)) {
+  if (!link->SendMessage(message).has_value()) {
     uart_write_failed = true;
     (void)transaction.HandleLocalFailure(
         {.code = "uart_send_failed", .message = "控制命令发送到单片机失败"});
@@ -120,11 +121,11 @@ int Run(int argc, char** argv) {
   while (transaction.HasPending()) {
     const auto now = control_command::ControlTransaction::Clock::now();
     if (const auto received = link->ReceiveMessage();
-        received && control_command::IsExpectedCommandAck(
-                        *received, *endpoint, *rpi_system_id,
-                        kControlComponentId)) {
+        received.has_value() && received->has_value() &&
+        control_command::IsExpectedCommandAck(
+            **received, *endpoint, *rpi_system_id, kControlComponentId)) {
       mavlink_command_ack_t ack{};
-      mavlink_msg_command_ack_decode(&*received, &ack);
+      mavlink_msg_command_ack_decode(&**received, &ack);
       (void)transaction.HandleMavlinkAck(
           ack.command, ack.result, ack.progress, ack.result_param2,
           control_command::ControlTransaction::Clock::now());
