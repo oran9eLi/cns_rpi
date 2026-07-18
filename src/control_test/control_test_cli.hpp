@@ -10,6 +10,7 @@
 #include <nlohmann/json.hpp>
 
 #include "control_command/control_command.hpp"
+#include "control_command/control_transaction.hpp"
 #include "uart/serial_port.hpp"
 
 namespace control_test {
@@ -34,6 +35,15 @@ nlohmann::json BuildDryRunResult(
 
 int ExitCodeForFinalAck(const nlohmann::json& ack,
                         bool uart_write_failed = false);
+
+struct FinalAckResult {
+  nlohmann::json ack;
+  int exit_code;
+};
+
+std::optional<FinalAckResult> ConsumePendingFinalAck(
+    control_command::ControlTransaction& transaction,
+    bool uart_write_failed = false);
 
 std::string UartOpenErrorMessage(uart::UartError error,
                                  std::string_view device);

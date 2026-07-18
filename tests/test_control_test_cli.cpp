@@ -2,11 +2,13 @@
 #include <doctest/doctest.h>
 
 #include <array>
+#include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <string_view>
 
 #include "control_command/control_command.hpp"
+#include "control_command/control_transaction.hpp"
 #include "control_test/control_test_cli.hpp"
 #include "uart/serial_port.hpp"
 
@@ -160,6 +162,25 @@ TEST_CASE("串口写入失败时即使输出拒绝回执也返回串口错误退
   CHECK(control_test::ExitCodeForFinalAck({{"status", "rejected"}}, true) == 3);
 }
 
+TEST_CASE("串口写入失败的最终回执可在读取前输出并返回串口错误") {
+  control_command::ControlTransaction transaction(std::chrono::seconds(2), 1);
+  control_command::ControlCommand command{
+      .command_id = "local-write-failed",
+      .command = "takeoff",
+      .mavlink_command = control_command::kAutoTakeoff};
+  REQUIRE(transaction.Submit(command, {}).should_send_to_mcu);
+  REQUIRE(transaction.HandleLocalFailure(
+      {.code = "uart_send_failed", .message = "控制命令发送到单片机失败"}));
+
+  const auto result =
+      control_test::ConsumePendingFinalAck(transaction, true);
+
+  REQUIRE(result.has_value());
+  CHECK(result->ack["error_code"] == "uart_send_failed");
+  CHECK(result->exit_code == 3);
+  CHECK_FALSE(transaction.HasPending());
+}
+
 TEST_CASE("串口被占用时诊断信息明确提示停止主服务") {
   const auto message = control_test::UartOpenErrorMessage(
       uart::UartError::kDeviceBusy, "/dev/ttyUSB0");
@@ -179,5 +200,13 @@ TEST_CASE("自动发现遇到占用端口时仍提示停止主服务") {
   const auto message = control_test::DiscoveryFailureMessage(
       "auto", true);
 
+  CHECK(message.find("systemctl stop cns-rpi.service") != std::string::npos);
+}
+
+TEST_CASE("明确路径发现占用时保留设备路径和停止服务提示") {
+  const auto message = control_test::DiscoveryFailureMessage(
+      "/dev/ttyUSB7", true);
+
+  CHECK(message.find("/dev/ttyUSB7") != std::string::npos);
   CHECK(message.find("systemctl stop cns-rpi.service") != std::string::npos);
 }

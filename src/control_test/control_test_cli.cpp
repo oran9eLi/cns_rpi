@@ -122,6 +122,18 @@ int ExitCodeForFinalAck(const nlohmann::json& ack, bool uart_write_failed) {
   return status != ack.end() && status->is_string() && *status == "accepted" ? 0 : 1;
 }
 
+std::optional<FinalAckResult> ConsumePendingFinalAck(
+    control_command::ControlTransaction& transaction, bool uart_write_failed) {
+  const auto* ack = transaction.PendingAck();
+  if (ack == nullptr || !transaction.PendingAckIsFinal()) {
+    return std::nullopt;
+  }
+
+  FinalAckResult result{*ack, ExitCodeForFinalAck(*ack, uart_write_failed)};
+  transaction.ConfirmAckPublished();
+  return result;
+}
+
 std::string UartOpenErrorMessage(uart::UartError error,
                                  std::string_view device) {
   if (error == uart::UartError::kDeviceBusy) {
@@ -134,6 +146,10 @@ std::string UartOpenErrorMessage(uart::UartError error,
 std::string DiscoveryFailureMessage(std::string_view configured_device,
                                     bool has_busy_candidate) {
   if (has_busy_candidate) {
+    if (configured_device != "auto") {
+      return UartOpenErrorMessage(uart::UartError::kDeviceBusy,
+                                  configured_device);
+    }
     return "串口已被占用；请先执行 systemctl stop cns-rpi.service 停止主服务";
   }
   if (configured_device == "auto") {

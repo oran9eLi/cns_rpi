@@ -126,11 +126,17 @@ int Run(int argc, char** argv) {
   const auto message = control_command::EncodeCommandLong(
       *command, *rpi_system_id, kControlComponentId, endpoint->system_id,
       endpoint->component_id);
-  bool uart_write_failed = false;
   if (!link.SendMessage(message).has_value()) {
-    uart_write_failed = true;
     (void)transaction.HandleLocalFailure(
         {.code = "uart_send_failed", .message = "控制命令发送到单片机失败"});
+    const auto final_ack =
+        control_test::ConsumePendingFinalAck(transaction, true);
+    if (final_ack) {
+      PrintAck(final_ack->ack);
+      return final_ack->exit_code;
+    }
+    std::cerr << "串口写入失败后未生成最终回执\n";
+    return kUartError;
   }
 
   while (transaction.HasPending()) {
@@ -151,14 +157,15 @@ int Run(int argc, char** argv) {
     }
 
     (void)transaction.CheckTimeout(now);
+    if (const auto final_ack =
+            control_test::ConsumePendingFinalAck(transaction)) {
+      PrintAck(final_ack->ack);
+      return final_ack->exit_code;
+    }
     if (const auto* ack = transaction.PendingAck(); ack != nullptr) {
       const auto output = *ack;
-      const bool is_final = transaction.PendingAckIsFinal();
       PrintAck(output);
       transaction.ConfirmAckPublished();
-      if (is_final) {
-        return control_test::ExitCodeForFinalAck(output, uart_write_failed);
-      }
     }
   }
 
