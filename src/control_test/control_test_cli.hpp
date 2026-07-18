@@ -38,4 +38,7 @@ int ExitCodeForFinalAck(const nlohmann::json& ack,
 std::string UartOpenErrorMessage(uart::UartError error,
                                  std::string_view device);
 
+std::string DiscoveryFailureMessage(std::string_view configured_device,
+                                    bool has_busy_candidate);
+
 }  // namespace control_test

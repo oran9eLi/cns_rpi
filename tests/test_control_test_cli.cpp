@@ -167,3 +167,17 @@ TEST_CASE("串口被占用时诊断信息明确提示停止主服务") {
   CHECK(message.find("串口已被占用") != std::string::npos);
   CHECK(message.find("systemctl stop cns-rpi.service") != std::string::npos);
 }
+
+TEST_CASE("自动发现失败时诊断说明未收到MAVLink") {
+  const auto message = control_test::DiscoveryFailureMessage(
+      "auto", false);
+
+  CHECK(message.find("未发现STM32 MAVLink串口") != std::string::npos);
+}
+
+TEST_CASE("自动发现遇到占用端口时仍提示停止主服务") {
+  const auto message = control_test::DiscoveryFailureMessage(
+      "auto", true);
+
+  CHECK(message.find("systemctl stop cns-rpi.service") != std::string::npos);
+}

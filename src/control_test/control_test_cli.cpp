@@ -131,4 +131,15 @@ std::string UartOpenErrorMessage(uart::UartError error,
   return "打开串口失败：" + std::string(device);
 }
 
+std::string DiscoveryFailureMessage(std::string_view configured_device,
+                                    bool has_busy_candidate) {
+  if (has_busy_candidate) {
+    return "串口已被占用；请先执行 systemctl stop cns-rpi.service 停止主服务";
+  }
+  if (configured_device == "auto") {
+    return "未发现STM32 MAVLink串口";
+  }
+  return "打开串口失败：" + std::string(configured_device);
+}
+
 }  // namespace control_test

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
@@ -13,11 +14,13 @@
 #include "control_command/control_transaction.hpp"
 #include "control_test/control_test_cli.hpp"
 #include "uart/mavlink_link.hpp"
+#include "uart/mavlink_port_discovery.hpp"
 
 namespace {
 
 constexpr std::uint8_t kControlComponentId = MAV_COMP_ID_ONBOARD_COMPUTER;
 constexpr auto kHeartbeatWaitTimeout = std::chrono::seconds(5);
+constexpr auto kDiscoveryProbeTimeout = std::chrono::milliseconds(300);
 constexpr auto kCommandAckTimeout = std::chrono::seconds(2);
 constexpr int kCommandFailed = 1;
 constexpr int kUsageOrConfigError = 2;
@@ -66,21 +69,33 @@ int Run(int argc, char** argv) {
     return kUsageOrConfigError;
   }
 
-  auto link = uart::MavlinkLink::Open(app_config->serial.device,
-                                      app_config->serial.baud);
-  if (!link) {
-    std::cerr << control_test::UartOpenErrorMessage(
-                     link.error(), app_config->serial.device)
+  auto attempt = uart::DiscoverMavlinkPortOnce(
+      app_config->serial.device, app_config->serial.baud,
+      kDiscoveryProbeTimeout, [] { return false; });
+  if (!attempt.found) {
+    const bool has_busy_candidate = std::ranges::any_of(
+        attempt.failures, [](const uart::CandidateFailure& failure) {
+          return failure.error == uart::UartError::kDeviceBusy;
+        });
+    std::cerr << control_test::DiscoveryFailureMessage(
+                     app_config->serial.device, has_busy_candidate)
               << '\n';
     return kUartError;
   }
+  auto link = std::move(attempt.found->link);
 
-  std::optional<control_command::MavlinkEndpoint> endpoint;
+  std::optional<control_command::MavlinkEndpoint> endpoint =
+      control_command::ObserveFlightControllerHeartbeat(
+          attempt.found->first_message, std::nullopt);
   const auto heartbeat_deadline =
       std::chrono::steady_clock::now() + kHeartbeatWaitTimeout;
   while (!endpoint && std::chrono::steady_clock::now() < heartbeat_deadline) {
-    if (const auto message = link->ReceiveMessage();
-        message.has_value() && message->has_value()) {
+    const auto message = link.ReceiveMessage();
+    if (!message) {
+      std::cerr << "STM32串口已断开\n";
+      return kUartError;
+    }
+    if (message->has_value()) {
       endpoint = control_command::ObserveFlightControllerHeartbeat(**message, endpoint);
     }
   }
@@ -112,7 +127,7 @@ int Run(int argc, char** argv) {
       *command, *rpi_system_id, kControlComponentId, endpoint->system_id,
       endpoint->component_id);
   bool uart_write_failed = false;
-  if (!link->SendMessage(message).has_value()) {
+  if (!link.SendMessage(message).has_value()) {
     uart_write_failed = true;
     (void)transaction.HandleLocalFailure(
         {.code = "uart_send_failed", .message = "控制命令发送到单片机失败"});
@@ -120,10 +135,14 @@ int Run(int argc, char** argv) {
 
   while (transaction.HasPending()) {
     const auto now = control_command::ControlTransaction::Clock::now();
-    if (const auto received = link->ReceiveMessage();
-        received.has_value() && received->has_value() &&
-        control_command::IsExpectedCommandAck(
-            **received, *endpoint, *rpi_system_id, kControlComponentId)) {
+    const auto received = link.ReceiveMessage();
+    if (!received) {
+      std::cerr << "STM32串口已断开\n";
+      return kUartError;
+    }
+    if (received->has_value() && control_command::IsExpectedCommandAck(
+                                     **received, *endpoint, *rpi_system_id,
+                                     kControlComponentId)) {
       mavlink_command_ack_t ack{};
       mavlink_msg_command_ack_decode(&**received, &ack);
       (void)transaction.HandleMavlinkAck(
