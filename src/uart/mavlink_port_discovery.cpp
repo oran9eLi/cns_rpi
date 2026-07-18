@@ -1,9 +1,12 @@
 #include "uart/mavlink_port_discovery.hpp"
 
 #include <algorithm>
+#include <array>
 #include <charconv>
+#include <chrono>
 #include <cstdint>
 #include <filesystem>
+#include <iterator>
 #include <optional>
 #include <string_view>
 #include <system_error>
@@ -96,6 +99,59 @@ std::vector<std::string> EnumerateSerialCandidates() {
     iterator.increment(error);
   }
   return OrderSerialCandidates(candidates);
+}
+
+DiscoveryAttempt ProbeMavlinkCandidates(
+    std::span<const std::string> candidates, int baud,
+    std::chrono::milliseconds per_port_timeout,
+    const StopRequested& stop_requested) {
+  DiscoveryAttempt attempt;
+  for (const auto& device : candidates) {
+    if (stop_requested()) {
+      break;
+    }
+
+    auto link = MavlinkLink::Open(device, baud);
+    if (!link) {
+      attempt.failures.push_back({device, link.error()});
+      continue;
+    }
+
+    const auto deadline = std::chrono::steady_clock::now() + per_port_timeout;
+    while (std::chrono::steady_clock::now() < deadline) {
+      if (stop_requested()) {
+        return attempt;
+      }
+
+      auto received = link->ReceiveMessage();
+      if (!received) {
+        attempt.failures.push_back({device, received.error()});
+        break;
+      }
+      if (received->has_value()) {
+        attempt.found.emplace(
+            DiscoveredMavlinkPort{device, std::move(*link), **received});
+        return attempt;
+      }
+    }
+  }
+  return attempt;
+}
+
+DiscoveryAttempt DiscoverMavlinkPortOnce(
+    std::string_view configured_device, int baud,
+    std::chrono::milliseconds per_port_timeout,
+    const StopRequested& stop_requested) {
+  if (configured_device == "auto") {
+    const auto candidates = EnumerateSerialCandidates();
+    return ProbeMavlinkCandidates(candidates, baud, per_port_timeout,
+                                  stop_requested);
+  }
+
+  const std::array<std::string, 1> candidates{
+      std::string(configured_device)};
+  return ProbeMavlinkCandidates(candidates, baud, per_port_timeout,
+                                stop_requested);
 }
 
 }  // 命名空间 uart
