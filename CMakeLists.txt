@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_compile_options(-Wall -Wextra)
 
 find_package(nlohmann_json 3.2.0 REQUIRED)
+find_program(PYTHON3_EXECUTABLE python3 REQUIRED)
 
 enable_testing()
 
@@ -156,3 +157,5 @@ add_test(NAME config_request COMMAND test_config_request)
 add_executable(test_cns_rpi_service tests/test_cns_rpi_service.cpp)
 target_compile_definitions(test_cns_rpi_service PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 add_test(NAME cns_rpi_service COMMAND test_cns_rpi_service)
+add_test(NAME apply_config_helper
+    COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_apply_config_helper.py)

@@ -47,11 +47,10 @@ scripts/install_deps.sh — RPi 环境准备
   [3] 配置 git 全局 URL 重写 -> github.com 流量转发至镜像代理
       （原因：RPi 直连 GitHub 实测丢包/超时，否则后续 git pull/clone 会卡住）
   [4] 打印版本信息，确认安装结果
-  [5] 用 CMake 编译一次本仓库（cmake -S . -B build && cmake --build build），
-      确认环境装完之后代码能直接编译过，不用再手动跑一遍
+  [5] 调用 deploy.sh 构建程序、安装配置 helper 和 systemd 服务并启动主程序
 
 影响范围：仅修改 apt 源配置和 git 全局配置，不涉及本仓库以外的其他文件；
-第 [5] 步会在本仓库根目录下创建/更新 build/ 目录（已在 .gitignore 里排除）。
+第 [5] 步会在本仓库根目录下创建/更新 build/ 目录，并安装、启动 cns-rpi.service。
 BANNER
 
 step 1 "切换 apt 源为清华 TUNA 镜像（原因：国内直连官方源慢/不稳定）"
@@ -96,11 +95,9 @@ g++ --version
 cmake --version
 git --version
 
-step 5 "编译本仓库（确认环境装完后代码能直接编译过）"
+step 5 "构建并部署 cns_rpi"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-cmake -S "${REPO_ROOT}" -B "${REPO_ROOT}/build"
-cmake --build "${REPO_ROOT}/build"
+"${SCRIPT_DIR}/deploy.sh"
 
 echo
 echo "===== 环境准备完成 ====="

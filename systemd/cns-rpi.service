@@ -1,6 +1,6 @@
 [Unit]
 Description=CNS RPi 数据节点
-After=network-online.target cellular-dialup.service
+After=network-online.target
 Wants=network-online.target
 
 [Service]

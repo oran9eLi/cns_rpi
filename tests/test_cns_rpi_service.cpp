@@ -14,4 +14,32 @@ TEST_CASE("systemd服务启用正常退出重启") {
   CHECK(text.find("--config-writer=helper") != std::string::npos);
   CHECK(text.find("--config-helper=/usr/local/libexec/cns-rpi-apply-config") !=
         std::string::npos);
+  CHECK(text.find("cellular-dialup.service") == std::string::npos);
+}
+
+TEST_CASE("部署脚本安装生产helper和systemd服务") {
+  std::ifstream input(SOURCE_DIR "/scripts/deploy.sh");
+  const std::string text{std::istreambuf_iterator<char>(input),
+                         std::istreambuf_iterator<char>()};
+  CHECK(text.find("sudo -v") != std::string::npos);
+  CHECK(text.find("sudo -n true") != std::string::npos);
+  CHECK(text.find("请使用 dcdw 普通用户执行本脚本") != std::string::npos);
+  CHECK(text.find("EXPECTED_REPO_ROOT=\"/home/dcdw/cns_rpi\"") != std::string::npos);
+  CHECK(text.find("cns-rpi-apply-config") != std::string::npos);
+  CHECK(text.find("/etc/systemd/system/cns-rpi.service") != std::string::npos);
+  CHECK(text.find("/etc/systemd/system/cellular-dialup.service") !=
+        std::string::npos);
+  CHECK(text.find("systemctl daemon-reload") != std::string::npos);
+  CHECK(text.find("systemctl enable cns-rpi.service") != std::string::npos);
+  CHECK(text.find("systemctl enable cellular-dialup.service") !=
+        std::string::npos);
+  CHECK(text.find("systemctl start --no-block cellular-dialup.service") !=
+        std::string::npos);
+}
+
+TEST_CASE("依赖安装脚本复用部署脚本") {
+  std::ifstream input(SOURCE_DIR "/scripts/install_deps.sh");
+  const std::string text{std::istreambuf_iterator<char>(input),
+                         std::istreambuf_iterator<char>()};
+  CHECK(text.find("deploy.sh") != std::string::npos);
 }
