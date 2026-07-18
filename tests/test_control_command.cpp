@@ -2,6 +2,7 @@
 #include <doctest/doctest.h>
 
 #include "control_command/control_command.hpp"
+#include "control_command/control_endpoint.hpp"
 
 TEST_CASE("四路PWM命令解析并编码为31013") {
   auto command = control_command::Parse(
@@ -12,12 +13,15 @@ TEST_CASE("四路PWM命令解析并编码为31013") {
   CHECK(command->params[3] == 1530.0F);
 
   const auto message = control_command::EncodeCommandLong(
-      *command, 250, MAV_COMP_ID_ONBOARD_COMPUTER, 1, MAV_COMP_ID_AUTOPILOT1);
+      *command, 7, MAV_COMP_ID_ONBOARD_COMPUTER, 7,
+      control_command::kStm32Usart6ComponentId);
   mavlink_command_long_t packet{};
   mavlink_msg_command_long_decode(&message, &packet);
+  CHECK(message.sysid == 7);
+  CHECK(message.compid == MAV_COMP_ID_ONBOARD_COMPUTER);
   CHECK(packet.command == 31013);
-  CHECK(packet.target_system == 1);
-  CHECK(packet.target_component == MAV_COMP_ID_AUTOPILOT1);
+  CHECK(packet.target_system == 7);
+  CHECK(packet.target_component == control_command::kStm32Usart6ComponentId);
   CHECK(packet.param2 == 1651.0F);
 }
 

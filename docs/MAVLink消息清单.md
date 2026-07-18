@@ -63,17 +63,17 @@ RPi 是"汇总遥测+身份数据的总入口"（`docs/V1设计文档.md` §1）
 
 ### 4.1 端点身份与应答校验
 
-- RPi 控制命令的 source system 固定为 `250`，component 为
-  `MAV_COMP_ID_ONBOARD_COMPUTER`。这个身份专用于命令事务，与现有 RPi
-  状态心跳的 system id 分开。
 - RPi 只从 `type=MAV_TYPE_ONBOARD_CONTROLLER(18)`、USART6 帧头
   `compid=193` 的首条 `HEARTBEAT` 学习 STM32 动态 `sysid`（范围
   `1..250`）。固件正确使用 `autopilot=MAV_AUTOPILOT_INVALID(8)`，RPi 不得
   把 `autopilot != INVALID` 作为识别条件。端点学习后不被其他心跳覆盖。
+- RPi 不使用固定 system id。学习完成后，RPi 状态心跳、
+  `RPICELL` 和控制命令都使用 STM32 的动态 `sysid`，并以
+  `MAV_COMP_ID_ONBOARD_COMPUTER(191)` 区分 RPi 组件。学习前不发送这些帧。
 - `COMMAND_LONG` 定向发送到已学习的 STM32 端点，不再使用
   `target_system=0`/`target_component=0` 广播。
 - `COMMAND_ACK` 只有在帧头来源匹配 STM32，且 payload 目标为
-  `0/0` 或本 RPi 控制身份时才会进入命令状态机。
+  `0/0` 或“动态 `sysid` / `compid=191`”时才会进入命令状态机。
 
 ### 4.2 命令事务规则
 

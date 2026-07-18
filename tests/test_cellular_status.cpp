@@ -39,7 +39,7 @@ TEST_CASE("RPICELL heartbeat uses NAMED_VALUE_INT name") {
   mavlink_named_value_int_t decoded{};
   mavlink_msg_named_value_int_decode(&msg, &decoded);
 
-  CHECK(msg.msgid == MAVLINK_MSG_ID_NAMED_VALUE_INT);
+  CHECK(static_cast<std::uint32_t>(msg.msgid) == MAVLINK_MSG_ID_NAMED_VALUE_INT);
   CHECK(std::string(decoded.name, decoded.name + 7) == "RPICELL");
   CHECK(decoded.time_boot_ms == 1234);
   CHECK(decoded.value == 0x1F);

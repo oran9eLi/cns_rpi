@@ -22,6 +22,7 @@ namespace uart {
 enum class UartError {
   kDeviceNotFound,    ///< 设备路径不存在
   kPermissionDenied,  ///< 没有读写权限（比如不在 dialout 组）
+  kDeviceBusy,        ///< 设备已被其他进程实例独占
   kConfigFailed,      ///< termios 配置失败，或波特率不在支持列表里
   kReadError,         ///< read() 系统调用失败
   kWriteError,        ///< write() 系统调用失败

@@ -20,6 +20,14 @@ std::optional<MavlinkEndpoint> ObserveFlightControllerHeartbeat(
                          .component_id = message.compid};
 }
 
+std::optional<std::uint8_t> LearnedSystemId(
+    const std::optional<MavlinkEndpoint>& stm32_endpoint) {
+  if (!stm32_endpoint) {
+    return std::nullopt;
+  }
+  return stm32_endpoint->system_id;
+}
+
 bool IsExpectedCommandAck(const mavlink_message_t& message,
                           const MavlinkEndpoint& stm32_endpoint,
                           std::uint8_t rpi_system_id,

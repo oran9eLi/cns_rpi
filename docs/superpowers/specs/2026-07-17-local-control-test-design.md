@@ -1,6 +1,6 @@
 # 本地飞控下发测试工具设计
 
-状态：待用户确认  
+状态：已确认并实施
 日期：2026-07-17  
 适用范围：树莓派本地绕过 MQTT/服务器，直接验证 STM32 控制链路
 
@@ -71,8 +71,10 @@ command ID 和 7 个参数，不调用 `MavlinkLink::Open()`。
 - `HEARTBEAT.type = MAV_TYPE_ONBOARD_CONTROLLER(18)`；
 - USART6 帧头 `compid = 193`；
 - 动态学习 `sysid`，合法范围 `1..250`；
-- RPi 以 `250/191` 发送 `COMMAND_LONG`；
-- ACK 必须来自已学习的 `sysid/193`，并定向回填 `250/191`。
+- RPi 以“已学习的动态 `sysid` / `compid=191`”发送
+  `COMMAND_LONG`；
+- ACK 必须来自已学习的 `sysid/193`，并定向回填
+  “同一动态 `sysid` / `compid=191`”。
 
 ## 5. 时间与状态机
 

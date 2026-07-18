@@ -35,6 +35,7 @@ add_library(cns_rpi_core
     src/control_command/control_command.cpp
     src/control_command/control_transaction.cpp
     src/control_command/control_endpoint.cpp
+    src/control_test/control_test_cli.cpp
     src/cellular/cellular_status.cpp
 )
 target_include_directories(cns_rpi_core PUBLIC src)
@@ -60,6 +61,9 @@ add_test(NAME mqtt_client COMMAND test_mqtt_client)
 
 add_executable(cns_rpi src/main.cpp)
 target_link_libraries(cns_rpi PRIVATE cns_rpi_core cns_rpi_mqtt)
+
+add_executable(cns_control_test src/control_test/main.cpp)
+target_link_libraries(cns_control_test PRIVATE cns_rpi_core)
 
 add_executable(test_mavlink_link tests/test_mavlink_link.cpp)
 target_link_libraries(test_mavlink_link PRIVATE cns_rpi_core)
@@ -112,6 +116,10 @@ add_test(NAME command_parser COMMAND test_command_parser)
 add_executable(test_control_command tests/test_control_command.cpp)
 target_link_libraries(test_control_command PRIVATE cns_rpi_core)
 add_test(NAME control_command COMMAND test_control_command)
+
+add_executable(test_control_test_cli tests/test_control_test_cli.cpp)
+target_link_libraries(test_control_test_cli PRIVATE cns_rpi_core)
+add_test(NAME control_test_cli COMMAND test_control_test_cli)
 
 add_executable(test_control_transaction tests/test_control_transaction.cpp)
 target_link_libraries(test_control_transaction PRIVATE cns_rpi_core)

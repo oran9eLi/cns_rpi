@@ -6,6 +6,7 @@
 #include "uart/serial_port.hpp"
 
 #include <fcntl.h>
+#include <sys/file.h>
 #include <termios.h>
 #include <unistd.h>
 
@@ -57,6 +58,17 @@ std::expected<SerialPort, UartError> SerialPort::Open(const std::string& device,
       default:
         return std::unexpected(UartError::kConfigFailed);
     }
+  }
+
+  // 主程序和本地测试工具共用这一封装，因此在最底层保证跨进程独占。
+  // flock 绑定已打开的文件描述，SerialPort 移动不会释放锁；close 自动释放。
+  if (::flock(fd, LOCK_EX | LOCK_NB) != 0) {
+    const int lock_error = errno;
+    ::close(fd);
+    if (lock_error == EWOULDBLOCK || lock_error == EAGAIN) {
+      return std::unexpected(UartError::kDeviceBusy);
+    }
+    return std::unexpected(UartError::kConfigFailed);
   }
 
   termios tio{};
