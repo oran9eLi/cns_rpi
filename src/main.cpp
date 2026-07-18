@@ -48,10 +48,7 @@
 
 namespace {
 
-constexpr std::uint8_t kSystemId = 1;
 constexpr std::uint8_t kComponentId = MAV_COMP_ID_ONBOARD_COMPUTER;
-// 控制事务使用独立 source system，便于 STM32 将 COMMAND_ACK 定向回复给 RPi。
-constexpr std::uint8_t kControlSystemId = 250;
 constexpr auto kControlAckTimeout = std::chrono::seconds(2);
 
 volatile std::sig_atomic_t g_exit_requested = 0;
@@ -59,9 +56,9 @@ volatile std::sig_atomic_t g_exit_requested = 0;
 void HandleExitSignal(int /*signal*/) { g_exit_requested = 1; }
 
 /// RPi 自己的 HEARTBEAT：它不是飞控，所以 autopilot=MAV_AUTOPILOT_INVALID。
-mavlink_message_t BuildHeartbeat() {
+mavlink_message_t BuildHeartbeat(std::uint8_t system_id) {
   mavlink_message_t msg{};
-  mavlink_msg_heartbeat_pack(kSystemId, kComponentId, &msg, MAV_TYPE_ONBOARD_CONTROLLER,
+  mavlink_msg_heartbeat_pack(system_id, kComponentId, &msg, MAV_TYPE_ONBOARD_CONTROLLER,
                               MAV_AUTOPILOT_INVALID, /*base_mode=*/0, /*custom_mode=*/0,
                               MAV_STATE_ACTIVE);
   return msg;
@@ -312,9 +309,10 @@ int main(int argc, char** argv) {
     if (auto msg = link->ReceiveMessage()) {
       stm32_endpoint = control_command::ObserveFlightControllerHeartbeat(
           *msg, stm32_endpoint);
-      if (stm32_endpoint && mqtt_client && control_command::IsExpectedCommandAck(
-                                                *msg, *stm32_endpoint,
-                                                kControlSystemId, kComponentId)) {
+      const auto rpi_system_id = control_command::LearnedSystemId(stm32_endpoint);
+      if (rpi_system_id && mqtt_client &&
+          control_command::IsExpectedCommandAck(*msg, *stm32_endpoint, *rpi_system_id,
+                                                kComponentId)) {
         mavlink_command_ack_t ack{};
         mavlink_msg_command_ack_decode(&*msg, &ack);
         (void)control_transaction.HandleMavlinkAck(
@@ -331,18 +329,21 @@ int main(int argc, char** argv) {
     }
 
     auto now = std::chrono::steady_clock::now();
-    if (now - last_heartbeat >= app_config->runtime.heartbeat_interval) {
-      mavlink_message_t heartbeat = BuildHeartbeat();
+    const auto rpi_system_id = control_command::LearnedSystemId(stm32_endpoint);
+    if (rpi_system_id &&
+        now - last_heartbeat >= app_config->runtime.heartbeat_interval) {
+      mavlink_message_t heartbeat = BuildHeartbeat(*rpi_system_id);
       link->SendMessage(heartbeat);
       last_heartbeat = now;
     }
 
-    if (now - last_cellular_heartbeat >= app_config->cellular.heartbeat_interval) {
+    if (rpi_system_id &&
+        now - last_cellular_heartbeat >= app_config->cellular.heartbeat_interval) {
       const auto cellular_status = cellular::ProbeLink(app_config->cellular.interface_name);
       const auto boot_ms = static_cast<std::uint32_t>(
           std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
       const auto heartbeat = cellular::BuildRpiCellularHeartbeat(
-          cellular_status, kSystemId, kComponentId, boot_ms);
+          cellular_status, *rpi_system_id, kComponentId, boot_ms);
       if (!link->SendMessage(heartbeat)) {
         std::cerr << "5G状态心跳发送到单片机失败" << std::endl;
       }
@@ -501,12 +502,12 @@ int main(int argc, char** argv) {
               (void)mqtt_client->Publish(control_ack_topic, submission.ack->dump(),
                                          app_config->mqtt.topics.control_ack.qos,
                                          /*retain=*/false);
-            } else if (submission.should_send_to_mcu && !stm32_endpoint) {
+            } else if (submission.should_send_to_mcu && !rpi_system_id) {
               (void)control_transaction.HandleLocalFailure(
                   {.code = "stm32_identity_unknown", .message = "尚未收到STM32心跳"});
             } else if (submission.should_send_to_mcu) {
               const auto mavlink_message = control_command::EncodeCommandLong(
-                  *command, kControlSystemId, kComponentId, stm32_endpoint->system_id,
+                  *command, *rpi_system_id, kComponentId, stm32_endpoint->system_id,
                   stm32_endpoint->component_id);
               if (!link->SendMessage(mavlink_message)) {
                 (void)control_transaction.HandleLocalFailure(

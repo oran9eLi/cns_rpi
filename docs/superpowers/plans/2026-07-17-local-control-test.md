@@ -14,7 +14,8 @@
 - 目标平台为 Raspberry Pi 5、Debian trixie、ARM64，保持 `-std=c++23 -Wall -Wextra`。
 - 默认 dry-run；只有显式 `--send` 才允许打开 UART 和真实发送。
 - 控制 JSON 与 MQTT `control/set` 完全一致，不增加第二套命令格式。
-- RPi 控制来源固定为 `250/191`；STM32 端点按 `type=18`、`compid=193`、动态 `sysid=1..250` 学习。
+- RPi 控制来源为“已学习的 STM32 动态 `sysid` / `compid=191`”；
+  STM32 端点按 `type=18`、`compid=193`、动态 `sysid=1..250` 学习。
 - 自动化测试不得依赖服务器、MQTT、STM32、5G 模块或 SIM 卡。
 - 不修改生成的 `src/mavlink/` 目录，不增加第三方依赖。
 - 真机执行电机、起飞、降落或急停前必须拆除桨叶或断开电机动力。
@@ -285,7 +286,7 @@ CHECK(control_test::ExitCodeForFinalAck(nlohmann::json::object()) == 1);
 `src/control_test/main.cpp` 使用以下常量：
 
 ```cpp
-constexpr std::uint8_t kControlSystemId = 250;
+// source system 使用从 STM32 HEARTBEAT 学习到的 endpoint.system_id。
 constexpr std::uint8_t kControlComponentId = MAV_COMP_ID_ONBOARD_COMPUTER;
 constexpr auto kHeartbeatWaitTimeout = std::chrono::seconds(5);
 constexpr auto kCommandAckTimeout = std::chrono::seconds(2);

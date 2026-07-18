@@ -16,7 +16,6 @@
 
 namespace {
 
-constexpr std::uint8_t kControlSystemId = 250;
 constexpr std::uint8_t kControlComponentId = MAV_COMP_ID_ONBOARD_COMPUTER;
 constexpr auto kHeartbeatWaitTimeout = std::chrono::seconds(5);
 constexpr auto kCommandAckTimeout = std::chrono::seconds(2);
@@ -88,6 +87,7 @@ int Run(int argc, char** argv) {
     std::cerr << "等待 STM32 HEARTBEAT 超时，未发送控制命令\n";
     return kUartError;
   }
+  const auto rpi_system_id = control_command::LearnedSystemId(endpoint);
 
   std::cerr << "已发现 STM32 端点：sysid="
             << static_cast<unsigned int>(endpoint->system_id)
@@ -108,7 +108,7 @@ int Run(int argc, char** argv) {
   }
 
   const auto message = control_command::EncodeCommandLong(
-      *command, kControlSystemId, kControlComponentId, endpoint->system_id,
+      *command, *rpi_system_id, kControlComponentId, endpoint->system_id,
       endpoint->component_id);
   bool uart_write_failed = false;
   if (!link->SendMessage(message)) {
@@ -121,7 +121,7 @@ int Run(int argc, char** argv) {
     const auto now = control_command::ControlTransaction::Clock::now();
     if (const auto received = link->ReceiveMessage();
         received && control_command::IsExpectedCommandAck(
-                        *received, *endpoint, kControlSystemId,
+                        *received, *endpoint, *rpi_system_id,
                         kControlComponentId)) {
       mavlink_command_ack_t ack{};
       mavlink_msg_command_ack_decode(&*received, &ack);

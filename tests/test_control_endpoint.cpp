@@ -68,19 +68,28 @@ TEST_CASE("已学习端点不被其他心跳覆盖") {
   CHECK(endpoint->system_id == 7);
 }
 
+TEST_CASE("树莓派发帧使用已学习的STM32动态sysid") {
+  CHECK_FALSE(control_command::LearnedSystemId(std::nullopt).has_value());
+
+  const auto system_id = control_command::LearnedSystemId(control_command::MavlinkEndpoint{
+      7, control_command::kStm32Usart6ComponentId});
+  REQUIRE(system_id.has_value());
+  CHECK(*system_id == 7);
+}
+
 TEST_CASE("COMMAND_ACK必须匹配来源和目标") {
   const control_command::MavlinkEndpoint endpoint{
       7, control_command::kStm32Usart6ComponentId};
   CHECK(control_command::IsExpectedCommandAck(
-      CommandAck(7, control_command::kStm32Usart6ComponentId, 250,
+      CommandAck(7, control_command::kStm32Usart6ComponentId, 7,
                  MAV_COMP_ID_ONBOARD_COMPUTER),
-      endpoint, 250, MAV_COMP_ID_ONBOARD_COMPUTER));
+      endpoint, 7, MAV_COMP_ID_ONBOARD_COMPUTER));
   CHECK_FALSE(control_command::IsExpectedCommandAck(
-      CommandAck(8, control_command::kStm32Usart6ComponentId, 250,
+      CommandAck(8, control_command::kStm32Usart6ComponentId, 7,
                  MAV_COMP_ID_ONBOARD_COMPUTER),
-      endpoint, 250, MAV_COMP_ID_ONBOARD_COMPUTER));
+      endpoint, 7, MAV_COMP_ID_ONBOARD_COMPUTER));
   CHECK_FALSE(control_command::IsExpectedCommandAck(
-      CommandAck(7, control_command::kStm32Usart6ComponentId, 249,
+      CommandAck(7, control_command::kStm32Usart6ComponentId, 8,
                  MAV_COMP_ID_ONBOARD_COMPUTER),
-      endpoint, 250, MAV_COMP_ID_ONBOARD_COMPUTER));
+      endpoint, 7, MAV_COMP_ID_ONBOARD_COMPUTER));
 }
