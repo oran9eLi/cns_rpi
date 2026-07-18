@@ -33,7 +33,7 @@ std::string ValidConfig() {
         "config_ack": {"suffix": "config/ack", "qos": 2}
       }
     },
-    "logging": {"level": "info", "file": ""},
+    "logging": {"level": "info", "file": "", "max_file_size_kb": 1024},
     "identity": {"school_name": "NNUTC"},
     "runtime": {
       "telemetry_publish_interval_ms": 1000,
@@ -71,6 +71,9 @@ TEST_CASE("完整合法嵌套配置能正确解析") {
   CHECK(result->mqtt.topics.config_set.qos == 2);
   CHECK(result->mqtt.topics.config_ack.suffix == "config/ack");
   CHECK(result->mqtt.topics.config_ack.qos == 2);
+  CHECK(result->logging.level == "info");
+  CHECK(result->logging.file.empty());
+  CHECK(result->logging.max_file_size_bytes == 1024U * 1024U);
   CHECK(result->runtime.telemetry_publish_interval == std::chrono::milliseconds(1000));
   CHECK(result->runtime.heartbeat_interval == std::chrono::milliseconds(1000));
   CHECK(result->runtime.applied_command_ids.empty());
@@ -78,6 +81,18 @@ TEST_CASE("完整合法嵌套配置能正确解析") {
   CHECK(result->mqtt.connection.reconnect.delay_max_seconds == 30);
   CHECK(result->cellular.interface_name == "usb0");
   CHECK(result->cellular.heartbeat_interval == std::chrono::milliseconds(1000));
+}
+
+TEST_CASE("日志级别和容量必须合法") {
+  for (const auto& replacement : {"\"level\": \"trace\"",
+                                  "\"max_file_size_kb\": 63",
+                                  "\"max_file_size_kb\": 102401"}) {
+    const std::string original = replacement[1] == 'l'
+        ? "\"level\": \"info\"" : "\"max_file_size_kb\": 1024";
+    auto result = config::LoadAppConfig(
+        WriteTempConfig(ReplaceOnce(ValidConfig(), original, replacement)));
+    CHECK_FALSE(result.has_value());
+  }
 }
 
 TEST_CASE("配置命令和ACK必须使用QoS2") {

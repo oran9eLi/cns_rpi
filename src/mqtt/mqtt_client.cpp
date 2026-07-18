@@ -7,12 +7,14 @@
 
 #include <atomic>
 #include <condition_variable>
-#include <iostream>
 #include <mutex>
+#include <string>
 #include <unordered_set>
 #include <utility>
 
 #include <mosquitto.h>
+
+#include "logging/logger.hpp"
 
 namespace mqtt {
 
@@ -24,6 +26,7 @@ struct ClientState {
   std::unordered_set<int> completed_mids;
   std::vector<std::pair<std::string, int>> subscriptions;
   IncomingMessageQueue incoming_messages;
+  logging::Logger* logger = nullptr;  ///< main拥有，生命周期覆盖客户端回调线程。
 };
 
 bool IncomingMessageQueue::Push(IncomingMessage message) {
@@ -50,22 +53,22 @@ namespace {
 void OnConnect(struct mosquitto* mosq, void* userdata, int rc) {
   auto* state = static_cast<ClientState*>(userdata);
   if (rc == 0) {
+    state->logger->Info("MQTT已连接");
     state->connected.store(true);
-    std::cout << "MQTT已连接" << std::endl;
     for (const auto& [topic, qos] : state->subscriptions) {
       if (mosquitto_subscribe(mosq, /*mid=*/nullptr, topic.c_str(), qos) != MOSQ_ERR_SUCCESS) {
-        std::cerr << "MQTT订阅失败: topic=" << topic << std::endl;
+        state->logger->Warn("MQTT订阅失败: topic=" + topic);
       }
     }
   } else {
-    std::cerr << "MQTT连接失败: rc=" << rc << std::endl;
+    state->logger->Warn("MQTT连接失败: rc=" + std::to_string(rc));
   }
 }
 
 void OnDisconnect(struct mosquitto* /*mosq*/, void* userdata, int /*rc*/) {
   auto* state = static_cast<ClientState*>(userdata);
   state->connected.store(false);
-  std::cout << "MQTT连接断开" << std::endl;
+  state->logger->Info("MQTT连接断开");
 }
 
 void OnPublish(struct mosquitto* /*mosq*/, void* userdata, int mid) {
@@ -88,7 +91,7 @@ void OnMessage(struct mosquitto* /*mosq*/, void* userdata,
                      : std::string{},
   };
   if (!state->incoming_messages.Push(std::move(incoming))) {
-    std::cerr << "MQTT入站消息队列已满，丢弃新消息" << std::endl;
+    state->logger->Warn("MQTT入站消息队列已满，丢弃新消息");
   }
 }
 
@@ -124,12 +127,14 @@ MqttClient::~MqttClient() {
   }
 }
 
-std::optional<MqttClient> MqttClient::Open(const ConnectionOptions& options) {
+std::optional<MqttClient> MqttClient::Open(const ConnectionOptions& options,
+                                           logging::Logger& logger) {
   static std::once_flag lib_init_flag;
   std::call_once(lib_init_flag, [] { mosquitto_lib_init(); });
 
   auto state = std::make_unique<ClientState>();
   state->subscriptions = options.subscriptions;
+  state->logger = &logger;
   mosquitto* handle = mosquitto_new(options.client_id.c_str(), /*clean_session=*/true, state.get());
   if (!handle) {
     return std::nullopt;
@@ -151,6 +156,7 @@ std::optional<MqttClient> MqttClient::Open(const ConnectionOptions& options) {
                          static_cast<int>(options.will.payload.size()),
                          options.will.payload.data(), options.will.qos,
                          options.will.retain) != MOSQ_ERR_SUCCESS) {
+    logger.Warn("MQTT遗嘱设置失败: topic=" + options.will.topic);
     mosquitto_destroy(handle);
     return std::nullopt;
   }

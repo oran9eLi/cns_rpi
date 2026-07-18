@@ -31,6 +31,10 @@
 
 struct mosquitto;
 
+namespace logging {
+class Logger;
+}
+
 namespace mqtt {
 
 struct ClientState;
@@ -87,8 +91,10 @@ class MqttClient {
    * @return 客户端对象创建/连接发起失败（mosquitto_new/mosquitto_connect_async/
    * mosquitto_loop_start 任一步返回错误）时返回 std::nullopt；否则返回一个还在
    * "连接中"或已经连上的客户端（具体状态由 IsConnected() 反映）。
+   * @param logger 进程级日志器；只保存非拥有指针，必须比返回的客户端及其回调线程活得久。
    */
-  static std::optional<MqttClient> Open(const ConnectionOptions& options);
+  static std::optional<MqttClient> Open(const ConnectionOptions& options,
+                                        logging::Logger& logger);
 
   ~MqttClient();
   MqttClient(MqttClient&&) noexcept;

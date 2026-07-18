@@ -12,6 +12,7 @@
 
 #include <expected>
 #include <chrono>
+#include <cstddef>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -76,6 +77,7 @@ struct MqttConfig {
 struct LoggingConfig {
   std::string level;
   std::string file;
+  std::size_t max_file_size_bytes = 0;  ///< 单个日志文件的容量上限，单位为字节。
 };
 
 struct IdentityConfig {

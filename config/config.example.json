@@ -48,7 +48,8 @@
   },
   "logging": {
     "level": "info",
-    "file": ""
+    "file": "",
+    "max_file_size_kb": 1024
   },
   "identity": {
     "school_name": "SEU"

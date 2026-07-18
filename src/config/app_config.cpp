@@ -32,6 +32,10 @@ bool IsValidCommandId(const std::string& command_id) {
   return !command_id.empty() && command_id.size() <= 128;
 }
 
+bool IsValidLogLevel(const std::string& level) {
+  return level == "debug" || level == "info" || level == "warn" || level == "error";
+}
+
 }  // namespace
 
 std::string_view ConfigErrorMessage(ConfigError error) {
@@ -62,6 +66,7 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
   }
 
   AppConfig cfg;
+  std::size_t max_file_size_kb = 0;
   try {
     const auto& serial = root.at("serial");
     cfg.serial.device = serial.at("device").get<std::string>();
@@ -109,6 +114,7 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
     const auto& logging = root.at("logging");
     cfg.logging.level = logging.at("level").get<std::string>();
     cfg.logging.file = logging.at("file").get<std::string>();
+    max_file_size_kb = logging.at("max_file_size_kb").get<std::size_t>();
 
     const auto& identity = root.at("identity");
     cfg.identity.school_name = identity.at("school_name").get<std::string>();
@@ -153,6 +159,8 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
       cfg.cellular.interface_name.empty() ||
       cfg.cellular.interface_name.find_first_of("/ \t\r\n") != std::string::npos ||
       cellular_heartbeat_ms < 100 || cellular_heartbeat_ms > 60000 ||
+      !IsValidLogLevel(cfg.logging.level) || max_file_size_kb < 64 ||
+      max_file_size_kb > 102400 ||
       !IsValidTopicSegment(topics.topic_namespace) ||
       !IsValidTopicSegment(topics.registration.suffix) ||
       !IsValidTopicSegment(topics.telemetry.suffix) || !IsValidQos(topics.registration.qos) ||
@@ -171,6 +179,7 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
     }
   }
 
+  cfg.logging.max_file_size_bytes = max_file_size_kb * 1024U;
   return cfg;
 }
 

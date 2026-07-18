@@ -3,15 +3,13 @@
  * @brief 程序入口，组合根。
  *
  * @details
- * M3a 阶段在 M2 双向收发闭环基础上接入遥测解码，M3b 阶段接入扩展帧解码，
- * M3c 阶段接入身份帧解码：收到帧先更新 DCDW 角色号(帧头 sysid)，再依次尝试
- * protocol::DecodeAndStore（标准遥测）和 protocol::DecodeExtensionAndStore
- * （NAMED_VALUE_INT/TUNNEL 扩展帧 + OPEN_DRONE_ID_* 身份帧），
- * 写入 state::StateStore -> 打印解码后的有意义字段做人工验证。
- * 启动时读一次 RPi 本机序列号(V1 过渡期权威键)。M5 阶段接入 MQTT 发布：
- * 身份就绪(state_store.vendor_id 有值)后才连接 broker，连上后按 1Hz 固定
- * 节奏发布遥测；注册扩展在连接/重连和身份元数据变化时发布 retained online，
- * 异常断线由 Last Will 标记 offline，正常退出主动发布 offline。
+ * 收到 MAVLink 帧只更新 state::StateStore，不在逐帧路径输出业务日志；标准遥测
+ * 解码失败时再尝试扩展帧和身份帧解码。日志格式和输出目标由 logging::Logger 独立负责，
+ * main 仅在配置成功后创建并向业务模块传递同一实例。
+ * 启动时读取 RPi 本机序列号作为 V1 过渡期权威键；设备身份就绪后连接 broker，
+ * 按固定节拍发布遥测，并在 Publish 成功后记录同一份紧凑 JSON，失败时只记录警告。
+ * 注册状态在连接、重连和身份元数据变化时 retained 发布；异常断线由 Last Will 标记
+ * offline，正常退出主动发布 offline。
  */
 
 #include <chrono>
@@ -35,6 +33,7 @@
 #include "control_command/control_command.hpp"
 #include "control_command/control_endpoint.hpp"
 #include "control_command/control_transaction.hpp"
+#include "logging/logger.hpp"
 #include "mqtt/mqtt_client.hpp"
 #include "mqtt/topic.hpp"
 #include "payload/json_serializer.hpp"
@@ -62,184 +61,6 @@ mavlink_message_t BuildHeartbeat(std::uint8_t system_id) {
                               MAV_AUTOPILOT_INVALID, /*base_mode=*/0, /*custom_mode=*/0,
                               MAV_STATE_ACTIVE);
   return msg;
-}
-
-/// 按刚解出来的这条帧的 msgid，打印 state_store 里对应字段的最新值——
-/// 只是给人看的调试日志，不是解码逻辑本身（解码逻辑在 protocol::DecodeAndStore 里）。
-void LogTelemetry(std::uint32_t msgid, const state::TelemetryState& snapshot) {
-  switch (msgid) {
-    case MAVLINK_MSG_ID_HEARTBEAT:
-      if (snapshot.heartbeat) {
-        std::cout << "HEARTBEAT: type=" << static_cast<int>(snapshot.heartbeat->type)
-                  << " system_status=" << static_cast<int>(snapshot.heartbeat->system_status)
-                  << std::endl;
-      }
-      break;
-    case MAVLINK_MSG_ID_GPS_RAW_INT:
-      if (snapshot.gps_raw_int) {
-        std::cout << "GPS_RAW_INT: fix_type=" << static_cast<int>(snapshot.gps_raw_int->fix_type)
-                  << " lat=" << snapshot.gps_raw_int->lat
-                  << " lon=" << snapshot.gps_raw_int->lon << std::endl;
-      }
-      break;
-    case MAVLINK_MSG_ID_ATTITUDE:
-      if (snapshot.attitude) {
-        std::cout << "ATTITUDE: roll=" << snapshot.attitude->roll
-                  << " pitch=" << snapshot.attitude->pitch
-                  << " yaw=" << snapshot.attitude->yaw << std::endl;
-      }
-      break;
-    case MAVLINK_MSG_ID_GLOBAL_POSITION_INT:
-      if (snapshot.global_position_int) {
-        std::cout << "GLOBAL_POSITION_INT: lat=" << snapshot.global_position_int->lat
-                  << " lon=" << snapshot.global_position_int->lon
-                  << " relative_alt=" << snapshot.global_position_int->relative_alt << std::endl;
-      }
-      break;
-    case MAVLINK_MSG_ID_SYS_STATUS:
-      if (snapshot.sys_status) {
-        std::cout << "SYS_STATUS: voltage_battery=" << snapshot.sys_status->voltage_battery
-                  << " battery_remaining="
-                  << static_cast<int>(snapshot.sys_status->battery_remaining) << std::endl;
-      }
-      break;
-    case MAVLINK_MSG_ID_BATTERY_STATUS:
-      for (std::size_t i = 0; i < snapshot.battery_status.size(); ++i) {
-        if (snapshot.battery_status[i]) {
-          std::cout << "BATTERY_STATUS[" << i
-                    << "]: voltages[0]=" << snapshot.battery_status[i]->voltages[0]
-                    << " battery_remaining="
-                    << static_cast<int>(snapshot.battery_status[i]->battery_remaining)
-                    << std::endl;
-        }
-      }
-      break;
-    case MAVLINK_MSG_ID_SCALED_PRESSURE:
-      if (snapshot.scaled_pressure) {
-        std::cout << "SCALED_PRESSURE: press_abs=" << snapshot.scaled_pressure->press_abs
-                  << " temperature=" << snapshot.scaled_pressure->temperature << std::endl;
-      }
-      break;
-    case MAVLINK_MSG_ID_SERVO_OUTPUT_RAW:
-      if (snapshot.motor_pulse) {
-        std::cout << "SERVO_OUTPUT_RAW: pwm_us=[" << snapshot.motor_pulse->pwm_us[0] << ","
-                  << snapshot.motor_pulse->pwm_us[1] << "," << snapshot.motor_pulse->pwm_us[2]
-                  << "," << snapshot.motor_pulse->pwm_us[3]
-                  << "] time_usec=" << snapshot.motor_pulse->time_usec << std::endl;
-      }
-      break;
-    default:
-      break;
-  }
-}
-
-/// 跟 LogTelemetry 同样的定位：按扩展帧(M3b)/身份帧(M3c)的 msgid/内部语义
-/// 打印 state_store 里对应字段的最新值，供真机人工验证；解码逻辑本身在
-/// protocol::DecodeExtensionAndStore 里，这里只打印。
-void LogExtension(std::uint32_t msgid, const state::TelemetryState& snapshot) {
-  switch (msgid) {
-    case MAVLINK_MSG_ID_NAMED_VALUE_INT:
-      if (snapshot.module_status) {
-        std::cout << "MODSTAT: [0]=" << static_cast<int>((*snapshot.module_status)[0])
-                  << " [13]=" << static_cast<int>((*snapshot.module_status)[13]) << std::endl;
-      }
-      if (snapshot.motor_pwm) {
-        std::cout << "MOTOR: duty=[" << static_cast<int>(snapshot.motor_pwm->duty_percent[0])
-                  << "," << static_cast<int>(snapshot.motor_pwm->duty_percent[1]) << ","
-                  << static_cast<int>(snapshot.motor_pwm->duty_percent[2]) << ","
-                  << static_cast<int>(snapshot.motor_pwm->duty_percent[3])
-                  << "] run_state=" << snapshot.motor_pwm->run_state
-                  << " speed_level=" << static_cast<int>(snapshot.motor_pwm->speed_level)
-                  << std::endl;
-      }
-      if (snapshot.gnss_sat) {
-        std::cout << "GNSS_SAT: gps_visible=" << static_cast<int>(snapshot.gnss_sat->gps_visible)
-                  << " gps_used=" << static_cast<int>(snapshot.gnss_sat->gps_used) << std::endl;
-      }
-      if (snapshot.gnss_utc) {
-        std::cout << "GNSSUTC: date_yymmdd=" << snapshot.gnss_utc->date_yymmdd
-                  << " seconds_of_day=" << snapshot.gnss_utc->seconds_of_day << std::endl;
-      }
-      if (snapshot.env_humidity) {
-        std::cout << "HUMIDITY: relative_humidity_x10=" << snapshot.env_humidity->relative_humidity_x10
-                  << std::endl;
-      }
-      if (snapshot.lora_status) {
-        std::cout << "LORASTAT: loss_rate_x10=" << snapshot.lora_status->loss_rate_x10
-                  << " node_id=" << static_cast<int>(snapshot.lora_status->node_id)
-                  << " present=" << snapshot.lora_status->present
-                  << " link_state=" << static_cast<int>(snapshot.lora_status->link_state)
-                  << std::endl;
-      }
-      if (snapshot.lora_counters) {
-        std::cout << "LORA_COUNT: tx_frame_count=" << snapshot.lora_counters->tx_frame_count
-                  << " tx_last_ms=" << snapshot.lora_counters->tx_last_ms
-                  << " rx_frame_count=" << snapshot.lora_counters->rx_frame_count
-                  << " rx_last_ms=" << snapshot.lora_counters->rx_last_ms << std::endl;
-      }
-      if (snapshot.remote_id_status) {
-        std::cout << "RIDSTAT: location_count=" << snapshot.remote_id_status->location_count
-                  << " error_count=" << snapshot.remote_id_status->error_count
-                  << " last_success_ms=" << snapshot.remote_id_status->last_success_ms
-                  << std::endl;
-      }
-      break;
-    case MAVLINK_MSG_ID_TUNNEL:
-      if (snapshot.alarm_table) {
-        std::cout << "ALARM_TABLE: active_count=" << snapshot.alarm_table->active_count
-                  << std::endl;
-      }
-      if (snapshot.message_log) {
-        std::cout << "MESSAGE_LOG: latest_seq=" << snapshot.message_log->latest_seq
-                  << " count=" << snapshot.message_log->count << std::endl;
-      }
-      break;
-    case MAVLINK_MSG_ID_OPEN_DRONE_ID_BASIC_ID:
-      if (snapshot.open_drone_id_basic_id) {
-        std::cout << "OPEN_DRONE_ID_BASIC_ID: id_type="
-                  << static_cast<int>(snapshot.open_drone_id_basic_id->id_type)
-                  << " ua_type=" << static_cast<int>(snapshot.open_drone_id_basic_id->ua_type)
-                  << std::endl;
-      }
-      if (snapshot.vendor_id) {
-        std::cout << "vendor_id=" << *snapshot.vendor_id << std::endl;
-      }
-      break;
-    case MAVLINK_MSG_ID_OPEN_DRONE_ID_LOCATION:
-      if (snapshot.open_drone_id_location) {
-        std::cout << "OPEN_DRONE_ID_LOCATION: lat=" << snapshot.open_drone_id_location->latitude
-                  << " lon=" << snapshot.open_drone_id_location->longitude << std::endl;
-      }
-      break;
-    case MAVLINK_MSG_ID_OPEN_DRONE_ID_SYSTEM:
-      if (snapshot.open_drone_id_system) {
-        std::cout << "OPEN_DRONE_ID_SYSTEM: operator_lat="
-                  << snapshot.open_drone_id_system->operator_latitude << std::endl;
-      }
-      break;
-    case MAVLINK_MSG_ID_OPEN_DRONE_ID_OPERATOR_ID:
-      if (snapshot.open_drone_id_operator_id) {
-        std::cout << "OPEN_DRONE_ID_OPERATOR_ID: operator_id_type="
-                  << static_cast<int>(snapshot.open_drone_id_operator_id->operator_id_type)
-                  << std::endl;
-      }
-      break;
-    case MAVLINK_MSG_ID_OPEN_DRONE_ID_SELF_ID:
-      if (snapshot.open_drone_id_self_id) {
-        std::cout << "OPEN_DRONE_ID_SELF_ID: description_type="
-                  << static_cast<int>(snapshot.open_drone_id_self_id->description_type)
-                  << std::endl;
-      }
-      break;
-    default:
-      break;
-  }
-}
-
-/// 每处理完一帧调用一次，把当前完整快照序列化成JSON打印到控制台，
-/// 供真机演示/联调时人工核对字段可读性——不是解码逻辑，纯打印。
-void LogJsonPayload(const state::TelemetryState& state, const std::string& school_name) {
-  std::cout << payload::ToJson(state, school_name).dump(2) << std::endl;
 }
 
 }  // namespace
@@ -276,14 +97,29 @@ int main(int argc, char** argv) {
     return EXIT_FAILURE;
   }
 
-  auto link = uart::MavlinkLink::Open(app_config->serial.device, app_config->serial.baud);
-  if (!link) {
-    std::cerr << "打开串口失败: " << app_config->serial.device << "\n";
+  auto level = logging::ParseLevel(app_config->logging.level);
+  if (!level) {
+    std::cerr << "初始化日志失败: " << level.error() << '\n';
+    return EXIT_FAILURE;
+  }
+  auto logger = logging::Logger::Create(
+      {.minimum_level = *level,
+       .file = app_config->logging.file,
+       .max_file_size_bytes = app_config->logging.max_file_size_bytes},
+      std::cout, std::cerr);
+  if (!logger) {
+    std::cerr << "初始化日志失败: " << logger.error() << '\n';
     return EXIT_FAILURE;
   }
 
-  std::cout << "cns_rpi M3c 启动，串口=" << app_config->serial.device
-            << " 波特率=" << app_config->serial.baud << std::endl;
+  auto link = uart::MavlinkLink::Open(app_config->serial.device, app_config->serial.baud);
+  if (!link) {
+    (*logger)->Error("打开串口失败: " + app_config->serial.device);
+    return EXIT_FAILURE;
+  }
+
+  (*logger)->Info("cns_rpi M3c 启动，串口=" + app_config->serial.device +
+                  " 波特率=" + std::to_string(app_config->serial.baud));
 
   state::StateStore state_store;
   if (auto serial = protocol::ReadRpiSerial()) {
@@ -320,12 +156,9 @@ int main(int argc, char** argv) {
             std::chrono::steady_clock::now());
       }
       state_store.UpdateDcdwLabel(protocol::FormatDcdwLabel(msg->sysid));
-      if (protocol::DecodeAndStore(*msg, state_store)) {
-        LogTelemetry(msg->msgid, state_store.Snapshot());
-      } else if (protocol::DecodeExtensionAndStore(*msg, state_store)) {
-        LogExtension(msg->msgid, state_store.Snapshot());
+      if (!protocol::DecodeAndStore(*msg, state_store)) {
+        (void)protocol::DecodeExtensionAndStore(*msg, state_store);
       }
-      LogJsonPayload(state_store.Snapshot(), app_config->identity.school_name);
     }
 
     auto now = std::chrono::steady_clock::now();
@@ -345,7 +178,7 @@ int main(int argc, char** argv) {
       const auto heartbeat = cellular::BuildRpiCellularHeartbeat(
           cellular_status, *rpi_system_id, kComponentId, boot_ms);
       if (!link->SendMessage(heartbeat)) {
-        std::cerr << "5G状态心跳发送到单片机失败" << std::endl;
+        (*logger)->Warn("5G状态心跳发送到单片机失败");
       }
       last_cellular_heartbeat = now;
     }
@@ -379,7 +212,7 @@ int main(int argc, char** argv) {
       if (snapshot.vendor_id) {
         if (!registration::IsValidDeviceIdentity(
                 app_config->mqtt.connection.client_id_prefix, *snapshot.vendor_id)) {
-          std::cerr << "vendor_id或MQTT Client ID前缀含非法字符，暂不连接MQTT" << std::endl;
+          (*logger)->Warn("vendor_id或MQTT Client ID前缀含非法字符，暂不连接MQTT");
           continue;
         }
         const auto& topics = app_config->mqtt.topics;
@@ -415,13 +248,13 @@ int main(int argc, char** argv) {
             },
             .subscriptions = {{config_set_topic, topics.config_set.qos},
                               {control_set_topic, topics.control_set.qos}},
-        });
+        }, **logger);
         if (mqtt_client) {
           active_vendor_id = *snapshot.vendor_id;
-          std::cout << "MQTT连接中: broker=" << app_config->mqtt.connection.host
-                    << " topic=" << telemetry_topic << std::endl;
+          (*logger)->Info("MQTT连接中: broker=" + app_config->mqtt.connection.host +
+                          " topic=" + telemetry_topic);
         } else {
-          std::cerr << "MQTT客户端创建失败，下一轮重试" << std::endl;
+          (*logger)->Warn("MQTT客户端创建失败，下一轮重试");
         }
       }
     }
@@ -441,7 +274,7 @@ int main(int argc, char** argv) {
                                    /*retain=*/true)) {
             registration_state.MarkPublished(online_payload);
           } else {
-            std::cerr << "MQTT注册发布失败，下一轮重试" << std::endl;
+            (*logger)->Warn("MQTT注册发布失败，下一轮重试");
           }
         }
       }
@@ -483,7 +316,7 @@ int main(int argc, char** argv) {
               config_ack_topic, result.ack.dump(), app_config->mqtt.topics.config_ack.qos,
               /*retain=*/false, std::chrono::seconds(2));
           if (!acked) {
-            std::cerr << "配置命令ACK发布失败或超时" << std::endl;
+            (*logger)->Warn("配置命令ACK发布失败或超时");
           }
           if (result.should_exit) {
             restart_requested = true;
@@ -516,7 +349,7 @@ int main(int argc, char** argv) {
             }
           }
         } else {
-          std::cerr << "忽略非本设备命令topic: " << message->topic << std::endl;
+          (*logger)->Warn("忽略非本设备命令topic: " + message->topic);
         }
       }
     }
@@ -546,11 +379,13 @@ int main(int argc, char** argv) {
     if (mqtt_client && active_vendor_id && mqtt_snapshot.vendor_id &&
         *active_vendor_id == *mqtt_snapshot.vendor_id && mqtt_client->IsConnected() &&
         now - last_telemetry_publish >= app_config->runtime.telemetry_publish_interval) {
-      std::string json_str =
+      const std::string json_str =
           payload::ToJson(state_store.Snapshot(), app_config->identity.school_name).dump();
-      if (!mqtt_client->Publish(telemetry_topic, json_str,
-                                app_config->mqtt.topics.telemetry.qos, /*retain=*/true)) {
-        std::cerr << "MQTT发布失败，下个节拍重试" << std::endl;
+      if (mqtt_client->Publish(telemetry_topic, json_str,
+                               app_config->mqtt.topics.telemetry.qos, /*retain=*/true)) {
+        logging::LogPublishedTelemetry(**logger, json_str);
+      } else {
+        (*logger)->Warn("MQTT发布失败，下个节拍重试");
       }
       last_telemetry_publish = now;
     }
@@ -561,7 +396,7 @@ int main(int argc, char** argv) {
     if (!mqtt_client->PublishAndWait(registration_topic, offline_payload,
                                      app_config->mqtt.topics.registration.qos,
                                      /*retain=*/true, std::chrono::seconds(2))) {
-      std::cerr << "MQTT离线状态发布超时" << std::endl;
+      (*logger)->Warn("MQTT离线状态发布超时");
     }
   }
   return EXIT_SUCCESS;

@@ -18,6 +18,7 @@ pkg_check_modules(MOSQUITTO REQUIRED IMPORTED_TARGET libmosquitto)
 # cns_rpi_core：uart/、config/ 等和 main() 无关的业务代码单独成库，
 # 这样 tests/ 下的单测能直接链接这些代码，不用把 main() 也一起拖进测试二进制。
 add_library(cns_rpi_core
+    src/logging/logger.cpp
     src/uart/serial_port.cpp
     src/uart/mavlink_link.cpp
     src/config/app_config.cpp
@@ -50,7 +51,7 @@ target_link_libraries(cns_rpi_core PUBLIC nlohmann_json::nlohmann_json)
 # 不会被迫在链接时也依赖 libmosquitto。
 add_library(cns_rpi_mqtt src/mqtt/mqtt_client.cpp)
 target_include_directories(cns_rpi_mqtt PUBLIC src)
-target_link_libraries(cns_rpi_mqtt PUBLIC PkgConfig::MOSQUITTO)
+target_link_libraries(cns_rpi_mqtt PUBLIC cns_rpi_core PkgConfig::MOSQUITTO)
 
 add_library(cns_rpi_config_request src/config_command/config_request.cpp)
 target_include_directories(cns_rpi_config_request PUBLIC src)
@@ -73,6 +74,10 @@ add_test(NAME mavlink_link COMMAND test_mavlink_link)
 add_executable(test_app_config tests/test_app_config.cpp)
 target_link_libraries(test_app_config PRIVATE cns_rpi_core)
 add_test(NAME app_config COMMAND test_app_config)
+
+add_executable(test_logger tests/test_logger.cpp)
+target_link_libraries(test_logger PRIVATE cns_rpi_core)
+add_test(NAME logger COMMAND test_logger)
 
 add_executable(test_state_store tests/test_state_store.cpp)
 target_link_libraries(test_state_store PRIVATE cns_rpi_core)
@@ -157,5 +162,8 @@ add_test(NAME config_request COMMAND test_config_request)
 add_executable(test_cns_rpi_service tests/test_cns_rpi_service.cpp)
 target_compile_definitions(test_cns_rpi_service PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 add_test(NAME cns_rpi_service COMMAND test_cns_rpi_service)
+add_executable(test_main_logging_contract tests/test_main_logging_contract.cpp)
+target_compile_definitions(test_main_logging_contract PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+add_test(NAME main_logging_contract COMMAND test_main_logging_contract)
 add_test(NAME apply_config_helper
     COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_apply_config_helper.py)
