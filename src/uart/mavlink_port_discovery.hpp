@@ -1,12 +1,15 @@
 #pragma once
 
 #include <chrono>
+#include <atomic>
 #include <functional>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
 #include <vector>
+#include <thread>
 
 #include "uart/mavlink_link.hpp"
 
@@ -68,6 +71,10 @@ struct DiscoveryAttempt {
   std::vector<CandidateFailure> failures;
 };
 
+/// 将候选失败压缩为适合主日志的一行中文诊断。
+std::string FormatCandidateFailures(
+    std::span<const CandidateFailure> failures);
+
 using StopRequested = std::function<bool()>;
 
 /// 按给定顺序逐个监听候选串口，首个收到 CRC 正确完整帧的候选即确认成功。
@@ -81,5 +88,24 @@ DiscoveryAttempt DiscoverMavlinkPortOnce(
     std::string_view configured_device, int baud,
     std::chrono::milliseconds per_port_timeout,
     const StopRequested& stop_requested);
+
+/// 在后台执行一轮串口发现，避免逐口探测阻塞主事件循环。
+class AsyncMavlinkDiscovery {
+ public:
+  AsyncMavlinkDiscovery() = default;
+  AsyncMavlinkDiscovery(const AsyncMavlinkDiscovery&) = delete;
+  AsyncMavlinkDiscovery& operator=(const AsyncMavlinkDiscovery&) = delete;
+
+  bool Start(std::string configured_device, int baud,
+             std::chrono::milliseconds per_port_timeout);
+  bool IsRunning() const { return running_.load(std::memory_order_acquire); }
+  std::optional<DiscoveryAttempt> TryTakeResult();
+
+ private:
+  std::mutex mutex_;
+  std::optional<DiscoveryAttempt> result_;
+  std::atomic<bool> running_{false};
+  std::jthread worker_;
+};
 
 }  // 命名空间 uart

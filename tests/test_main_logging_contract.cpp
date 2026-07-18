@@ -83,3 +83,20 @@ TEST_CASE("主程序只编排Logger并在遥测发布成功后记录同一JSON")
   CHECK(after_logger_initialization.find("std::cout") == std::string_view::npos);
   CHECK(after_logger_initialization.find("std::cerr") == std::string_view::npos);
 }
+
+TEST_CASE("主程序后台发现串口并保留失败与恢复诊断") {
+  const auto main_path = std::filesystem::path(SOURCE_DIR) / "src/main.cpp";
+  std::ifstream input(main_path);
+  REQUIRE(input.is_open());
+  const std::string text{std::istreambuf_iterator<char>(input),
+                         std::istreambuf_iterator<char>()};
+
+  CHECK(text.find("uart::AsyncMavlinkDiscovery") != std::string::npos);
+  CHECK(text.find("discovery.Start(") != std::string::npos);
+  CHECK(text.find("discovery.TryTakeResult()") != std::string::npos);
+  CHECK(text.find("uart::FormatCandidateFailures(attempt->failures)") !=
+        std::string::npos);
+  CHECK(text.find("已重新发现STM32 MAVLink串口，链路恢复") !=
+        std::string::npos);
+  CHECK(text.find("uart::DiscoverMavlinkPortOnce(") == std::string::npos);
+}

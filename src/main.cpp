@@ -141,9 +141,11 @@ int main(int argc, char** argv) {
   std::optional<uart::MavlinkLink> link;
   std::string active_serial_device;
   std::optional<mavlink_message_t> pending_first_message;
+  uart::AsyncMavlinkDiscovery discovery;
   uart::DiscoveryLogLimiter discovery_log_limiter(kDiscoveryWarningInterval);
   uart::MavlinkSilenceWatchdog silence_watchdog(kMavlinkSilenceTimeout);
   auto next_discovery = std::chrono::steady_clock::now();
+  bool ever_connected_to_stm32 = false;
   bool restart_requested = false;
   auto last_telemetry_publish = std::chrono::steady_clock::now();
 
@@ -183,22 +185,39 @@ int main(int argc, char** argv) {
 
   while (!g_exit_requested) {
     auto now = std::chrono::steady_clock::now();
-    if (!link && now >= next_discovery) {
-      auto attempt = uart::DiscoverMavlinkPortOnce(
-          app_config->serial.device, app_config->serial.baud,
-          kDiscoveryProbeTimeout, [] { return g_exit_requested != 0; });
-      if (attempt.found) {
-        active_serial_device = std::move(attempt.found->device);
-        pending_first_message = attempt.found->first_message;
-        link.emplace(std::move(attempt.found->link));
-        silence_watchdog.ObserveValidFrame(std::chrono::steady_clock::now());
-        (*logger)->Info("已发现STM32 MAVLink串口: " + active_serial_device);
-      } else if (!g_exit_requested) {
-        const auto discovery_finished = std::chrono::steady_clock::now();
-        if (discovery_log_limiter.ShouldLog(discovery_finished)) {
-          (*logger)->Warn("尚未发现STM32 MAVLink串口，继续等待");
+    if (!link) {
+      if (auto attempt = discovery.TryTakeResult()) {
+        if (attempt->found) {
+          active_serial_device = std::move(attempt->found->device);
+          pending_first_message = attempt->found->first_message;
+          link.emplace(std::move(attempt->found->link));
+          silence_watchdog.ObserveValidFrame(std::chrono::steady_clock::now());
+          if (ever_connected_to_stm32) {
+            (*logger)->Info("已重新发现STM32 MAVLink串口，链路恢复: " +
+                            active_serial_device);
+          } else {
+            (*logger)->Info("已发现STM32 MAVLink串口: " + active_serial_device);
+            ever_connected_to_stm32 = true;
+          }
+        } else if (!g_exit_requested) {
+          const auto discovery_finished = std::chrono::steady_clock::now();
+          if (discovery_log_limiter.ShouldLog(discovery_finished)) {
+            std::string warning = "尚未发现STM32 MAVLink串口，继续等待";
+            if (!attempt->failures.empty()) {
+              warning += "; 探测失败: " +
+                         uart::FormatCandidateFailures(attempt->failures);
+            }
+            (*logger)->Warn(warning);
+          }
+          next_discovery = discovery_finished + kDiscoveryRetryInterval;
         }
-        next_discovery = discovery_finished + kDiscoveryRetryInterval;
+      }
+
+      now = std::chrono::steady_clock::now();
+      if (!link && !discovery.IsRunning() && now >= next_discovery) {
+        (void)discovery.Start(app_config->serial.device,
+                              app_config->serial.baud,
+                              kDiscoveryProbeTimeout);
       }
     }
 
@@ -457,8 +476,10 @@ int main(int argc, char** argv) {
       last_telemetry_publish = now;
     }
 
-    if (!link && std::chrono::steady_clock::now() < next_discovery) {
-      std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    if (!link) {
+      std::this_thread::sleep_for(discovery.IsRunning()
+                                     ? std::chrono::milliseconds(10)
+                                     : std::chrono::milliseconds(100));
     }
   }
 

@@ -116,6 +116,38 @@ std::vector<std::string> EnumerateSerialCandidates() {
   return OrderSerialCandidates(candidates);
 }
 
+std::string FormatCandidateFailures(
+    std::span<const CandidateFailure> failures) {
+  const auto reason = [](UartError error) -> std::string_view {
+    switch (error) {
+      case UartError::kDeviceNotFound:
+        return "设备不存在";
+      case UartError::kPermissionDenied:
+        return "权限不足";
+      case UartError::kDeviceBusy:
+        return "设备忙";
+      case UartError::kConfigFailed:
+        return "串口配置失败";
+      case UartError::kReadError:
+        return "读取失败";
+      case UartError::kWriteError:
+        return "写入失败";
+    }
+    return "未知错误";
+  };
+
+  std::string message;
+  for (const auto& failure : failures) {
+    if (!message.empty()) {
+      message += ", ";
+    }
+    message += failure.device;
+    message += '=';
+    message += reason(failure.error);
+  }
+  return message;
+}
+
 DiscoveryAttempt ProbeMavlinkCandidates(
     std::span<const std::string> candidates, int baud,
     std::chrono::milliseconds per_port_timeout,
@@ -170,6 +202,48 @@ DiscoveryAttempt DiscoverMavlinkPortOnce(
       std::string(configured_device)};
   return ProbeMavlinkCandidates(candidates, baud, per_port_timeout,
                                 stop_requested);
+}
+
+bool AsyncMavlinkDiscovery::Start(
+    std::string configured_device, int baud,
+    std::chrono::milliseconds per_port_timeout) {
+  if (IsRunning()) {
+    return false;
+  }
+  if (worker_.joinable()) {
+    worker_.join();
+  }
+  {
+    std::scoped_lock lock(mutex_);
+    result_.reset();
+  }
+  running_.store(true, std::memory_order_release);
+  worker_ = std::jthread(
+      [this, configured_device = std::move(configured_device), baud,
+       per_port_timeout](std::stop_token stop_token) {
+        auto attempt = DiscoverMavlinkPortOnce(
+            configured_device, baud, per_port_timeout,
+            [&stop_token] { return stop_token.stop_requested(); });
+        {
+          std::scoped_lock lock(mutex_);
+          result_.emplace(std::move(attempt));
+        }
+        running_.store(false, std::memory_order_release);
+      });
+  return true;
+}
+
+std::optional<DiscoveryAttempt> AsyncMavlinkDiscovery::TryTakeResult() {
+  if (IsRunning()) {
+    return std::nullopt;
+  }
+  if (worker_.joinable()) {
+    worker_.join();
+  }
+  std::scoped_lock lock(mutex_);
+  auto result = std::move(result_);
+  result_.reset();
+  return result;
 }
 
 }  // 命名空间 uart

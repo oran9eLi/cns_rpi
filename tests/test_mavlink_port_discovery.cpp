@@ -274,3 +274,52 @@ TEST_CASE("明确路径只探测配置的设备") {
   CHECK_FALSE(attempt.found.has_value());
   CHECK(attempt.failures.empty());
 }
+
+TEST_CASE("后台发现启动后不会阻塞主循环") {
+  auto silent = OpenPtyPair();
+  uart::AsyncMavlinkDiscovery discovery;
+
+  const auto start = std::chrono::steady_clock::now();
+  REQUIRE(discovery.Start(silent.slave_path, 115200,
+                          std::chrono::milliseconds(300)));
+  const auto start_elapsed = std::chrono::steady_clock::now() - start;
+
+  CHECK(start_elapsed < std::chrono::milliseconds(50));
+  CHECK(discovery.IsRunning());
+  CHECK_FALSE(discovery.TryTakeResult().has_value());
+
+  std::this_thread::sleep_for(std::chrono::milliseconds(350));
+  auto result = discovery.TryTakeResult();
+  REQUIRE(result.has_value());
+  CHECK_FALSE(result->found.has_value());
+  CHECK_FALSE(discovery.IsRunning());
+}
+
+TEST_CASE("后台发现完成后返回首个合法帧") {
+  auto mavlink = OpenPtyPair();
+  WriteAll(mavlink.master_fd, Encode(PackHeartbeat(22)));
+  uart::AsyncMavlinkDiscovery discovery;
+
+  REQUIRE(discovery.Start(mavlink.slave_path, 115200,
+                          std::chrono::milliseconds(300)));
+  std::optional<uart::DiscoveryAttempt> result;
+  for (int i = 0; i < 20 && !result; ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    result = discovery.TryTakeResult();
+  }
+
+  REQUIRE(result.has_value());
+  REQUIRE(result->found.has_value());
+  CHECK(result->found->device == mavlink.slave_path);
+  CHECK(result->found->first_message.sysid == 22);
+}
+
+TEST_CASE("串口发现失败诊断包含设备和中文原因") {
+  const std::vector<uart::CandidateFailure> failures{
+      {"/dev/ttyUSB1", uart::UartError::kPermissionDenied},
+      {"/dev/ttyUSB2", uart::UartError::kDeviceBusy},
+  };
+
+  CHECK(uart::FormatCandidateFailures(failures) ==
+        "/dev/ttyUSB1=权限不足, /dev/ttyUSB2=设备忙");
+}
