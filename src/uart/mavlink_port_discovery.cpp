@@ -215,7 +215,9 @@ bool AsyncMavlinkDiscovery::Start(
   }
   {
     std::scoped_lock lock(mutex_);
-    result_.reset();
+    if (result_) {
+      return false;
+    }
   }
   running_.store(true, std::memory_order_release);
   worker_ = std::jthread(

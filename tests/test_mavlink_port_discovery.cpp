@@ -314,6 +314,26 @@ TEST_CASE("后台发现完成后返回首个合法帧") {
   CHECK(result->found->first_message.sysid == 22);
 }
 
+TEST_CASE("未消费的后台发现结果不会被下一轮启动覆盖") {
+  auto mavlink = OpenPtyPair();
+  WriteAll(mavlink.master_fd, Encode(PackHeartbeat(23)));
+  uart::AsyncMavlinkDiscovery discovery;
+
+  REQUIRE(discovery.Start(mavlink.slave_path, 115200,
+                          std::chrono::milliseconds(300)));
+  for (int i = 0; i < 50 && discovery.IsRunning(); ++i) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  REQUIRE_FALSE(discovery.IsRunning());
+
+  CHECK_FALSE(discovery.Start("/dev/does-not-exist", 115200,
+                              std::chrono::milliseconds(1)));
+  auto result = discovery.TryTakeResult();
+  REQUIRE(result.has_value());
+  REQUIRE(result->found.has_value());
+  CHECK(result->found->first_message.sysid == 23);
+}
+
 TEST_CASE("串口发现失败诊断包含设备和中文原因") {
   const std::vector<uart::CandidateFailure> failures{
       {"/dev/ttyUSB1", uart::UartError::kPermissionDenied},
