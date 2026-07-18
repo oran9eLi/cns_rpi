@@ -16,6 +16,9 @@
 namespace uart {
 namespace {
 
+/// 单次等待不超过该片长，保证串口静默时也能及时响应停止请求。
+constexpr auto kStopPollingInterval = std::chrono::milliseconds(50);
+
 struct NumberedPath {
   std::string path;
   std::uint64_t number;
@@ -125,7 +128,8 @@ DiscoveryAttempt ProbeMavlinkCandidates(
 
       const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
           deadline - std::chrono::steady_clock::now());
-      auto received = link->ReceiveMessage(remaining);
+      auto received =
+          link->ReceiveMessage(std::min(remaining, kStopPollingInterval));
       if (!received) {
         attempt.failures.push_back({device, received.error()});
         break;

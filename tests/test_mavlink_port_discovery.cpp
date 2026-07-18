@@ -4,9 +4,11 @@
 #include "uart/mavlink_port_discovery.hpp"
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -173,6 +175,25 @@ TEST_CASE("停止回调及时中止本轮探测") {
   CHECK_FALSE(attempt.found.has_value());
   CHECK(checks >= 2);
   CHECK(elapsed < std::chrono::milliseconds(500));
+}
+
+TEST_CASE("等待串口期间出现停止请求会及时中止") {
+  auto pty = OpenPtyPair();
+  const std::vector<std::string> candidates{pty.slave_path};
+  std::atomic<bool> stopped{false};
+  std::jthread requester([&stopped] {
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    stopped.store(true);
+  });
+
+  const auto start = std::chrono::steady_clock::now();
+  auto attempt = uart::ProbeMavlinkCandidates(
+      candidates, 115200, std::chrono::seconds(3),
+      [&stopped] { return stopped.load(); });
+  const auto elapsed = std::chrono::steady_clock::now() - start;
+
+  CHECK_FALSE(attempt.found.has_value());
+  CHECK(elapsed < std::chrono::milliseconds(250));
 }
 
 TEST_CASE("短超时不会为每个候选阻塞一百毫秒") {
