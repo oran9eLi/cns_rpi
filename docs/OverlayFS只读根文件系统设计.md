@@ -1,0 +1,160 @@
+# OverlayFS 只读根文件系统设计
+
+对应 `docs/M7系统化部署设计.md` 第 1 节（存储防坏卡）与配置持久化 helper 在只读环境下的闭环。
+
+本文是实施前的设计文档，**不是操作手册**。第 7 节的实施步骤必须在满足第 6 节现场条件的前提下执行。
+
+## 1. 要解决的问题
+
+现场设备直接断电是常态操作，不会有人先执行 `shutdown`。ext4 根文件系统在写入过程中掉电可能损坏，轻则触发 fsck 修复，重则系统起不来。目标是让根文件系统在运行期间不接受任何写入，日常写入全部落在内存里，断电时 SD 卡上没有正在进行的写操作。
+
+## 2. 现场实测环境
+
+以下为 2026-07-20 在 `dcdw@192.168.11.4` 实测确认，不是推测：
+
+| 项 | 实测值 |
+|---|---|
+| 系统 | Debian GNU/Linux 13 (trixie)，Raspberry Pi 5 |
+| 根文件系统 | `/dev/mmcblk0p2` ext4 `rw,noatime`，29G 总量/已用 7.6G |
+| 启动分区 | `/dev/mmcblk0p1` vfat，挂载于 `/boot/firmware`，505M/已用 87M |
+| 内存 | 4049 MiB |
+| 活动 swap | 仅 `zram0`（2G，RAM 支撑） |
+| `dphys-swapfile` | 已禁用（`not-found`） |
+| 遗留文件 | `/var/swap` 2.0G，**未激活** |
+| `raspi-config` | 已安装，含 `enable_overlayfs` / `disable_overlayfs` / `enable_bootro` / `disable_bootro` |
+| `overlayroot` 包 | **未安装**，apt 中有 `0.18.debian14` 可用 |
+
+注：收尾工作文档中「Raspberry Pi OS 26.04」的说法与实测不符，实际是 Debian 13 (trixie) 基础的 Raspberry Pi OS，实施时以实测为准。
+
+## 3. 实现机制
+
+Raspberry Pi OS 的 `raspi-config` 不自研 overlay 逻辑，而是依赖 Debian 的 `overlayroot` 包。`enable_overlayfs` 的实际动作是：
+
+1. 若未安装则 `apt-get install -y overlayroot`；
+2. 把 `/boot/firmware` 临时挂为可写；
+3. 向 `/boot/firmware/cmdline.txt` 前置 `overlayroot=tmpfs`；
+4. 按原状态决定是否把 `/boot/firmware` 恢复为只读。
+
+当前 `cmdline.txt` 内容（实测）：
+
+```
+console=serial0,115200 console=tty1 root=PARTUUID=e59e7ed8-02 rootfstype=ext4 fsck.repair=yes rootwait quiet splash plymouth.ignore-serial-consoles cfg80211.ieee80211_regdom=CN
+```
+
+**回退生命线**：触发开关只是 `cmdline.txt` 里的一个字符串，而该文件位于独立的 vfat 分区。即使系统完全起不来，把 SD 卡插到任意一台电脑上删掉 `overlayroot=tmpfs` 即可恢复。这是本方案可控性的基础，实施前必须先备份该文件。
+
+## 4. 三层只读策略
+
+| 层 | 策略 | 理由 |
+|---|---|---|
+| 根文件系统 `/` | overlay 只读，写入落 tmpfs | 主要防护目标 |
+| `/boot/firmware` | **第一阶段保持可写**，稳定后再单独启用 `enable_bootro` | 它是回退生命线，过早锁死会让远程恢复更困难；且启动分区平时不写，风险本就低 |
+| 应用配置 `config/config.json` | 需要专门的持久化通道，见第 5 节 | 这是本方案最容易被忽略的坑 |
+
+日志侧的前置条件**已经完成**（2026-07-20）：journald 已 `Storage=volatile` + `RuntimeMaxUse=16M`；业务日志 `logging.file` 为空字符串，只走 journald，不产生落盘日志文件。因此 overlay 启用后没有遗留的日志写入路径需要处理。
+
+## 5. 配置持久化：本方案的核心难点
+
+`config/config.json` 位于 `/home/dcdw/cns_rpi/config/`，在根文件系统上。**overlay 启用后，helper 写入的新配置会落进 tmpfs 上层，重启即消失** —— 表现为「配置命令返回成功 ACK，但设备重启后参数回退」，比不做 overlay 更糟，因为它是静默失败。
+
+现有 helper（`/usr/local/libexec/cns-rpi-apply-config`，87 行）的写入逻辑本身质量很好，实测包含：临时文件暂存 → `os.fsync(文件)` → `os.replace` 原子替换 → `os.fsync(目录)`。**这套逻辑不需要改**，需要改的只是「写到哪一层」。
+
+### 方案对比
+
+| 方案 | 做法 | 结论 |
+|---|---|---|
+| **A. helper 经 `overlayroot-chroot` 写底层根分区** | 配置路径不变，helper 内部切换到底层后再执行现有原子替换逻辑 | **推荐**。改动集中在 helper 单个文件；helper 本就是单一用途受限脚本，只允许改固定的 `config/config.json`，扩展它不扩大攻击面 |
+| B. 配置移到 `/boot/firmware` | vfat 分区不参与 overlay，天然持久 | 否决。vfat 无属主/权限语义，掉电一致性弱于 ext4，与「防坏卡」初衷相悖 |
+| C. 单独划持久化分区 | 最干净的工程解 | 需要对 29G 卡重新分区，远程执行风险过高。若将来有机会离线操作（可插读卡器），值得回头采用 |
+
+### 方案 A 的待验证点
+
+`overlayroot` 包当前未安装，因此以下两点**必须在实施时现场确认，不能照抄本文**：
+
+- `overlayroot-chroot` 的实际路径与调用约定；
+- overlay 生效后底层根分区的暴露挂载点（Debian overlayroot 惯例为只读挂载在 `/media/root-ro`，但需实测确认本镜像行为）。
+
+确认后再据此修改 helper，并补充对应单元测试。
+
+### 持久化闭环的验收标准
+
+沿用收尾工作文档 §8.2 的要求：
+
+- helper 只能修改固定的 `config/config.json`，不得获得任意 shell 或任意文件写权限；
+- 配置成功应用后，**断电重新上电仍保留新参数**（这是与当前状态的关键区别）；
+- 写入任何阶段失败时，旧配置仍完整可用；
+- helper 返回结果不确定时，设备端幂等记录能避免重复破坏配置。
+
+## 6. 实施前必须满足的现场条件
+
+**这一步不能纯远程做。** 启用 overlay 需要修改 `cmdline.txt` 并重启，一旦启动失败，SSH 立即失联，只能靠物理接触恢复。
+
+- 实施时必须有人在设备旁，或至少能随时取下 SD 卡；
+- 先备份 `/boot/firmware/cmdline.txt`（同时在设备外留一份副本）；
+- 预留一台能读 SD 卡的电脑。
+
+### 实施前的清理项
+
+`/var/swap` 有 2.0G 遗留 swap 文件，当前未激活且 `dphys-swapfile` 已禁用。**启用 overlay 前应删除该文件并确认服务保持 disabled**：overlay 下若 swap 文件被误激活，swap 会写进内存上层，形成自噬式内存耗尽。当前活动 swap 只有 `zram0`（RAM 支撑），在 overlay 下是安全的，无需改动。
+
+## 7. 实施步骤
+
+分两次重启，不要合并。
+
+**第一次 —— 只装包，不改 cmdline：**
+
+```bash
+sudo cp /boot/firmware/cmdline.txt /boot/firmware/cmdline.txt.bak
+sudo apt-get install -y overlayroot
+sudo rm -f /var/swap
+sudo reboot
+```
+
+重启后确认系统正常、SSH 可用、`cns-rpi.service` 为 `active`。此时尚未启用 overlay，风险为零。
+
+**第二次 —— 启用 overlay：**
+
+```bash
+sudo raspi-config nonint enable_overlayfs
+sudo reboot
+```
+
+**第三次（可选，稳定运行一段时间后再做）—— 锁只读启动分区：**
+
+```bash
+sudo raspi-config nonint enable_bootro
+sudo reboot
+```
+
+## 8. 重启后的验证
+
+必须验证「实际挂载为只读」，而不是「配置文件改了」——这是收尾工作文档特别强调的一点。
+
+```bash
+findmnt -n -o TARGET,SOURCE,FSTYPE,OPTIONS /      # 期望 fstype 为 overlay
+touch /tmp_write_probe 2>&1                        # 期望落在内存层，重启后消失
+grep -o 'overlayroot=[a-z]*' /proc/cmdline         # 确认内核参数已生效
+systemctl is-active cns-rpi.service                # 主服务不受影响
+```
+
+判据：`findmnt` 显示根挂载类型为 `overlay`（而非改动前的 `ext4 rw,noatime`）。仅检查 `cmdline.txt` 内容不构成验证。
+
+## 9. 内存写层容量与耗尽行为
+
+overlay 上层是 tmpfs，占用的是那 4049 MiB 物理内存。当前可用内存约 3.5 GiB，而运行期写入主要来自：
+
+- journald：已硬限 16 MiB；
+- 业务日志：不落盘（`logging.file` 为空）；
+- 临时文件与运行时状态：量级很小。
+
+因此正常运行不会接近上限。但必须明确耗尽后的行为：**tmpfs 写满后写入返回 `ENOSPC`，不会自动淘汰旧数据**（这与 journald 的 `RuntimeMaxUse` 滚动淘汰不同——后者是 journald 自己实现的策略，不是 tmpfs 的行为）。
+
+实施时应实测并记录：给 overlay 上层设定显式容量上限，以及写满后主程序的表现。这一项在本设计中**尚未验证**，不得假定「反正内存够大」。
+
+## 10. 与后续验收的关系
+
+本方案完成后才能开展收尾工作文档 §8.5 的物理断电验收，且断电测试必须覆盖「修改配置后立即断电」这一最危险时序，重复多轮（建议不少于 5 轮），不能只成功一次即通过。
+
+## 11. 当前状态
+
+**尚未实施。** 本文档完成于 2026-07-20，环境数据为当日实测。第 5 节的两个待验证点和第 9 节的容量上限行为需要在实施时现场确认并回填本文。

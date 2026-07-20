@@ -4,7 +4,24 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project state
 
-This repository is currently in the design phase — no source code exists yet. `docs/` contains the full V1 design; `CMakeLists.txt` / `src/` will appear starting at milestone M1 (see `docs/V1设计文档.md` §10). There are no build/lint/test commands to run yet. Once the CMake skeleton lands, build verification follows `docs/协作规则.md` §6 (CMake build with `-Wall -Wextra`, unit tests under `tests/` for UART/MAVLink parsing and MQTT edge cases).
+V1 is implemented and deployed. Milestones M1–M6 plus the runtime config-command link are done; the remaining V1 gaps are product hardening (OverlayFS read-only root, physical power-cut acceptance), production networking (real SIM/APN, MQTT TLS + per-device credentials/ACL), and end-to-end integration with the server-side `route_service`, which is not yet live. See `docs/V1设计文档.md` §10 for per-milestone status and `docs/M7系统化部署设计.md` for the deployment/hardening checklist.
+
+### Build and test
+
+```bash
+cmake -S . -B build && cmake --build build   # -Wall -Wextra enforced
+ctest --test-dir build                       # 27 test targets, doctest
+```
+
+Dependencies: `nlohmann_json` (>=3.2.0), `libmosquitto` (via pkg-config), `doctest`, `python3`. On a fresh Pi run `scripts/install_deps.sh` first — it switches apt to the TUNA mirror and installs the build dependencies.
+
+Build verification follows `docs/协作规则.md` §6: every change must build clean under `-Wall -Wextra` and keep `ctest` fully green.
+
+### Deployment
+
+`scripts/deploy.sh` is the only supported deployment path. It is idempotent and refuses to run outside `/home/dcdw/cns_rpi` as user `dcdw`. It builds, then installs the config helper, `cns-rpi.service`, `cellular-dialup.service` and the journald drop-in, and restarts the main service.
+
+`config/config.json` is gitignored — it is per-device field configuration. `config/config.example.json` is the tracked template; keep the two in sync in shape, never commit real field values.
 
 ## What this repository is
 
@@ -18,7 +35,7 @@ Read `docs/V1设计文档.md` before making architectural changes; it is the sou
 
 ## Architecture (from design docs — read these for full detail)
 
-**Data flow is bidirectional over a single new UART link (not yet allocated by firmware) carrying MAVLink v2, common dialect only (no custom dialect XML):**
+**Data flow is bidirectional over a single UART link carrying MAVLink v2, common dialect only (no custom dialect XML).** In the field the link is a CH340 USB-serial adapter whose device node is not stable across reboots, so `serial.device` is set to `auto` and `uart/mavlink_port_discovery` probes candidate ports for a valid MAVLink frame; do not hardcode a `/dev/ttyUSBn` path.
 
 - Upstream (STM32→RPi): HEARTBEAT, standard telemetry messages, `NAMED_VALUE_INT`/`TUNNEL`-encoded extension frames, `OPEN_DRONE_ID_*` identity frames → decoded → published as JSON over MQTT (RPi is a plain MQTT client; it does **not** run a local Mosquitto broker).
 - Downstream (management center → MQTT → RPi → STM32): commands arrive as JSON, get dispatched, encoded as `COMMAND_LONG`, sent over UART; `COMMAND_ACK` results get reported back over MQTT. STM32 is the authority for command validation — RPi only does JSON schema sanity-checking before encoding.
