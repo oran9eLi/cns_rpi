@@ -21,6 +21,29 @@ CONFIG_PATH="${CONFIG_DIR}/config.json"
 LEGACY_CONFIG_PATH="${REPO_ROOT}/config/config.json"
 EXPECTED_REPO_ROOT="/home/dcdw/cns_rpi"
 
+echo "===== 检查根文件系统是否可持久写入 ====="
+# OverlayFS 生效时根文件系统的写入全部落在内存上层，重启即蒸发：本脚本安装的
+# systemd unit、helper 以及 git pull 下来的代码都会消失，而部署过程看起来完全
+# 成功——直到下一次重启才暴露。这里直接拒绝运行，不给出"看似成功"的结果。
+#
+# 该问题曾在 2026-07-20 真实发生过：overlay 生效状态下完成的部署在重启后全部
+# 回退，详见 docs/OverlayFS只读根文件系统设计.md。
+if [ "$(findmnt -n -o FSTYPE / 2>/dev/null)" = "overlay" ]; then
+  cat >&2 <<'GUARD'
+错误：检测到 OverlayFS 已启用，根文件系统不可持久写入，拒绝部署。
+
+维护流程（每步之间需要重启）：
+  1. sudo raspi-config nonint disable_overlayfs && sudo reboot
+  2. 重启后重新执行 ./scripts/deploy.sh
+  3. sudo raspi-config nonint enable_overlayfs && sudo reboot
+
+不要在 overlay 生效时用 overlayroot-chroot 绕过本检查执行完整部署：
+构建产物、服务状态和挂载关系都不在 chroot 视图内，结果不可靠。
+GUARD
+  exit 1
+fi
+echo "  - 根文件系统可持久写入"
+
 echo "===== 验证 sudo 权限 ====="
 if [ "$(id -u)" -eq 0 ]; then
   echo "错误：请使用 dcdw 普通用户执行本脚本，不要执行 sudo ./scripts/deploy.sh。" >&2
@@ -34,29 +57,6 @@ if sudo -n true 2>/dev/null; then
   echo "  - sudo 免密授权可用"
 else
   sudo -v
-fi
-
-echo "===== 检查现场配置 ====="
-# 运行时配置已从 git 工作树迁到 /var/lib/cns-rpi：它是可变的现场状态，
-# 且该目录要作为独立文件系统的挂载点（只读根文件系统方案）。
-if [ ! -f "${CONFIG_PATH}" ]; then
-  if [ -f "${LEGACY_CONFIG_PATH}" ]; then
-    echo "  - 检测到旧位置配置，迁移到 ${CONFIG_PATH}"
-    sudo install -d -o dcdw -g dcdw -m 0755 "${CONFIG_DIR}"
-    sudo install -o dcdw -g dcdw -m 0600 "${LEGACY_CONFIG_PATH}" "${CONFIG_PATH}"
-    # 旧文件改名保留而不删除：迁移出问题时还能回退，且避免两处配置并存造成困惑。
-    mv "${LEGACY_CONFIG_PATH}" "${LEGACY_CONFIG_PATH}.migrated"
-    echo "  - 旧配置已保留为 ${LEGACY_CONFIG_PATH}.migrated"
-  else
-    echo "错误：缺少现场配置 ${CONFIG_PATH}" >&2
-    echo "请先根据 ${REPO_ROOT}/config/config.example.json 创建，脚本不会自动生成。" >&2
-    exit 1
-  fi
-else
-  sudo install -d -o dcdw -g dcdw -m 0755 "${CONFIG_DIR}"
-  if [ -f "${LEGACY_CONFIG_PATH}" ]; then
-    echo "  - 警告：旧位置仍存在 ${LEGACY_CONFIG_PATH}，实际生效的是 ${CONFIG_PATH}" >&2
-  fi
 fi
 
 echo "===== 构建 cns_rpi ====="
@@ -102,6 +102,29 @@ if [ -f /boot/firmware/cns-config.img ]; then
 else
   echo "  - 未发现 /boot/firmware/cns-config.img，配置目录按普通目录使用"
 fi
+
+# 配置检查必须放在挂载之后：卷挂上前 ${CONFIG_DIR} 是空的，
+# 提前检查会误判为"缺少配置"并把仓库里的旧配置迁进去，
+# 随后又被挂载遮蔽，留下两份互相矛盾的配置。
+echo "===== 检查现场配置 ====="
+sudo install -d -o dcdw -g dcdw -m 0755 "${CONFIG_DIR}"
+if [ -f "${CONFIG_PATH}" ]; then
+  echo "  - 现场配置就位：${CONFIG_PATH}"
+  if [ -f "${LEGACY_CONFIG_PATH}" ]; then
+    echo "  - 警告：旧位置仍存在 ${LEGACY_CONFIG_PATH}，实际生效的是 ${CONFIG_PATH}" >&2
+  fi
+elif [ -f "${LEGACY_CONFIG_PATH}" ]; then
+  echo "  - 检测到旧位置配置，迁移到 ${CONFIG_PATH}"
+  sudo install -o dcdw -g dcdw -m 0600 "${LEGACY_CONFIG_PATH}" "${CONFIG_PATH}"
+  # 旧文件改名保留而不删除：迁移出问题时还能回退，且避免两处配置并存造成困惑。
+  mv "${LEGACY_CONFIG_PATH}" "${LEGACY_CONFIG_PATH}.migrated"
+  echo "  - 旧配置已保留为 ${LEGACY_CONFIG_PATH}.migrated"
+else
+  echo "错误：缺少现场配置 ${CONFIG_PATH}" >&2
+  echo "请先根据 ${REPO_ROOT}/config/config.example.json 创建，脚本不会自动生成。" >&2
+  exit 1
+fi
+
 sudo systemctl enable cns-rpi.service
 if sudo systemctl is-active --quiet cns-rpi.service; then
   sudo systemctl restart cns-rpi.service

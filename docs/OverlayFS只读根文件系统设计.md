@@ -171,6 +171,43 @@ ExecStart=... /var/lib/cns-rpi/config.json \
 - 写入任何阶段失败时，旧配置仍完整可用；
 - helper 返回结果不确定时，设备端幂等记录能避免重复破坏配置。
 
+## 5.5 部署模型：overlay 生效时不能部署
+
+**这是本设计最初遗漏、并在 2026-07-20 造成真实回退的一点。**
+
+OverlayFS 生效后，根文件系统上的**一切**写入都落在内存上层，重启即蒸发。这不只影响配置文件，而是影响所有部署产物：
+
+- `scripts/deploy.sh` 安装的 systemd unit 与 helper；
+- `git pull` 拉下来的代码与 `cmake` 构建产物；
+- `install`/`mv`/`rm` 造成的任何文件变动。
+
+危险之处在于**部署过程看起来完全成功**：文件确实写进去了、服务确实起来了、功能确实能用，直到下一次重启才暴露。当天就是这样：overlay 生效状态下完成的一整轮部署（迁移配置、安装挂载服务、更新 helper、三次 git pull）在重启后全部回退，而期间所有验证都是通过的。
+
+这台机器生成的 `/etc/fstab` 开头其实早已写明：
+
+```
+#  To permanently modify this (or any other file), you should change-root into
+#  a writable view of the underlying filesystem using:
+#      sudo overlayroot-chroot
+```
+
+### 采用的维护模型：临时关闭 overlay
+
+```bash
+sudo raspi-config nonint disable_overlayfs && sudo reboot
+# 重启后正常部署
+cd ~/cns_rpi && git pull && ./scripts/deploy.sh
+sudo raspi-config nonint enable_overlayfs && sudo reboot
+```
+
+选它而不是 `overlayroot-chroot` 的理由：流程直白、`deploy.sh` 不需要为 chroot 环境做特殊处理，构建、服务重启、挂载关系都在正常环境下进行，结果可靠。代价是每次部署两次重启——教学设备部署频次低，可以接受。
+
+`overlayroot-chroot` 仍适用于**单个文件**的持久化修改（改一行配置、打一个补丁），不适合跑完整部署：构建产物、服务状态和挂载关系都不在 chroot 视图内。
+
+### 已加入的防护
+
+`scripts/deploy.sh` 开头会检查根文件系统类型，为 `overlay` 时**直接拒绝运行**并打印上述维护流程。宁可明确失败，也不要再产生一次"看似成功、重启蒸发"的部署。
+
 ## 6. 实施前必须满足的现场条件
 
 **这一步不能纯远程做。** 启用 overlay 需要修改 `cmdline.txt` 并重启，一旦启动失败，SSH 立即失联，只能靠物理接触恢复。
@@ -291,6 +328,18 @@ User dcdw may run the following commands on raspberrypi:
 | 属主与权限 | 保持 `dcdw:dcdw 0600` |
 | 暂存目录残留 | 无 |
 | 幂等 | 重复 `command_id` 返回 `already_applied` |
+
+### 2026-07-20 重启验证：未通过，已定位并修正
+
+首次重启验证**失败**，暴露了第 5.5 节的部署模型缺口：
+
+- `/media/root-ro` 恢复为 `ro` ✓，`/var/swap` 永久删除 ✓（这两项是直接在持久层操作的，所以幸存）；
+- 但 `cns-rpi-config.service` 显示 `not-found`、`/var/lib/cns-rpi/config.json` 不存在——overlay 生效期间安装的所有内容都已蒸发；
+- 仓库 HEAD 退回 `1a5cf4c`，`/usr/local/libexec/cns-rpi-apply-config` 退回旧版，`cns-rpi.service` 退回旧 unit。
+
+**没有数据永久丢失**：`/boot/firmware/cns-config.img` 完好（配置齐全，含 6 条 `applied_command_ids`），持久层挂载点 `/media/root-ro/var/lib/cns-rpi` 仍在，代码都在 GitHub 上。设备靠回退后的旧 unit 继续正常运行。
+
+修正措施：`deploy.sh` 增加 overlay 检测拒绝运行；本文补充第 5.5 节的维护模型。重新部署需按该节流程执行。
 
 ### 仍未完成
 
