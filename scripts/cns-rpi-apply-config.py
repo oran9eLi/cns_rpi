@@ -1,26 +1,16 @@
 #!/usr/bin/env python3
 """校验并原子应用 cns_rpi 运行时配置候选文件。
 
-OverlayFS 只读根文件系统下，根分区的写入会落进内存上层、重启即丢。若直接把
-配置写在 overlay 视图里，表现是"配置命令返回成功 ACK 但重启后参数回退"的静默
-失败。因此启用 overlay 后，本 helper 把校验通过的内容写进底层持久分区
-（overlay 的 lowerdir），而不是 overlay 视图。
+只读根文件系统方案下，配置目录是一个独立文件系统的挂载点，平时以 ro 挂载，
+只在写配置时短暂切为 rw。配置刻意不放在 OverlayFS 覆盖的根分区上：overlayfs
+会把自己的 lowerdir 钉住，写完之后无法再把它 remount 回只读（EBUSY），文件
+系统会停在可写状态、断电保护失效——上游 overlayroot-chroot 有同样限制。独立
+文件系统不参与 overlay，读写状态完全自主，remount 回 ro 才能真正成功。
 
-刻意不使用 overlayroot-chroot：主程序生成的候选文件位于 overlay 的内存上层，
-chroot 进 lowerdir 后那个文件不可见。这里改为"读上层候选 → remount 底层可写
-→ 在底层原子替换 → 恢复只读"，与 docs/M7系统化部署设计.md 第 1 节一致。
+详见 docs/OverlayFS只读根文件系统设计.md。
 
-配置只写 lowerdir、不写 overlay 上层，因此上层不会产生遮蔽 config.json 的副本，
-底层的新内容对当前运行的系统立即可见，不必等重启。
-
-⚠️ 已知缺陷（2026-07-20，待随独立文件系统方案一并解决）
-overlayfs 把 lowerdir 钉住，写入完成后 `mount -o remount,ro /media/root-ro`
-必定失败（EBUSY），文件系统会停在可写状态，OverlayFS 的断电保护随之失效。
-写入本身是成功的，因此这个失败不会表现为配置丢失，只会表现为保护失效——
-危险之处正在于它看起来是成功的。上游 overlayroot-chroot 有同样限制。
-在改为"配置目录挂载独立 ext4 文件系统"之前，不要在 overlay 环境下依赖配置命令。
-详见 docs/OverlayFS只读根文件系统设计.md 第 5 节。
-非 overlay 环境不走这条分支，行为与改造前完全一致。
+配置目录尚未成为独立挂载点时（开发机、迁移过渡期），本 helper 直接原地写入，
+行为与改造前完全一致。
 """
 
 import json
@@ -33,48 +23,43 @@ import sys
 import tempfile
 
 
-CONFIG_DIR = Path("/home/dcdw/cns_rpi/config")
+# 运行时配置不放在 git 工作树里：它是可变的现场状态，FHS 里属于 /var/lib。
+# 该目录同时是独立 ext4 文件系统的挂载点，平时只读，写配置时短暂切可写——
+# 这是 OverlayFS 下唯一能真正恢复只读的做法，详见
+# docs/OverlayFS只读根文件系统设计.md。
+CONFIG_DIR = Path("/var/lib/cns-rpi")
 CONFIG_PATH = CONFIG_DIR / "config.json"
+# 候选文件的暂存目录：配置目录平时只读，候选不能建在那里。
+# 由 systemd 的 RuntimeDirectory=cns-rpi 创建于 tmpfs，重启自动清空。
+STAGING_DIR = Path("/run/cns-rpi")
 _CANDIDATE_NAME = re.compile(r"^\.config\.json\.tmp\.[A-Za-z0-9]+$")
 _PROC_MOUNTS = Path("/proc/mounts")
 
 
-def detect_overlay_lowerdir(mounts_path: Path = _PROC_MOUNTS) -> Path | None:
-    """返回根挂载 overlay 的 lowerdir；未启用 overlay 时返回 None。
+def readonly_mount_for(directory: Path, mounts_path: Path = _PROC_MOUNTS) -> Path | None:
+    """目录本身是只读挂载点时返回它，否则返回 None。
 
-    与 overlayroot-chroot 的解析方式保持一致：只认根挂载点上的 overlay，
-    并要求解析出的 lowerdir 本身是一个挂载点，避免误把普通目录当成持久层写入。
+    只认"目录恰好是挂载点"这一种情况：配置目录是独立文件系统的挂载点，
+    读写状态与根文件系统无关，因此可以在写入前后精确切换。
+    目录不是挂载点（开发机、迁移前的现场）时返回 None，直接原地写入，
+    行为与改造前完全一致。
     """
+    if not os.path.ismount(directory):
+        return None
     try:
         entries = mounts_path.read_text(encoding="utf-8").splitlines()
     except OSError:
         return None
 
+    resolved = str(directory)
+    read_only: bool | None = None
     for entry in entries:
         fields = entry.split()
-        if len(fields) < 4:
+        if len(fields) < 4 or fields[1] != resolved:
             continue
-        _device, mount_point, filesystem, options = fields[0], fields[1], fields[2], fields[3]
-        if mount_point != "/" or filesystem != "overlay":
-            continue
-        for option in options.split(","):
-            if not option.startswith("lowerdir="):
-                continue
-            # lowerdir 可以是冒号分隔的多层，最左边一层是最上面的只读层。
-            lowerdir = Path(option[len("lowerdir=") :].split(":")[0])
-            if os.path.ismount(lowerdir):
-                return lowerdir
-            raise ValueError(f"overlay lowerdir 不是挂载点: {lowerdir}")
-    return None
-
-
-def persistent_target(lowerdir: Path, allowed_directory: Path, allowed_target: Path):
-    """把 overlay 视图下的配置路径映射到底层持久分区上的同名路径。"""
-    directory = lowerdir / allowed_directory.relative_to("/")
-    target = lowerdir / allowed_target.relative_to("/")
-    if not directory.is_dir():
-        raise ValueError(f"底层持久层缺少配置目录: {directory}")
-    return directory, target
+        # 同一挂载点可能被挂载多次，最后一条生效，因此遍历完再判断。
+        read_only = "ro" in fields[3].split(",")
+    return directory if read_only else None
 
 
 def _remount(mount_point: Path, writable: bool) -> None:
@@ -121,16 +106,14 @@ def restore_ownership(target: Path, reference: os.stat_result) -> None:
 def apply_candidate(
     candidate: Path,
     target: Path,
-    allowed_directory: Path = CONFIG_DIR,
+    allowed_directory: Path = STAGING_DIR,
     allowed_target: Path = CONFIG_PATH,
-    persist_directory: Path | None = None,
-    persist_target: Path | None = None,
 ) -> None:
-    """校验固定目录内的候选 JSON，并以原子替换方式提交到固定目标。
+    """校验固定暂存目录内的候选 JSON，并以原子替换方式提交到固定目标。
 
-    persist_directory / persist_target 用于 OverlayFS：候选文件始终在 overlay
-    视图里校验和读取，但暂存与原子替换发生在底层持久分区。两者必须位于同一
-    文件系统，rename 才具备原子性。非 overlay 环境下留空，行为与原先完全一致。
+    候选文件与目标文件分处两个目录：候选在可写的暂存目录（tmpfs），目标在
+    平时只读的配置挂载点。暂存与原子替换始终发生在目标所在目录，两者必须同
+    文件系统，rename 才具备原子性。
     """
     allowed_directory = allowed_directory.resolve(strict=True)
     allowed_target = allowed_target.absolute()
@@ -144,10 +127,9 @@ def apply_candidate(
     if not _CANDIDATE_NAME.fullmatch(candidate.name):
         raise ValueError("候选配置文件名非法")
 
-    # 校验通过后才切换到持久层，保证上面这几条约束永远针对调用方传入的路径生效，
-    # 不会因为 overlay 映射而被绕过。
-    write_directory = allowed_directory if persist_directory is None else persist_directory
-    write_target = allowed_target if persist_target is None else persist_target
+    # 暂存与替换固定发生在目标所在目录，保证 rename 是同文件系统内的原子操作。
+    write_directory = allowed_target.parent
+    write_target = allowed_target
     candidate_fd = os.open(candidate, os.O_RDONLY | os.O_NOFOLLOW)
     staged_path: Path | None = None
     try:
@@ -192,36 +174,29 @@ def main(arguments: list[str]) -> int:
         return 2
     candidate, target = Path(arguments[0]), Path(arguments[1])
     try:
-        lowerdir = detect_overlay_lowerdir()
-        if lowerdir is None:
+        mount_point = readonly_mount_for(CONFIG_DIR)
+        if mount_point is None:
             apply_candidate(candidate, target)
             return 0
 
-        # 写持久层需要 root，主服务却以 dcdw 运行；提权推迟到确认是 overlay 之后，
-        # 非 overlay 环境的调用路径完全不涉及 sudo。
+        # remount 需要 root，主服务却以 dcdw 运行；提权推迟到确认配置目录确实是
+        # 只读挂载之后，普通环境的调用路径完全不涉及 sudo。
         if os.geteuid() != 0:
             return reexec_as_root(arguments)
 
-        persist_directory, persist_target = persistent_target(
-            lowerdir, CONFIG_DIR, CONFIG_PATH
-        )
-        previous = os.stat(persist_target, follow_symlinks=False)
-        _remount(lowerdir, writable=True)
+        previous = os.stat(CONFIG_PATH, follow_symlinks=False)
+        _remount(mount_point, writable=True)
         try:
-            apply_candidate(
-                candidate,
-                target,
-                persist_directory=persist_directory,
-                persist_target=persist_target,
-            )
-            restore_ownership(persist_target, previous)
+            apply_candidate(candidate, target)
+            restore_ownership(CONFIG_PATH, previous)
             # 数据已 fsync 到文件与目录，这里再 sync 一次覆盖底层设备缓存，
             # 之后才允许恢复只读——现场是直接断电，不能依赖延迟回写。
             os.sync()
         finally:
             # 无论写入成功与否都必须恢复只读，否则设备会停在可写状态，
-            # 失去 OverlayFS 的断电保护。
-            _remount(lowerdir, writable=False)
+            # 失去断电保护。配置目录是独立文件系统，不受 overlay 钉住，
+            # 这一步能够真正成功——这正是不把配置放在根分区上的原因。
+            _remount(mount_point, writable=False)
     except subprocess.CalledProcessError as error:
         detail = error.stderr.decode("utf-8", "replace").strip() if error.stderr else ""
         print(f"切换持久层读写状态失败: {detail or error}", file=sys.stderr)

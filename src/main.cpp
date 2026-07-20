@@ -16,6 +16,7 @@
 #include <csignal>
 #include <cstdint>
 #include <cstdlib>
+#include <filesystem>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -75,7 +76,9 @@ int main(int argc, char** argv) {
   std::signal(SIGINT, HandleExitSignal);
   std::signal(SIGTERM, HandleExitSignal);
 
-  std::string config_path = "config/config.json";
+  // 配置路径必须由调用方显式给出绝对路径，不设默认值：systemd 拉起时的工作目录
+  // 不确定，任何相对路径默认值都会在服务环境下静默指向错误的文件。
+  std::string config_path;
   bool config_path_seen = false;
   std::vector<std::string_view> writer_arguments;
   for (int i = 1; i < argc; ++i) {
@@ -89,6 +92,15 @@ int main(int argc, char** argv) {
       std::cerr << "只能指定一个配置文件路径\n";
       return EXIT_FAILURE;
     }
+  }
+  if (!config_path_seen) {
+    std::cerr << "用法: cns_rpi <配置文件绝对路径> [--config-writer=...] "
+                 "[--config-helper=...]\n";
+    return EXIT_FAILURE;
+  }
+  if (!std::filesystem::path(config_path).is_absolute()) {
+    std::cerr << "配置文件路径必须是绝对路径: " << config_path << "\n";
+    return EXIT_FAILURE;
   }
   auto writer_options = config_command::ParseWriterOptions(writer_arguments);
   if (!writer_options) {

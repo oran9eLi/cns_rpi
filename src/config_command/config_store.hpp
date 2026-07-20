@@ -22,6 +22,11 @@ enum class ConfigWriterMode { kDisabled, kDirect, kHelper };
 struct WriterOptions {
   ConfigWriterMode mode = ConfigWriterMode::kDisabled;
   std::filesystem::path helper_path;
+  /// helper 模式下候选文件的暂存目录；留空表示沿用配置文件所在目录。
+  /// 只读根文件系统方案里配置目录本身是只读挂载，候选不能建在那里，必须由
+  /// 启动参数显式指定一个可写目录（部署时用 systemd RuntimeDirectory= 提供的
+  /// tmpfs 目录）。不设默认值是刻意的：机器相关的绝对路径不该写死在类型里。
+  std::filesystem::path staging_directory{};
 };
 
 std::expected<WriterOptions, std::string> ParseWriterOptions(

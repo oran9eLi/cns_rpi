@@ -119,17 +119,39 @@ mount: /media/root-ro: mount point is busy
 - `overlayroot-chroot` 从 `/proc/mounts` 中匹配根挂载点上的 overlay 条目、取 `lowerdir=` 到下一个逗号为止，并要求该路径本身是挂载点。helper 的解析逻辑与之保持一致；
 - initramfs 机制可用（`auto_initramfs=1`，`/boot/firmware/initramfs_2712` 存在，`initramfs-tools` 已安装），overlayroot 依赖的 initramfs 钩子有效，不构成阻断。
 
+### 落地形态（已实施）
+
+| 项 | 位置 | 说明 |
+|---|---|---|
+| 运行时配置 | `/var/lib/cns-rpi/config.json` | 从 git 工作树迁出：它是可变现场状态，FHS 里属于 `/var/lib`。该目录同时是独立文件系统的挂载点 |
+| 候选文件暂存 | `/run/cns-rpi/` | 配置目录平时只读，候选不能建在那里。由 systemd `RuntimeDirectory=cns-rpi` 在 tmpfs 上创建，属主为服务用户，停止时自动清理 |
+| 持久化载体 | `/boot/firmware/cns-config.img` | 固定大小 ext4 镜像，loop 挂载到配置目录（**尚未实施**，见第 12 节） |
+
+配置目录**不能**直接挂在仓库的 `config/` 上：那会遮蔽仓库跟踪的 `config.example.json`，导致 `git status` 永久显示该文件被删除、工作树永远是脏的。
+
+启动参数相应调整：
+
+```
+ExecStart=... /var/lib/cns-rpi/config.json \
+    --config-writer=helper \
+    --config-helper=/usr/local/libexec/cns-rpi-apply-config \
+    --config-staging=/run/cns-rpi
+```
+
+顺带修掉一个既有隐患：主程序原先的配置路径默认值是相对路径 `config/config.json`，违反本仓库第 3 节"禁止相对路径"的规定——systemd 拉起时工作目录不确定，该默认值会静默指向错误的文件。现在配置路径必须显式给出且必须是绝对路径，否则启动即报错退出。
+
+`--config-staging` 刻意不设默认值：机器相关的绝对路径不该写死在类型里，留空时沿用配置文件所在目录，与改造前行为一致。
+
 ### helper 的实现要点（已实施）
 
-`scripts/cns-rpi-apply-config.py` 已支持只读环境，非 overlay 环境下行为完全不变：
+`scripts/cns-rpi-apply-config.py` 已支持只读挂载，配置目录尚未成为独立挂载点时行为完全不变：
 
-- `detect_overlay_lowerdir()` 解析持久层；解析不出挂载点时**抛错而不是退化为写内存层**，避免静默丢配置；
-- 路径校验（候选必须在固定目录、文件名必须匹配固定模式、目标必须等于固定路径）**在切换到持久层之前完成**，持久化映射不构成绕过校验的旁路；
-- 暂存文件建在持久层目录内，保证 `os.replace` 与目标同文件系统、rename 具备原子性；
+- `readonly_mount_for()` 只认"配置目录恰好是只读挂载点"这一种情况；不是挂载点就原地写入，不会去 remount 别的文件系统；
+- 检测到只读挂载且当前非 root 时经 `sudo -n` 提权重执行自身——主服务以 `dcdw` 运行、无权 remount；普通环境完全不涉及 sudo；
+- 候选文件在可写暂存目录中校验（固定目录、固定文件名模式、固定目标路径），**暂存与原子替换固定发生在目标所在目录**，保证 rename 是同文件系统内的原子操作；
+- 以 root 写入后把属主与权限还原为提权前的值——不还原会变成 `root:root`，而该文件是 `0600` 且主程序以 `dcdw` 运行，下次启动将读不到自己的配置；
 - 写入后 `fsync` 文件与目录，再 `os.sync()`，然后才恢复只读——现场是直接断电，不能依赖延迟回写；
 - 恢复只读放在 `finally`，写入失败也不会把设备停在可写状态。
-
-配置只写 lowerdir、不写 overlay 上层，因此上层不会产生遮蔽 `config.json` 的副本，底层新内容对当前运行的系统立即可见，不必等重启。
 
 ### 持久化闭环的验收标准
 
@@ -231,16 +253,27 @@ User dcdw may run the following commands on raspberrypi:
 - 根挂载为 `overlayroot / overlay`，`lowerdir=/media/root-ro`（`/dev/mmcblk0p2` ext4 只读）、`upperdir=/media/root-rw/overlay`（tmpfs）——本文第 5 节此前"待现场确认"的挂载点推测得到验证；
 - 主服务、systemd watchdog、串口自动发现、MQTT 均正常。重启后串口设备号由 `/dev/ttyUSB5` 变为 `/dev/ttyUSB0`，正好印证了自动发现相对固定设备号的必要性。
 
-**helper 当前处于中间态，尚不可用于 overlay 生产环境。** 已验证有效的部分：
+**配置已迁至 `/var/lib/cns-rpi/`，代码侧改造完成**：
 
-- 检测到 overlay 且非 root 时经 `sudo -n` 自动提权，主服务以 `dcdw` 运行、无权 remount 的问题已解决；
-- 写入持久层成功，属主与权限在提权写入后正确还原为 `dcdw:dcdw 0600`；
-- 14 项 helper 单元测试通过（原 4 项）。
+- 主程序要求显式给出绝对配置路径，去掉了违反第 3 节规定的相对路径默认值；
+- 候选文件改在 systemd `RuntimeDirectory=` 提供的 `/run/cns-rpi` 暂存，配置目录变成只读挂载后仍可创建候选；
+- helper 支持只读挂载：自动提权、写后还原属主权限、`finally` 恢复只读；
+- `scripts/deploy.sh` 会把旧位置的现场配置迁到新路径，旧文件改名为 `config.json.migrated` 保留而非删除，迁移出问题可回退；
+- 12 项 helper 单元测试 + 全量 27 项 ctest 通过，`-Wall -Wextra` 零告警。
 
-**但 overlay 路径存在已知缺陷**：写入完成后无法把 `/media/root-ro` 恢复为只读（原因见第 5 节），文件系统会停在可写状态。**在改为独立文件系统方案之前，不要依赖 overlay 环境下的配置命令**。非 overlay 环境不受影响，行为与改造前完全一致。
+实机端到端验证（配置目录此时尚未挂载独立文件系统，走的是原地写入分支）：经 MQTT 下发配置命令 → `status: applied` ACK → 新路径落盘 → 属主保持 `dcdw:dcdw 0600` → 暂存目录无残留 → 进程退出并由 systemd 拉起 → 服务恢复正常。
 
-非 overlay 环境下的完整链路回归已通过：经 MQTT 下发配置命令、收到 `status: applied` 的 ACK、参数落盘、进程退出并由 systemd 拉起、发布节拍实测由 1 秒变为 2 秒，随后原样还原。
+**剩余未完成：建立独立文件系统挂载。** 需要：
 
-**下一步**：按第 5 节的独立文件系统方案改造——在 `/boot/firmware` 上建 ext4 镜像、loop 挂载到配置目录、平时只读。helper 的原子写入、属主还原、自动提权逻辑可全部复用，路径映射部分改为直接 remount 配置挂载点，比现状更简单。
+1. 在 `/boot/firmware` 上创建固定大小 ext4 镜像；
+2. 把 `/var/lib/cns-rpi/config.json` 迁入镜像；
+3. 在**真实 fstab**（`/media/root-ro/etc/fstab`，overlay 下 `/etc/fstab` 是生成的，改了不持久）中加入 loop 挂载条目，建议带 `nofail` 以免挂载失败导致无法启动；
+4. 重启验证挂载生效且平时为 `ro`；
+5. 重新执行配置命令，确认走 remount 分支且写入后能成功恢复只读；
+6. 断电验收（第 10 节）。
 
-第 9 节的 tmpfs 上层容量上限与写满后行为仍未验证。
+此外仍未完成：
+
+- `/media/root-ro` 目前**仍停在可写状态**（由上一轮 remount 失败导致），需重启恢复只读；
+- `/var/swap` 2.0G 遗留文件尚未清理（第 6 节）；
+- 第 9 节的 tmpfs 上层容量上限与写满后行为未验证。

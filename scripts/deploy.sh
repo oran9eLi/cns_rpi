@@ -12,7 +12,9 @@ CELLULAR_SERVICE_SOURCE="${REPO_ROOT}/systemd/cellular-dialup.service"
 CELLULAR_SERVICE_TARGET="/etc/systemd/system/cellular-dialup.service"
 JOURNALD_CONF_SOURCE="${REPO_ROOT}/systemd/journald-cns-rpi.conf"
 JOURNALD_CONF_TARGET="/etc/systemd/journald.conf.d/90-cns-rpi.conf"
-CONFIG_PATH="${REPO_ROOT}/config/config.json"
+CONFIG_DIR="/var/lib/cns-rpi"
+CONFIG_PATH="${CONFIG_DIR}/config.json"
+LEGACY_CONFIG_PATH="${REPO_ROOT}/config/config.json"
 EXPECTED_REPO_ROOT="/home/dcdw/cns_rpi"
 
 echo "===== 验证 sudo 权限 ====="
@@ -30,10 +32,27 @@ else
   sudo -v
 fi
 
+echo "===== 检查现场配置 ====="
+# 运行时配置已从 git 工作树迁到 /var/lib/cns-rpi：它是可变的现场状态，
+# 且该目录要作为独立文件系统的挂载点（只读根文件系统方案）。
 if [ ! -f "${CONFIG_PATH}" ]; then
-  echo "错误：缺少现场配置 ${CONFIG_PATH}" >&2
-  echo "请先根据 config/config.example.json 创建，脚本不会自动覆盖现场配置。" >&2
-  exit 1
+  if [ -f "${LEGACY_CONFIG_PATH}" ]; then
+    echo "  - 检测到旧位置配置，迁移到 ${CONFIG_PATH}"
+    sudo install -d -o dcdw -g dcdw -m 0755 "${CONFIG_DIR}"
+    sudo install -o dcdw -g dcdw -m 0600 "${LEGACY_CONFIG_PATH}" "${CONFIG_PATH}"
+    # 旧文件改名保留而不删除：迁移出问题时还能回退，且避免两处配置并存造成困惑。
+    mv "${LEGACY_CONFIG_PATH}" "${LEGACY_CONFIG_PATH}.migrated"
+    echo "  - 旧配置已保留为 ${LEGACY_CONFIG_PATH}.migrated"
+  else
+    echo "错误：缺少现场配置 ${CONFIG_PATH}" >&2
+    echo "请先根据 ${REPO_ROOT}/config/config.example.json 创建，脚本不会自动生成。" >&2
+    exit 1
+  fi
+else
+  sudo install -d -o dcdw -g dcdw -m 0755 "${CONFIG_DIR}"
+  if [ -f "${LEGACY_CONFIG_PATH}" ]; then
+    echo "  - 警告：旧位置仍存在 ${LEGACY_CONFIG_PATH}，实际生效的是 ${CONFIG_PATH}" >&2
+  fi
 fi
 
 echo "===== 构建 cns_rpi ====="

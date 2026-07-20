@@ -38,9 +38,14 @@ bool WriteAll(int fd, std::string_view content) {
 }
 
 std::expected<std::filesystem::path, CommandError> WriteCandidate(
-    const std::filesystem::path& config_path, const nlohmann::json& candidate) {
-  const auto parent = config_path.parent_path().empty() ? std::filesystem::path{"."}
-                                                        : config_path.parent_path();
+    const std::filesystem::path& config_path, const nlohmann::json& candidate,
+    const std::filesystem::path& staging_directory = {}) {
+  // 暂存目录留空时沿用配置文件所在目录，保持直写模式的原有行为；helper 模式下
+  // 配置目录可能是只读挂载，必须显式指定一个可写的暂存目录。
+  const auto parent = !staging_directory.empty() ? staging_directory
+                      : config_path.parent_path().empty()
+                          ? std::filesystem::path{"."}
+                          : config_path.parent_path();
   std::string pattern = (parent / ("." + config_path.filename().string() + ".tmp.XXXXXX")).string();
   std::vector<char> writable(pattern.begin(), pattern.end());
   writable.push_back('\0');
@@ -115,7 +120,7 @@ std::expected<void, CommandError> PersistWithHelper(const WriterOptions& options
   } catch (const nlohmann::json::exception&) {
     return std::unexpected(WriteError("helper执行前的配置不是合法JSON"));
   }
-  auto temporary = WriteCandidate(config_path, candidate);
+  auto temporary = WriteCandidate(config_path, candidate, options.staging_directory);
   if (!temporary) return std::unexpected(temporary.error());
 
   const std::string helper = options.helper_path.string();
@@ -171,9 +176,11 @@ std::expected<WriterOptions, std::string> ParseWriterOptions(
   WriterOptions options;
   bool writer_seen = false;
   bool helper_seen = false;
+  bool staging_seen = false;
   for (const auto argument : arguments) {
     constexpr std::string_view writer_prefix = "--config-writer=";
     constexpr std::string_view helper_prefix = "--config-helper=";
+    constexpr std::string_view staging_prefix = "--config-staging=";
     if (argument.starts_with(writer_prefix)) {
       if (writer_seen) return std::unexpected("配置写入模式重复");
       writer_seen = true;
@@ -187,6 +194,11 @@ std::expected<WriterOptions, std::string> ParseWriterOptions(
       helper_seen = true;
       options.helper_path = argument.substr(helper_prefix.size());
       if (options.helper_path.empty()) return std::unexpected("配置辅助程序路径为空");
+    } else if (argument.starts_with(staging_prefix)) {
+      if (staging_seen) return std::unexpected("候选暂存目录重复");
+      staging_seen = true;
+      options.staging_directory = argument.substr(staging_prefix.size());
+      if (options.staging_directory.empty()) return std::unexpected("候选暂存目录为空");
     } else {
       return std::unexpected("未知启动参数");
     }
@@ -196,6 +208,9 @@ std::expected<WriterOptions, std::string> ParseWriterOptions(
   }
   if (options.mode != ConfigWriterMode::kHelper && helper_seen) {
     return std::unexpected("非helper模式不能指定辅助程序");
+  }
+  if (options.mode != ConfigWriterMode::kHelper && staging_seen) {
+    return std::unexpected("非helper模式不能指定候选暂存目录");
   }
   return options;
 }

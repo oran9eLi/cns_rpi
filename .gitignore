@@ -7,7 +7,10 @@ __pycache__/
 *.pyc
 
 # 本地真实配置（只提交 config/*.example.json）
+# 现场运行时配置已迁至 /var/lib/cns-rpi/config.json，不在工作树内；
+# 这两条用于开发机的本地配置和 deploy.sh 迁移后留下的旧文件。
 config/config.json
+config/config.json.migrated
 
 # IDE / 编辑器本地状态
 .vscode/
