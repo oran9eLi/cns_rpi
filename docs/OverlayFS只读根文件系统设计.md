@@ -235,12 +235,44 @@ sudo reboot
 
 重启后确认系统正常、SSH 可用、`cns-rpi.service` 为 `active`。此时尚未启用 overlay，风险为零。
 
-**第二次 —— 启用 overlay：**
+**第二次 —— 启用 overlay 及其两项配套动作：**
 
 ```bash
+# 1) swap 改为纯 zram——默认的 zram+file 需要可写根分区，只读下整条链会垮
+#    （由 scripts/deploy.sh 安装 systemd/swap-cns-rpi.conf 完成，此处仅确认）
+grep Mechanism /etc/rpi/swap.conf.d/50-cns-rpi.conf
+
+# 2) 屏蔽 systemd-remount-fs——见下方说明，必须与 overlay 同时启用/撤销
+sudo systemctl mask systemd-remount-fs.service
+
 sudo raspi-config nonint enable_overlayfs
 sudo reboot
 ```
+
+### 为什么必须屏蔽 `systemd-remount-fs`
+
+该单元的职责是按 `/etc/fstab` 重新挂载根文件系统。`/` 变成 overlay 后这件事在内核层面就做不到——overlayfs 不支持 reconfigure：
+
+```
+mount: /: fsconfig() failed: overlay: No changes allowed in reconfigure
+```
+
+于是它每次开机都失败。功能上无害（overlayroot 在 initramfs 阶段已挂对，没有留给它可做的事），但有两项实际代价：
+
+- **遮蔽真实故障**：`systemctl --failed` 是排查的标准入口，长期挂着一个永远失败的单元会让人习惯性略过整个列表；
+- **连累依赖它的单元**：2026-07-20 实测中，swap 整条链就是被它拖垮的——`rpi-setup-loop@var-swap.service` → `systemd-zram-setup@zram0.service` → `dev-zram0.swap` 逐级依赖失败，结果设备完全没有 swap。`systemd-random-seed`、`systemd-quotacheck-root` 等也排在它之后。
+
+用 `mask` 而不是 `disable`：`disable` 只取消开机自启，别的单元仍可把它作为依赖拉起，而它正是被 `local-fs.target` 这类目标拉起的；`mask` 建立指向 `/dev/null` 的符号链接，任何方式都拉不起来。
+
+⚠️ **撤销 overlay 时必须同时撤销这个屏蔽**：
+
+```bash
+sudo systemctl unmask systemd-remount-fs.service
+```
+
+`/` 变回普通 ext4 后该单元恢复实际职责——把 fstab 里的挂载选项应用到根分区。此时仍屏蔽着，fstab 选项不会生效，而且是**静默失效**。
+
+这一项刻意没有写进 `scripts/deploy.sh`：按维护模型，`deploy.sh` 只在 overlay 关闭时运行，那一刻「维护中稍后要重开 overlay」和「决定永久不用 overlay」两种情况下 `/` 都是 ext4，脚本无法区分，写死任何一种都会在另一种情况下悄悄做错。它属于「启用/撤销 overlay」这个决定的配套动作，与部署的生命周期不同，因此放在本节而不是部署脚本里。
 
 **第三次（可选，稳定运行一段时间后再做）—— 锁只读启动分区：**
 
@@ -255,12 +287,21 @@ sudo reboot
 
 ```bash
 findmnt -n -o TARGET,SOURCE,FSTYPE,OPTIONS /      # 期望 fstype 为 overlay
+grep ' /media/root-ro ' /proc/mounts               # 期望持久层为 ro
+grep 'cns-rpi' /proc/mounts                        # 期望配置卷 ext4 ro
 touch /tmp_write_probe 2>&1                        # 期望落在内存层，重启后消失
 grep -o 'overlayroot=[a-z]*' /proc/cmdline         # 确认内核参数已生效
-systemctl is-active cns-rpi.service                # 主服务不受影响
+systemctl is-active cns-rpi-config.service cns-rpi.service
+cat /proc/swaps                                    # 期望 /dev/zram0 已激活
+systemctl --failed                                 # 期望 0 个失败单元
+python3 -c 'import json;print(json.load(open("/var/lib/cns-rpi/config.json"))["runtime"])'
 ```
 
-判据：`findmnt` 显示根挂载类型为 `overlay`（而非改动前的 `ext4 rw,noatime`）。仅检查 `cmdline.txt` 内容不构成验证。
+判据：
+
+- `findmnt` 显示根挂载类型为 `overlay`（而非改动前的 `ext4 rw,noatime`）。仅检查 `cmdline.txt` 内容不构成验证；
+- **失败单元必须为 0**。若 `systemd-remount-fs.service` 出现在失败列表里，说明第 7 节的屏蔽步骤被漏掉了；
+- **配置内容必须与重启前一致**——这是持久化闭环唯一的最终证明，其余各项都只能说明卷挂着。
 
 ## 9. 内存写层容量与耗尽行为
 
@@ -341,10 +382,29 @@ User dcdw may run the following commands on raspberrypi:
 
 修正措施：`deploy.sh` 增加 overlay 检测拒绝运行；本文补充第 5.5 节的维护模型。重新部署需按该节流程执行。
 
+### 2026-07-20 重启后终验：通过
+
+按第 5.5 节的维护模型完成部署（关闭 overlay → 重启 → `git pull` + `deploy.sh` → 启用 overlay → 重启），该模型本身也随之首次跑通。终验结果：
+
+| 项 | 结果 |
+|---|---|
+| 根文件系统 | `overlay` |
+| 持久层 | `ro` |
+| 配置卷 | `ext4 ro,relatime`，开机自动挂载 |
+| **配置内容** | **`interval=1000`、6 条 `applied_command_ids`，跨多次重启完整保持** |
+| swap | `/dev/zram0` 2 GiB 已激活 |
+| 失败单元 | 0 |
+| `/var/swap` | 已删除，磁盘由 7.6 GiB 降至 5.6 GiB 已用 |
+| 主服务 / 挂载服务 | 均 `active`，串口自动发现与 MQTT 正常 |
+
+`/var/swap` 最终是被系统自己清理的：切换到纯 zram 后生成器会产出
+`rpi-remove-swap-file@var-swap.service`，它在 overlay 关闭、根分区可写的那次启动中
+成功执行（`Finished`）。此前该服务一直因只读根而依赖失败——机制自带清理能力，
+只是被只读根卡住，不需要人工删除。
+
+至此第 1 节（只读根文件系统）与配置持久化闭环均已实施并验证。
+
 ### 仍未完成
 
-- **`/media/root-ro` 仍停在可写状态**（上一轮在 lowerdir 上 remount 失败留下的），需重启恢复只读。重启前应避免直接断电；
-- `/var/swap` 2.0G 遗留文件尚未清理（第 6 节）；
-- **重启后的验证尚未进行**：需确认挂载服务开机自动生效、配置在重启后仍在（这是持久化的最终证明，目前只验证了运行期间的读写切换）；
 - 第 9 节的 tmpfs 上层容量上限与写满后行为未验证；
-- 第 10 节的物理断电验收未开始。
+- 第 10 节的物理断电验收未开始——前置条件现已全部就绪。
