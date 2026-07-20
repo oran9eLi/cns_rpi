@@ -107,7 +107,12 @@ fi
 # 提前检查会误判为"缺少配置"并把仓库里的旧配置迁进去，
 # 随后又被挂载遮蔽，留下两份互相矛盾的配置。
 echo "===== 检查现场配置 ====="
-sudo install -d -o dcdw -g dcdw -m 0755 "${CONFIG_DIR}"
+# 只在目录不存在时创建：卷挂上后 ${CONFIG_DIR} 是只读挂载点，
+# 对它执行 install -d 会因无法改属主/权限而失败，配合 set -e 会让
+# 部署静默中止在这一步——服务不会用新 unit 重启，但前面的输出全是成功的。
+if [ ! -d "${CONFIG_DIR}" ]; then
+  sudo install -d -o dcdw -g dcdw -m 0755 "${CONFIG_DIR}"
+fi
 if [ -f "${CONFIG_PATH}" ]; then
   echo "  - 现场配置就位：${CONFIG_PATH}"
   if [ -f "${LEGACY_CONFIG_PATH}" ]; then
