@@ -481,8 +481,12 @@ int main(int argc, char** argv) {
         now - last_telemetry_publish >= app_config->runtime.telemetry_publish_interval) {
       const std::string json_str =
           payload::ToJson(state_store.Snapshot(), app_config->identity.school_name).dump();
+      // retain=false：遥测是按节拍刷新的实时值，不是设备状态的权威存档。
+      // retained 遥测会让新订阅者立刻收到最后一帧，却分不清那是实时数据还是
+      // 设备掉电前的陈旧快照；设备是否在线由 registration topic 的 retained
+      // online/offline 表达，不该由遥测兼任。
       if (mqtt_client->Publish(telemetry_topic, json_str,
-                               app_config->mqtt.topics.telemetry.qos, /*retain=*/true)) {
+                               app_config->mqtt.topics.telemetry.qos, /*retain=*/false)) {
         logging::LogPublishedTelemetry(**logger, json_str);
       } else {
         (*logger)->Warn("MQTT发布失败，下个节拍重试");

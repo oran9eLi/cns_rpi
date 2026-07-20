@@ -62,6 +62,10 @@ TEST_CASE("主程序只编排Logger并在遥测发布成功后记录同一JSON")
                                         "last_telemetry_publish = now;");
   CHECK(telemetry_branch.find("Publish(telemetry_topic, json_str,") !=
         std::string_view::npos);
+  // 遥测是按节拍刷新的实时值，retained 会让新订阅者把掉电前的陈旧快照当成实时数据；
+  // 设备在线与否由 registration topic 的 retained online/offline 表达。
+  CHECK(telemetry_branch.find("/*retain=*/false") != std::string_view::npos);
+  CHECK(telemetry_branch.find("/*retain=*/true") == std::string_view::npos);
   const auto publish_success = telemetry_branch.find(")) {");
   const auto publish_failure = telemetry_branch.find("} else {");
   REQUIRE(publish_success != std::string_view::npos);

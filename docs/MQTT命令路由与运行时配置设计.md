@@ -131,6 +131,10 @@ cns_server
 | `{namespace}/sources/{source_id}/config/ack` | 服务器 → 来源 | 2 | false | 返回路由或执行结果 |
 | `{namespace}/{vendor_id}/config/set` | 服务器 → 目标设备 | 2 | false | 下发规范化配置命令 |
 | `{namespace}/{vendor_id}/config/ack` | 目标设备 → 服务器 | 2 | false | 返回目标设备执行结果 |
+| `{namespace}/{vendor_id}/telemetry` | 设备 → 服务器 | 0 | false | 1Hz 上报实时遥测 |
+| `{namespace}/{vendor_id}/registration` | 设备 → 服务器 | 2 | **true** | 设备发现与 online/offline 状态 |
+
+遥测使用 `retain=false`：它是按节拍刷新的实时值，retained 会让新订阅者把设备掉电前的最后一帧当成实时数据。设备在线与否由 `registration` 的 retained `online`/`offline` 表达——该 topic 是本表中唯一使用 retain 的，因为它承载的正是"设备最后已知状态"这一存档语义。
 
 所有配置命令必须使用 `retain=false`，防止设备以后上线时执行陈旧命令。离线设备的待处理命令由服务器数据库维护，服务器在设备重新 online 后决定是否重发，不能依赖 retained 命令。
 
