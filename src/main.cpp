@@ -38,6 +38,7 @@
 #include "mqtt/mqtt_client.hpp"
 #include "mqtt/topic.hpp"
 #include "payload/json_serializer.hpp"
+#include "platform/systemd_watchdog.hpp"
 #include "protocol/extension_decoder.hpp"
 #include "protocol/identity.hpp"
 #include "protocol/telemetry_decoder.hpp"
@@ -144,6 +145,19 @@ int main(int argc, char** argv) {
   uart::AsyncMavlinkDiscovery discovery;
   uart::DiscoveryLogLimiter discovery_log_limiter(kDiscoveryWarningInterval);
   uart::MavlinkSilenceWatchdog silence_watchdog(kMavlinkSilenceTimeout);
+  // systemd watchdog 只证明主循环还在转，不反映业务健康：串口断开和 MQTT 断连
+  // 各有自己的恢复逻辑（且已验证能自愈），不应升级成整个进程重启。
+  const auto watchdog_timeout = platform::WatchdogTimeout();
+  std::optional<platform::WatchdogFeedTimer> watchdog_feed_timer;
+  if (watchdog_timeout) {
+    watchdog_feed_timer.emplace(platform::FeedIntervalFor(*watchdog_timeout));
+    (*logger)->Info(
+        "systemd watchdog 已启用，超时=" +
+        std::to_string(
+            std::chrono::duration_cast<std::chrono::seconds>(*watchdog_timeout)
+                .count()) +
+        "s");
+  }
   auto next_discovery = std::chrono::steady_clock::now();
   bool ever_connected_to_stm32 = false;
   bool restart_requested = false;
@@ -474,6 +488,12 @@ int main(int argc, char** argv) {
         (*logger)->Warn("MQTT发布失败，下个节拍重试");
       }
       last_telemetry_publish = now;
+    }
+
+    // 放在循环末尾：走到这里说明本轮迭代已完整跑完，没有卡在任何一步。
+    if (watchdog_feed_timer &&
+        watchdog_feed_timer->ShouldFeed(std::chrono::steady_clock::now())) {
+      (void)platform::NotifyWatchdogAlive();
     }
 
     if (!link) {

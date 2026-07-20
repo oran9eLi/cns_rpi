@@ -10,6 +10,8 @@ SERVICE_SOURCE="${REPO_ROOT}/systemd/cns-rpi.service"
 SERVICE_TARGET="/etc/systemd/system/cns-rpi.service"
 CELLULAR_SERVICE_SOURCE="${REPO_ROOT}/systemd/cellular-dialup.service"
 CELLULAR_SERVICE_TARGET="/etc/systemd/system/cellular-dialup.service"
+JOURNALD_CONF_SOURCE="${REPO_ROOT}/systemd/journald-cns-rpi.conf"
+JOURNALD_CONF_TARGET="/etc/systemd/journald.conf.d/90-cns-rpi.conf"
 CONFIG_PATH="${REPO_ROOT}/config/config.json"
 EXPECTED_REPO_ROOT="/home/dcdw/cns_rpi"
 
@@ -50,6 +52,17 @@ echo "===== 安装配置 helper 和 systemd 服务 ====="
 install_if_changed "${HELPER_SOURCE}" "${HELPER_TARGET}" 0755
 install_if_changed "${SERVICE_SOURCE}" "${SERVICE_TARGET}" 0644
 install_if_changed "${CELLULAR_SERVICE_SOURCE}" "${CELLULAR_SERVICE_TARGET}" 0644
+
+echo "===== 安装 journald 内存化配置 ====="
+# 只在内容真正变化时重启 journald：重启会切断 journalctl -f 之类的现场排查，
+# 每次部署都无条件重启没有必要。
+if sudo cmp -s "${JOURNALD_CONF_SOURCE}" "${JOURNALD_CONF_TARGET}"; then
+  echo "  - ${JOURNALD_CONF_TARGET} 已是最新，跳过重启 journald"
+else
+  install_if_changed "${JOURNALD_CONF_SOURCE}" "${JOURNALD_CONF_TARGET}" 0644
+  sudo systemctl restart systemd-journald
+  echo "  - 已重启 systemd-journald 使日志容量上限生效"
+fi
 
 echo "===== 加载并启用 systemd 服务 ====="
 sudo systemctl daemon-reload
