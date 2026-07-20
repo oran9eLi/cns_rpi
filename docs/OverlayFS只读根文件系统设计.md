@@ -125,7 +125,16 @@ mount: /media/root-ro: mount point is busy
 |---|---|---|
 | 运行时配置 | `/var/lib/cns-rpi/config.json` | 从 git 工作树迁出：它是可变现场状态，FHS 里属于 `/var/lib`。该目录同时是独立文件系统的挂载点 |
 | 候选文件暂存 | `/run/cns-rpi/` | 配置目录平时只读，候选不能建在那里。由 systemd `RuntimeDirectory=cns-rpi` 在 tmpfs 上创建，属主为服务用户，停止时自动清理 |
-| 持久化载体 | `/boot/firmware/cns-config.img` | 固定大小 ext4 镜像，loop 挂载到配置目录（**尚未实施**，见第 12 节） |
+| 持久化载体 | `/boot/firmware/cns-config.img` | 16 MiB 固定大小 ext4 镜像，由 `cns-rpi-config.service` 只读 loop 挂载到配置目录 |
+
+### 为什么不用 fstab 挂载
+
+两个实测得出的理由：
+
+1. **`mount -o ro,loop <img>` 会把 loop 设备本身标记为写保护**（`losetup` 的 `RO=1`），此后 helper 执行 `mount -o remount,rw` 会在设备层被拒，配置永远写不进去。必须先以可写方式建立 loop 设备，再把文件系统挂成 `ro`——fstab 表达不了这个顺序。
+2. fstab 或 `.mount` 单元挂载失败可能把系统拖进 emergency shell。现场设备一旦如此就只能物理接触才能恢复。改用独立的 oneshot 服务后，挂载失败只会让 `cns-rpi.service` 起不来，系统本身照常启动、SSH 可用，还能远程排查。
+
+`cns-rpi.service` 通过 `Requires=` + `After=` 依赖该单元：挂载失败时宁可主服务不启动，也不要让它读到挂载点下面那个空目录、把缺省配置当成现场配置跑起来。挂载脚本在镜像不存在时正常退出（开发机、迁移过渡期按普通目录使用），避免 `Requires=` 连带把主服务拖住。
 
 配置目录**不能**直接挂在仓库的 `config/` 上：那会遮蔽仓库跟踪的 `config.example.json`，导致 `git status` 永久显示该文件被删除、工作树永远是脏的。
 
@@ -263,17 +272,30 @@ User dcdw may run the following commands on raspberrypi:
 
 实机端到端验证（配置目录此时尚未挂载独立文件系统，走的是原地写入分支）：经 MQTT 下发配置命令 → `status: applied` ACK → 新路径落盘 → 属主保持 `dcdw:dcdw 0600` → 暂存目录无残留 → 进程退出并由 systemd 拉起 → 服务恢复正常。
 
-**剩余未完成：建立独立文件系统挂载。** 需要：
+**独立文件系统挂载已建立并验证**：
 
-1. 在 `/boot/firmware` 上创建固定大小 ext4 镜像；
-2. 把 `/var/lib/cns-rpi/config.json` 迁入镜像；
-3. 在**真实 fstab**（`/media/root-ro/etc/fstab`，overlay 下 `/etc/fstab` 是生成的，改了不持久）中加入 loop 挂载条目，建议带 `nofail` 以免挂载失败导致无法启动；
-4. 重启验证挂载生效且平时为 `ro`；
-5. 重新执行配置命令，确认走 remount 分支且写入后能成功恢复只读；
-6. 断电验收（第 10 节）。
+- `/boot/firmware/cns-config.img`（16 MiB ext4）已创建并写入现场配置；
+- `cns-rpi-config.service` 开机只读挂载，`cns-rpi.service` 通过 `Requires=`/`After=` 依赖它；
+- 挂载点 `/var/lib/cns-rpi` 已在**持久层**（`/media/root-ro/var/lib/cns-rpi`）创建。这一步不可省略：该目录原先只存在于 overlay 的内存上层，重启就会连同配置一起消失，主服务将因找不到配置而无法启动；
+- 依赖链实测：停掉整条链后只启动 `cns-rpi.service`，systemd 自动拉起挂载服务、以 `ro` 挂好卷、主服务正常启动。
 
-此外仍未完成：
+**只读环境下的配置持久化闭环已实测通过**：
 
-- `/media/root-ro` 目前**仍停在可写状态**（由上一轮 remount 失败导致），需重启恢复只读；
+| 验证项 | 结果 |
+|---|---|
+| 平时写入被拒 | `Read-only file system` |
+| `readonly_mount_for()` 判定 | 正确返回 `/var/lib/cns-rpi` |
+| MQTT 配置命令 | `status: applied` |
+| 参数落盘 | 生效 |
+| **写入后恢复只读** | **成功**——这正是 `/media/root-ro` 做不到的 |
+| 属主与权限 | 保持 `dcdw:dcdw 0600` |
+| 暂存目录残留 | 无 |
+| 幂等 | 重复 `command_id` 返回 `already_applied` |
+
+### 仍未完成
+
+- **`/media/root-ro` 仍停在可写状态**（上一轮在 lowerdir 上 remount 失败留下的），需重启恢复只读。重启前应避免直接断电；
 - `/var/swap` 2.0G 遗留文件尚未清理（第 6 节）；
-- 第 9 节的 tmpfs 上层容量上限与写满后行为未验证。
+- **重启后的验证尚未进行**：需确认挂载服务开机自动生效、配置在重启后仍在（这是持久化的最终证明，目前只验证了运行期间的读写切换）；
+- 第 9 节的 tmpfs 上层容量上限与写满后行为未验证；
+- 第 10 节的物理断电验收未开始。

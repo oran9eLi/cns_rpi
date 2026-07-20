@@ -2,6 +2,10 @@
 Description=CNS RPi 数据节点
 After=network-online.target
 Wants=network-online.target
+# 配置卷必须先以只读挂好：挂载失败时宁可主服务不启动，也不要让它读到
+# 挂载点下面那个空目录、把缺省配置当成现场配置跑起来。
+Requires=cns-rpi-config.service
+After=cns-rpi-config.service
 
 [Service]
 Type=simple

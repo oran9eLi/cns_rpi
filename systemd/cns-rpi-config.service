@@ -1,0 +1,15 @@
+[Unit]
+Description=CNS RPi 配置持久化卷（只读挂载）
+Documentation=file:///home/dcdw/cns_rpi/docs/OverlayFS只读根文件系统设计.md
+# 镜像存放在 /boot/firmware，必须等它挂好。
+RequiresMountsFor=/boot/firmware
+Before=cns-rpi.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/libexec/cns-rpi-mount-config mount
+ExecStop=/usr/local/libexec/cns-rpi-mount-config unmount
+
+[Install]
+WantedBy=multi-user.target

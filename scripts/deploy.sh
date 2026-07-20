@@ -12,6 +12,10 @@ CELLULAR_SERVICE_SOURCE="${REPO_ROOT}/systemd/cellular-dialup.service"
 CELLULAR_SERVICE_TARGET="/etc/systemd/system/cellular-dialup.service"
 JOURNALD_CONF_SOURCE="${REPO_ROOT}/systemd/journald-cns-rpi.conf"
 JOURNALD_CONF_TARGET="/etc/systemd/journald.conf.d/90-cns-rpi.conf"
+MOUNT_HELPER_SOURCE="${SCRIPT_DIR}/cns-rpi-mount-config.sh"
+MOUNT_HELPER_TARGET="/usr/local/libexec/cns-rpi-mount-config"
+CONFIG_MOUNT_SERVICE_SOURCE="${REPO_ROOT}/systemd/cns-rpi-config.service"
+CONFIG_MOUNT_SERVICE_TARGET="/etc/systemd/system/cns-rpi-config.service"
 CONFIG_DIR="/var/lib/cns-rpi"
 CONFIG_PATH="${CONFIG_DIR}/config.json"
 LEGACY_CONFIG_PATH="${REPO_ROOT}/config/config.json"
@@ -69,7 +73,9 @@ install_if_changed() {
 
 echo "===== 安装配置 helper 和 systemd 服务 ====="
 install_if_changed "${HELPER_SOURCE}" "${HELPER_TARGET}" 0755
+install_if_changed "${MOUNT_HELPER_SOURCE}" "${MOUNT_HELPER_TARGET}" 0755
 install_if_changed "${SERVICE_SOURCE}" "${SERVICE_TARGET}" 0644
+install_if_changed "${CONFIG_MOUNT_SERVICE_SOURCE}" "${CONFIG_MOUNT_SERVICE_TARGET}" 0644
 install_if_changed "${CELLULAR_SERVICE_SOURCE}" "${CELLULAR_SERVICE_TARGET}" 0644
 
 echo "===== 安装 journald 内存化配置 ====="
@@ -87,6 +93,15 @@ echo "===== 加载并启用 systemd 服务 ====="
 sudo systemctl daemon-reload
 sudo systemctl enable cellular-dialup.service
 sudo systemctl start --no-block cellular-dialup.service
+# 配置卷存在时才启用挂载服务：尚未建立持久化卷的设备（开发机、迁移过渡期）
+# 直接用普通目录，不应因为多了这个单元而起不来。
+if [ -f /boot/firmware/cns-config.img ]; then
+  sudo systemctl enable cns-rpi-config.service
+  sudo systemctl start cns-rpi-config.service
+  echo "  - 配置持久化卷已挂载"
+else
+  echo "  - 未发现 /boot/firmware/cns-config.img，配置目录按普通目录使用"
+fi
 sudo systemctl enable cns-rpi.service
 if sudo systemctl is-active --quiet cns-rpi.service; then
   sudo systemctl restart cns-rpi.service
