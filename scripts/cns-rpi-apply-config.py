@@ -12,6 +12,15 @@ chroot 进 lowerdir 后那个文件不可见。这里改为"读上层候选 → 
 
 配置只写 lowerdir、不写 overlay 上层，因此上层不会产生遮蔽 config.json 的副本，
 底层的新内容对当前运行的系统立即可见，不必等重启。
+
+⚠️ 已知缺陷（2026-07-20，待随独立文件系统方案一并解决）
+overlayfs 把 lowerdir 钉住，写入完成后 `mount -o remount,ro /media/root-ro`
+必定失败（EBUSY），文件系统会停在可写状态，OverlayFS 的断电保护随之失效。
+写入本身是成功的，因此这个失败不会表现为配置丢失，只会表现为保护失效——
+危险之处正在于它看起来是成功的。上游 overlayroot-chroot 有同样限制。
+在改为"配置目录挂载独立 ext4 文件系统"之前，不要在 overlay 环境下依赖配置命令。
+详见 docs/OverlayFS只读根文件系统设计.md 第 5 节。
+非 overlay 环境不走这条分支，行为与改造前完全一致。
 """
 
 import json
@@ -75,6 +84,38 @@ def _remount(mount_point: Path, writable: bool) -> None:
         check=True,
         capture_output=True,
     )
+
+
+def reexec_as_root(arguments: list[str]) -> int:
+    """以 root 重新执行自身。
+
+    remount 持久层需要 root，而主服务以 User=dcdw 运行，因此 helper 被调用时
+    不具备该权限。这里只在确实需要写持久层时提权，非 overlay 环境完全不触发。
+
+    使用 sudo -n：拿不到免密授权就立即失败，不会挂起等待终端输入密码——helper
+    是被主程序 fork 出来的，没有可交互的终端。
+
+    收窄 dcdw 的全局免密 sudo 时，需要保留的最小规则是：
+        dcdw ALL=(root) NOPASSWD: /usr/local/libexec/cns-rpi-apply-config
+    绝不要放行 `sudo mount *` 或 `sudo overlayroot-chroot *`，两者等价于给 root。
+    """
+    self_path = Path(__file__).resolve()
+    completed = subprocess.run(
+        ["sudo", "-n", str(self_path), *arguments], capture_output=True
+    )
+    sys.stderr.write(completed.stderr.decode("utf-8", "replace"))
+    sys.stdout.write(completed.stdout.decode("utf-8", "replace"))
+    return completed.returncode
+
+
+def restore_ownership(target: Path, reference: os.stat_result) -> None:
+    """把属主与权限还原成提权前的值。
+
+    以 root 写入会让 config.json 变成 root:root，而主程序以 dcdw 运行且该文件是
+    0600——不还原的话主程序下次启动会因权限不足读不到自己的配置。
+    """
+    os.chown(target, reference.st_uid, reference.st_gid)
+    os.chmod(target, stat.S_IMODE(reference.st_mode))
 
 
 def apply_candidate(
@@ -156,9 +197,15 @@ def main(arguments: list[str]) -> int:
             apply_candidate(candidate, target)
             return 0
 
+        # 写持久层需要 root，主服务却以 dcdw 运行；提权推迟到确认是 overlay 之后，
+        # 非 overlay 环境的调用路径完全不涉及 sudo。
+        if os.geteuid() != 0:
+            return reexec_as_root(arguments)
+
         persist_directory, persist_target = persistent_target(
             lowerdir, CONFIG_DIR, CONFIG_PATH
         )
+        previous = os.stat(persist_target, follow_symlinks=False)
         _remount(lowerdir, writable=True)
         try:
             apply_candidate(
@@ -167,6 +214,7 @@ def main(arguments: list[str]) -> int:
                 persist_directory=persist_directory,
                 persist_target=persist_target,
             )
+            restore_ownership(persist_target, previous)
             # 数据已 fsync 到文件与目录，这里再 sync 一次覆盖底层设备缓存，
             # 之后才允许恢复只读——现场是直接断电，不能依赖延迟回写。
             os.sync()

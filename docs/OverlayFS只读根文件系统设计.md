@@ -68,6 +68,41 @@ console=serial0,115200 console=tty1 root=PARTUUID=e59e7ed8-02 rootfstype=ext4 fs
 | B. 配置移到 `/boot/firmware` | vfat 分区不参与 overlay，天然持久 | 否决。vfat 无属主/权限语义，掉电一致性弱于 ext4，与「防坏卡」初衷相悖 |
 | C. 单独划持久化分区 | 最干净的工程解 | 需要对 29G 卡重新分区，远程执行风险过高。若将来有机会离线操作（可插读卡器），值得回头采用 |
 
+### ⚠️ 方案 A 已被实测推翻（2026-07-20）
+
+overlay 启用后实测发现，方案 A 的"恢复只读"这一步**在 overlayroot 架构下无法完成**：
+
+```
+mount: /media/root-ro: mount point is busy
+```
+
+排查结论（均为实测）：
+
+- `fuser -vm /media/root-ro` 只显示 `kernel mount`，没有任何用户进程占用；
+- 没有 deleted-but-open 的 inode（`(deleted)` 条目全是 tmpfs 上的 memfd）；
+- **停掉主服务后依然失败**，与业务进程无关；
+- 上游 `overlayroot-chroot` 自身也有同样限制——其代码中 `mount -o remount,ro` 失败时仅打印 `Note that [$mp] is still mounted read/write` 后继续。
+
+根因是 overlayfs 正把 `/media/root-ro` 作为 lowerdir 挂载，内核不允许在此期间将其翻回只读。因此"remount rw → 写 → remount ro"用在**根分区的 lowerdir 上**是走不通的：写入本身成功，但文件系统会停在可写状态，OverlayFS 的断电保护失效——这比不做更危险，因为它看起来是成功的。
+
+### 已验证可行的替代：配置放在独立文件系统上
+
+关键区别在于**是不是同一个超级块**。独立于 overlay 的文件系统读写状态完全自主。实测验证（loop 挂载的 ext4 镜像，overlay 同时处于挂载状态）：
+
+| 步骤 | 结果 |
+|---|---|
+| 平时以 `ro` 挂载 | 写入被拒：`Read-only file system` |
+| `remount,rw` | 成功 |
+| 写入 + `sync` | 成功 |
+| `remount,ro` | **成功**——这正是 `/media/root-ro` 做不到的 |
+| overlay 状态 | 全程保持 `/ overlay` 正常 |
+
+同样的独立性在 `/boot/firmware` 上也已验证：它是独立 vfat 分区，可自由 `remount,ro` / `remount,rw`。
+
+**方案**：在 `/boot/firmware` 上放一个固定大小的 ext4 镜像文件，loop 挂载到配置目录，平时 `ro`，写配置时短暂切 `rw`。
+
+为什么套一层 ext4 镜像而不直接把 `config.json` 放在 vfat 上：vfat 无法表达 `dcdw:dcdw 0600` 的属主与权限（主程序以 dcdw 运行且该文件是 0600），也缺少日志与可靠的 fsync 语义。镜像内是 ext4，原子 rename、fsync 与权限语义全部保留；镜像文件大小固定，写入只改数据块、不改 vfat 元数据。
+
 ### 为什么否决 `overlayroot-chroot`
 
 本文初稿曾推荐 A′，实际推演后发现它不成立：
@@ -191,8 +226,21 @@ User dcdw may run the following commands on raspberrypi:
 
 ## 12. 当前状态
 
-**阶段一已完成**（2026-07-20）：helper 已支持只读环境下的持久化写入，13 项 helper 单元测试通过（原 4 项），并在当前非 overlay 环境下完成真实链路回归——经 MQTT 下发配置命令、收到 `status: applied` 的 ACK、参数落盘、进程退出并由 systemd 拉起、发布节拍实测由 1 秒变为 2 秒，随后原样还原。
+**OverlayFS 已启用**（2026-07-20）。实测确认：
 
-**阶段二尚未实施**：装包、改 `cmdline.txt`、启用 overlay 及其后的重启验证均需现场条件（可物理接触设备），见第 6、7 节。
+- 根挂载为 `overlayroot / overlay`，`lowerdir=/media/root-ro`（`/dev/mmcblk0p2` ext4 只读）、`upperdir=/media/root-rw/overlay`（tmpfs）——本文第 5 节此前"待现场确认"的挂载点推测得到验证；
+- 主服务、systemd watchdog、串口自动发现、MQTT 均正常。重启后串口设备号由 `/dev/ttyUSB5` 变为 `/dev/ttyUSB0`，正好印证了自动发现相对固定设备号的必要性。
 
-第 9 节的 tmpfs 上层容量上限与写满后行为仍未验证，需在 overlay 生效后现场确认并回填本文。
+**helper 当前处于中间态，尚不可用于 overlay 生产环境。** 已验证有效的部分：
+
+- 检测到 overlay 且非 root 时经 `sudo -n` 自动提权，主服务以 `dcdw` 运行、无权 remount 的问题已解决；
+- 写入持久层成功，属主与权限在提权写入后正确还原为 `dcdw:dcdw 0600`；
+- 14 项 helper 单元测试通过（原 4 项）。
+
+**但 overlay 路径存在已知缺陷**：写入完成后无法把 `/media/root-ro` 恢复为只读（原因见第 5 节），文件系统会停在可写状态。**在改为独立文件系统方案之前，不要依赖 overlay 环境下的配置命令**。非 overlay 环境不受影响，行为与改造前完全一致。
+
+非 overlay 环境下的完整链路回归已通过：经 MQTT 下发配置命令、收到 `status: applied` 的 ACK、参数落盘、进程退出并由 systemd 拉起、发布节拍实测由 1 秒变为 2 秒，随后原样还原。
+
+**下一步**：按第 5 节的独立文件系统方案改造——在 `/boot/firmware` 上建 ext4 镜像、loop 挂载到配置目录、平时只读。helper 的原子写入、属主还原、自动提权逻辑可全部复用，路径映射部分改为直接 remount 配置挂载点，比现状更简单。
+
+第 9 节的 tmpfs 上层容量上限与写满后行为仍未验证。

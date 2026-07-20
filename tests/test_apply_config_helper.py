@@ -236,5 +236,23 @@ class PersistentWriteTest(unittest.TestCase):
             )
 
 
+class OwnershipRestoreTest(unittest.TestCase):
+    """以 root 写入后必须还原属主与权限，否则以 dcdw 运行的主程序读不到 0600 的配置。"""
+
+    def test_restores_permission_bits(self):
+        helper = load_helper()
+        with tempfile.TemporaryDirectory() as directory:
+            target = Path(directory) / "config.json"
+            target.write_text('{"a": 1}\n', encoding="utf-8")
+            target.chmod(0o600)
+            reference = target.stat()
+
+            # 模拟原子替换后暂存文件带来的宽松权限。
+            target.chmod(0o644)
+            helper.restore_ownership(target, reference)
+
+            self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+
+
 if __name__ == "__main__":
     unittest.main()
