@@ -12,6 +12,8 @@ CELLULAR_SERVICE_SOURCE="${REPO_ROOT}/systemd/cellular-dialup.service"
 CELLULAR_SERVICE_TARGET="/etc/systemd/system/cellular-dialup.service"
 JOURNALD_CONF_SOURCE="${REPO_ROOT}/systemd/journald-cns-rpi.conf"
 JOURNALD_CONF_TARGET="/etc/systemd/journald.conf.d/90-cns-rpi.conf"
+SWAP_CONF_SOURCE="${REPO_ROOT}/systemd/swap-cns-rpi.conf"
+SWAP_CONF_TARGET="/etc/rpi/swap.conf.d/50-cns-rpi.conf"
 MOUNT_HELPER_SOURCE="${SCRIPT_DIR}/cns-rpi-mount-config.sh"
 MOUNT_HELPER_TARGET="/usr/local/libexec/cns-rpi-mount-config"
 CONFIG_MOUNT_SERVICE_SOURCE="${REPO_ROOT}/systemd/cns-rpi-config.service"
@@ -77,6 +79,15 @@ install_if_changed "${MOUNT_HELPER_SOURCE}" "${MOUNT_HELPER_TARGET}" 0755
 install_if_changed "${SERVICE_SOURCE}" "${SERVICE_TARGET}" 0644
 install_if_changed "${CONFIG_MOUNT_SERVICE_SOURCE}" "${CONFIG_MOUNT_SERVICE_TARGET}" 0644
 install_if_changed "${CELLULAR_SERVICE_SOURCE}" "${CELLULAR_SERVICE_TARGET}" 0644
+
+echo "===== 安装 swap 机制配置 ====="
+# 只在内容变化时重新生成单元：daemon-reload 会重跑所有 generator，没必要每次部署都做。
+if sudo cmp -s "${SWAP_CONF_SOURCE}" "${SWAP_CONF_TARGET}" 2>/dev/null; then
+  echo "  - ${SWAP_CONF_TARGET} 已是最新"
+else
+  install_if_changed "${SWAP_CONF_SOURCE}" "${SWAP_CONF_TARGET}" 0644
+  echo "  - swap 机制已设为纯 zram，重启后生效"
+fi
 
 echo "===== 安装 journald 内存化配置 ====="
 # 只在内容真正变化时重启 journald：重启会切断 journalctl -f 之类的现场排查，
