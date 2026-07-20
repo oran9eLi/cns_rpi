@@ -6,22 +6,29 @@ CNS（通信/导航/监视）实训箱的树莓派端数据汇聚与回传节点
 
 ## 当前状态
 
-M1-M6 已完成：UART/MAVLink 双向收发、遥测与身份解码、JSON 序列化、MQTT 遥测与注册、运行时配置命令、飞控命令下行均已接入。STM32 串口支持按合法 MAVLink 帧自动发现，USB 设备号变化或运行中插拔后可自动恢复；树莓派 ARM64 已完成 26 项自动化测试，并完成串口拔插恢复和真实 `COMMAND_ACK` 联调。M7 已完成独立有界日志、主程序/拨号服务和幂等部署脚本，OverlayFS、journald 限额和 systemd watchdog 仍待实施。完整状态见 `docs/V1设计文档.md` 第 10 节。
+M1-M6 已完成：UART/MAVLink 双向收发、遥测与身份解码、JSON 序列化、MQTT 遥测与注册、运行时配置命令、飞控命令下行均已接入。STM32 串口支持按合法 MAVLink 帧自动发现，USB 设备号变化或运行中插拔后可自动恢复；树莓派 ARM64 已完成 27 项自动化测试，并完成串口拔插恢复和真实 `COMMAND_ACK` 联调。
 
-首次在新 RPi 上搭建环境：
+M7 产品化：独立有界日志、幂等部署脚本、journald 内存化（16 MiB 上限）、systemd watchdog（30s 超时 + 主循环喂狗）、OverlayFS 只读根文件系统与配置持久化闭环均已实施并实机验证。物理断电验收、正式物联卡与 MQTT TLS 仍未开始。完整状态见 `docs/V1设计文档.md` 第 10 节与 `docs/M7系统化部署设计.md`。
+
+## 部署
+
+**新设备完整部署流程见 `docs/新设备部署手册.md`**，涵盖基础部署与只读根文件系统加固两个阶段。
+
+最小上手（仅编译验证，不含服务安装）：
 
 ```bash
 # 第一次 clone 时全局 git 镜像重写还没配置(那是 install_deps.sh 干的事，而脚本本身在仓库里)，
 # 所以必须显式带镜像前缀，不能用裸的 https://github.com/... （会因为 RPi 直连 GitHub 网络问题卡住）
-git clone https://ghfast.top/https://github.com/oran9eLi/cns_rpi.git cns_rpi
-cd cns_rpi
+git clone https://ghfast.top/https://github.com/oran9eLi/cns_rpi.git ~/cns_rpi
+cd ~/cns_rpi
 ./scripts/install_deps.sh   # 换清华TUNA apt源 + 装构建依赖 + 配置git全局镜像重写
-cmake -B build -S .
-cmake --build build
-./build/cns_rpi
+cmake -B build -S . && cmake --build build
+ctest --test-dir build
 ```
 
 跑完 `install_deps.sh` 之后，git 全局重写已经生效，仓库的 `origin` 也可以放心设回裸的 `https://github.com/...`（`git remote set-url origin https://github.com/oran9eLi/cns_rpi.git`），后续 `git pull`/`git clone` 写裸 URL 就行，不用再带镜像前缀。
+
+⚠️ 启用 OverlayFS 之后，根文件系统上的一切写入（含 `git pull` 与 `deploy.sh`）都只落在内存里、重启即蒸发，而过程看起来完全成功。维护必须按手册 B5 节的流程走；`deploy.sh` 已内置检测并会拒绝运行。
 
 ## 目标平台
 
