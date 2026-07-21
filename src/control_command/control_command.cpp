@@ -13,6 +13,8 @@ CommandError Error(std::string code, std::string message) {
           .command = {}};
 }
 
+}  // namespace
+
 std::string ResultCode(std::uint8_t result) {
   switch (result) {
     case MAV_RESULT_ACCEPTED:
@@ -33,8 +35,6 @@ std::string ResultCode(std::uint8_t result) {
       return "unknown_result";
   }
 }
-
-}  // namespace
 
 std::expected<ControlCommand, CommandError> Parse(std::string_view payload) {
   nlohmann::json root;

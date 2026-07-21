@@ -44,4 +44,7 @@ nlohmann::json BuildMavlinkAck(const ControlCommand& command, std::uint8_t resul
                                std::int32_t result_param2 = 0);
 nlohmann::json BuildTimeoutAck(const ControlCommand& command);
 
+/// 把 MAV_RESULT 数值转成回执里用的可读结果码，也供日志复用。
+std::string ResultCode(std::uint8_t result);
+
 }  // namespace control_command
