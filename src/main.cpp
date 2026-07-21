@@ -200,8 +200,14 @@ int main(int argc, char** argv) {
                                               kComponentId)) {
       mavlink_command_ack_t ack{};
       mavlink_msg_command_ack_decode(&message, &ack);
-      (void)control_transaction.HandleMavlinkAck(
+      const auto ack_status = control_transaction.HandleMavlinkAck(
           ack.command, ack.result, ack.progress, ack.result_param2, now);
+      const char* match =
+          ack_status == control_command::MavlinkAckStatus::kFinal      ? "最终"
+          : ack_status == control_command::MavlinkAckStatus::kInProgress ? "进行中"
+                                                                         : "未匹配";
+      (*logger)->Info("收到STM32应答: mavlink_command=" + std::to_string(ack.command) +
+                      " 结果=" + control_command::ResultCode(ack.result) + " (" + match + ")");
     }
     state_store.UpdateDcdwLabel(protocol::FormatDcdwLabel(message.sysid));
     if (!protocol::DecodeAndStore(message, state_store)) {
@@ -399,6 +405,9 @@ int main(int argc, char** argv) {
         if (message->topic == config_set_topic && !restart_requested) {
           config_command::CommandProcessResult result;
           auto parsed = config_command::ParseConfigCommand(message->payload);
+          (*logger)->Info(
+              "收到配置命令: command_id=" +
+              (parsed ? parsed->command_id : std::string{"<解析失败>"}));
           if (!parsed) {
             result = config_command::ProcessConfigCommand(
                 message->payload, nlohmann::json::object(),
@@ -425,6 +434,9 @@ int main(int argc, char** argv) {
             }
           }
 
+          (*logger)->Info(
+              "配置命令回执: command_id=" + result.ack.value("command_id", std::string{}) +
+              " status=" + result.ack.value("status", std::string{}));
           const bool acked = mqtt_client->PublishAndWait(
               config_ack_topic, result.ack.dump(), app_config->mqtt.topics.config_ack.qos,
               /*retain=*/false, std::chrono::seconds(2));
@@ -437,12 +449,15 @@ int main(int argc, char** argv) {
         } else if (message->topic == control_set_topic && !restart_requested) {
           auto command = control_command::Parse(message->payload);
           if (!command) {
+            (*logger)->Warn("收到无法解析的飞控命令: " + command.error().code);
             const auto ack = control_command::BuildRejectedAck(
                 command.error().command_id, command.error().command, command.error());
             (void)mqtt_client->Publish(control_ack_topic, ack.dump(),
                                        app_config->mqtt.topics.control_ack.qos,
                                        /*retain=*/false);
           } else {
+            (*logger)->Info("收到飞控命令: command_id=" + command->command_id +
+                            " command=" + command->command);
             const auto submission = control_transaction.Submit(*command, now);
             if (submission.ack) {
               (void)mqtt_client->Publish(control_ack_topic, submission.ack->dump(),

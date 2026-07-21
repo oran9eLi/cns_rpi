@@ -104,3 +104,23 @@ TEST_CASE("主程序后台发现串口并保留失败与恢复诊断") {
         std::string::npos);
   CHECK(text.find("uart::DiscoverMavlinkPortOnce(") == std::string::npos);
 }
+
+TEST_CASE("主程序在收到命令与应答时记录日志") {
+  const auto main_path = std::filesystem::path(SOURCE_DIR) / "src/main.cpp";
+  std::ifstream input(main_path);
+  REQUIRE(input.is_open());
+  const std::string text{std::istreambuf_iterator<char>(input),
+                         std::istreambuf_iterator<char>()};
+
+  // 收到配置命令与回执。
+  CHECK(text.find("收到配置命令: command_id=") != std::string::npos);
+  CHECK(text.find("配置命令回执: command_id=") != std::string::npos);
+  // 收到飞控命令。
+  CHECK(text.find("收到飞控命令: command_id=") != std::string::npos);
+  // 收到 STM32 的 COMMAND_ACK 应答，且日志取自事务处理结果而非丢弃。
+  const auto ack_branch = Between(text, "IsExpectedCommandAck(", "state_store.UpdateDcdwLabel");
+  CHECK(ack_branch.find("收到STM32应答") != std::string_view::npos);
+  CHECK(ack_branch.find("control_command::ResultCode(ack.result)") != std::string_view::npos);
+  // 应答处理结果必须被取用（用于区分最终/进行中/未匹配），不能再退回 (void) 丢弃。
+  CHECK(ack_branch.find("(void)control_transaction.HandleMavlinkAck") == std::string_view::npos);
+}
