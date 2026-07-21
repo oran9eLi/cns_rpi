@@ -60,7 +60,7 @@
     "applied_command_ids": []
   },
   "cellular": {
-    "apn": "cmnet",
+    "apn": "CMMTM5GDCDW.JS",
     "cid": 1,
     "usb_interface_number": "05",
     "at_port_wait_seconds": 30,
