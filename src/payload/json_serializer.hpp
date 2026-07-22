@@ -17,6 +17,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "cellular/cellular_snapshot.hpp"
 #include "state/state_store.hpp"
 
 namespace payload {
@@ -28,5 +29,11 @@ namespace payload {
  * @return 按设计文档规则组装好的 JSON；未收到过的字段对应的 key 不存在（不输出 null）。
  */
 nlohmann::json ToJson(const state::TelemetryState& state, const std::string& school_name);
+
+/**
+ * @brief 在既有遥测 JSON 中加入树莓派 5G 链路公开状态。
+ */
+nlohmann::json ToJson(const state::TelemetryState& state, const std::string& school_name,
+                      const cellular::StatusSnapshot& cellular_status);
 
 }  // namespace payload

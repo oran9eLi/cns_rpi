@@ -499,4 +499,11 @@ nlohmann::json ToJson(const state::TelemetryState& state, const std::string& sch
   return out;
 }
 
+nlohmann::json ToJson(const state::TelemetryState& state, const std::string& school_name,
+                      const cellular::StatusSnapshot& cellular_status) {
+  auto out = ToJson(state, school_name);
+  out["telemetry"]["cellular_5g"] = cellular::BuildPublicTelemetryJson(cellular_status);
+  return out;
+}
+
 }  // namespace payload

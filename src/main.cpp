@@ -281,7 +281,10 @@ int main(int argc, char** argv) {
 
     if (link && rpi_system_id &&
         now - last_cellular_heartbeat >= app_config->cellular.heartbeat_interval) {
-      const auto cellular_status = cellular::ProbeLink(app_config->cellular.interface_name);
+      const auto cellular_snapshot = cellular::ReadStatusSnapshot(
+          app_config->cellular.status_snapshot_path,
+          app_config->cellular.status_snapshot_max_age);
+      const auto cellular_status = cellular::FromSnapshot(cellular_snapshot);
       const auto boot_ms = static_cast<std::uint32_t>(
           std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
       const auto heartbeat = cellular::BuildRpiCellularHeartbeat(
@@ -492,7 +495,11 @@ int main(int argc, char** argv) {
         *active_vendor_id == *mqtt_snapshot.vendor_id && mqtt_client->IsConnected() &&
         now - last_telemetry_publish >= app_config->runtime.telemetry_publish_interval) {
       const std::string json_str =
-          payload::ToJson(state_store.Snapshot(), app_config->identity.school_name).dump();
+          payload::ToJson(
+              state_store.Snapshot(), app_config->identity.school_name,
+              cellular::ReadStatusSnapshot(app_config->cellular.status_snapshot_path,
+                                           app_config->cellular.status_snapshot_max_age))
+              .dump();
       // retain=false：遥测是按节拍刷新的实时值，不是设备状态的权威存档。
       // retained 遥测会让新订阅者立刻收到最后一帧，却分不清那是实时数据还是
       // 设备掉电前的陈旧快照；设备是否在线由 registration topic 的 retained

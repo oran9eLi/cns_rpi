@@ -136,6 +136,14 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
         cfg.cellular.heartbeat_interval =
             std::chrono::milliseconds(cellular.at("heartbeat_interval_ms").get<int>());
       }
+      if (cellular.contains("status_snapshot_path")) {
+        cfg.cellular.status_snapshot_path =
+            cellular.at("status_snapshot_path").get<std::string>();
+      }
+      if (cellular.contains("status_snapshot_max_age_seconds")) {
+        cfg.cellular.status_snapshot_max_age = std::chrono::seconds(
+            cellular.at("status_snapshot_max_age_seconds").get<int>());
+      }
     }
   } catch (const nlohmann::json::out_of_range&) {
     return std::unexpected(ConfigError::kMissingField);
@@ -148,6 +156,7 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
   const auto telemetry_ms = cfg.runtime.telemetry_publish_interval.count();
   const auto heartbeat_ms = cfg.runtime.heartbeat_interval.count();
   const auto cellular_heartbeat_ms = cfg.cellular.heartbeat_interval.count();
+  const auto cellular_snapshot_max_age = cfg.cellular.status_snapshot_max_age.count();
   if (connection.host.empty() || connection.client_id_prefix.empty() || connection.port < 1 ||
       connection.port > 65535 || connection.keepalive_seconds <= 0 ||
       connection.reconnect.delay_seconds < 1 || connection.reconnect.delay_seconds > 3600 ||
@@ -159,6 +168,9 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
       cfg.cellular.interface_name.empty() ||
       cfg.cellular.interface_name.find_first_of("/ \t\r\n") != std::string::npos ||
       cellular_heartbeat_ms < 100 || cellular_heartbeat_ms > 60000 ||
+      cfg.cellular.status_snapshot_path.empty() ||
+      !cfg.cellular.status_snapshot_path.is_absolute() ||
+      cellular_snapshot_max_age < 10 || cellular_snapshot_max_age > 300 ||
       !IsValidLogLevel(cfg.logging.level) || max_file_size_kb < 64 ||
       max_file_size_kb > 102400 ||
       !IsValidTopicSegment(topics.topic_namespace) ||

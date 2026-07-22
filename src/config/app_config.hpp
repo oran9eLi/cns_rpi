@@ -93,6 +93,8 @@ struct RuntimeConfig {
 struct CellularConfig {
   std::string interface_name{"usb0"};
   std::chrono::milliseconds heartbeat_interval{1000};
+  std::filesystem::path status_snapshot_path{"/run/cns-rpi/cellular_status.json"};
+  std::chrono::seconds status_snapshot_max_age{30};
 };
 
 struct AppConfig {

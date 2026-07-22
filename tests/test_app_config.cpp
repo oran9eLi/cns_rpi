@@ -94,6 +94,42 @@ TEST_CASE("完整合法嵌套配置能正确解析") {
   CHECK(result->mqtt.connection.reconnect.delay_max_seconds == 30);
   CHECK(result->cellular.interface_name == "usb0");
   CHECK(result->cellular.heartbeat_interval == std::chrono::milliseconds(1000));
+  CHECK(result->cellular.status_snapshot_path == "/run/cns-rpi/cellular_status.json");
+  CHECK(result->cellular.status_snapshot_max_age == std::chrono::seconds(30));
+}
+
+TEST_CASE("5G状态快照配置可覆盖默认值") {
+  const auto config = ReplaceOnce(
+      ValidConfig(),
+      "\"applied_command_ids\": []\n    }",
+      "\"applied_command_ids\": []\n    },\n"
+      "    \"cellular\": {\"status_snapshot_path\": \"/run/custom/status.json\", "
+      "\"status_snapshot_max_age_seconds\": 45}");
+
+  const auto result = config::LoadAppConfig(WriteTempConfig(config));
+
+  REQUIRE(result.has_value());
+  CHECK(result->cellular.status_snapshot_path == "/run/custom/status.json");
+  CHECK(result->cellular.status_snapshot_max_age == std::chrono::seconds(45));
+}
+
+TEST_CASE("5G状态快照路径和过期阈值必须合法") {
+  for (const auto& cellular : {
+           "{\"status_snapshot_path\": \"\", \"status_snapshot_max_age_seconds\": 30}",
+           "{\"status_snapshot_path\": \"relative.json\", "
+           "\"status_snapshot_max_age_seconds\": 30}",
+           "{\"status_snapshot_path\": \"/run/status.json\", "
+           "\"status_snapshot_max_age_seconds\": 9}",
+           "{\"status_snapshot_path\": \"/run/status.json\", "
+           "\"status_snapshot_max_age_seconds\": 301}",
+       }) {
+    const auto config = ReplaceOnce(
+        ValidConfig(),
+        "\"applied_command_ids\": []\n    }",
+        "\"applied_command_ids\": []\n    },\n    \"cellular\": " + std::string(cellular));
+    const auto result = config::LoadAppConfig(WriteTempConfig(config));
+    CHECK_FALSE(result.has_value());
+  }
 }
 
 TEST_CASE("日志级别和容量必须合法") {

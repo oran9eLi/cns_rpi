@@ -66,6 +66,8 @@
     "at_port_wait_seconds": 30,
     "interface_name": "usb0",
     "heartbeat_interval_ms": 1000,
+    "status_snapshot_path": "/run/cns-rpi/cellular_status.json",
+    "status_snapshot_max_age_seconds": 30,
     "probe_targets": ["112.124.52.232", "119.29.29.29"],
     "probe_interval_seconds": 10,
     "offline_failure_threshold": 3,
