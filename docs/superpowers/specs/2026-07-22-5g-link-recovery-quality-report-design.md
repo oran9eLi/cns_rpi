@@ -142,7 +142,13 @@
   "rx_bytes": 654321,
   "recover_count": 1,
   "last_recover_at": "2026-07-22T15:30:00.000+08:00",
-  "last_error": null
+  "last_error": null,
+  "diagnostics": {
+    "interface_present": true,
+    "carrier_up": true,
+    "has_ip_address": true,
+    "has_default_route": true
+  }
 }
 ```
 
@@ -161,9 +167,10 @@
 | `rssi_dbm` | `AT+CSQ` 按 `-113 + 2 × rssi` 换算；`99` 时为 `null` |
 | `tx_bytes` | `/sys/class/net/usb0/statistics/tx_bytes` |
 | `rx_bytes` | `/sys/class/net/usb0/statistics/rx_bytes` |
-| `recover_count` | 本次系统启动期间累计发起的恢复动作数；服务重启从 `/run` 快照接续 |
-| `last_recover_at` | 最近一次恢复动作时间；系统时间早于 2025-01-01 时为 `null` |
+| `recover_count` | 本次系统启动期间进入 `RECOVERING` 的次数；同一轮中的重拨和软重启只计一次，服务重启从 `/run` 快照接续 |
+| `last_recover_at` | 最近一次进入 `RECOVERING` 的时间；系统时间早于 2025-01-01 时为 `null` |
 | `last_error` | 最近错误摘要；当前无错误时为 `null` |
+| `diagnostics` | `usb0` 接口、载波、IP 和默认路由状态，仅供树莓派生成原有 `RPICELL` 诊断位 |
 
 信号质量默认每 30 秒采集一次。链路检测和快照刷新仍按 10 秒周期执行；不需要
 每轮都发送多条 AT 查询。任一质量查询失败时，其他字段继续更新，失败字段为
@@ -171,7 +178,7 @@
 
 ## 7. MQTT 遥测兼容
 
-`cns_rpi` 在既有 JSON 的以下位置加入快照对象：
+`cns_rpi` 在既有 JSON 的以下位置加入快照中的公开字段：
 
 ```text
 payload.telemetry.cellular_5g
@@ -205,6 +212,8 @@ payload.telemetry.cellular_5g
 
 服务端现有路由和数据库逻辑按完整 JSONB 保存最新遥测，因此无需认识这些字段
 即可兼容。服务器和前端后续直接读取 `latest_telemetry.telemetry.cellular_5g`。
+快照中的内部 `diagnostics` 不写入 MQTT 遥测，避免把树莓派内部协议适配字段扩散
+为服务端接口。
 
 快照超过 30 秒未更新时，`cns_rpi` 输出 `link_state="UNKNOWN"`，保留最后一次
 观测值，并用 `last_error` 明确标记快照过期。快照不存在或无法解析时也必须继续
