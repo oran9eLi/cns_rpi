@@ -180,3 +180,6 @@ add_test(NAME apply_config_helper
 add_test(NAME cellular_link_python
     COMMAND ${PYTHON3_EXECUTABLE} -m unittest -v tests.test_cellular_link)
 set_tests_properties(cellular_link_python PROPERTIES WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+add_test(NAME cellular_dialup_python
+    COMMAND ${PYTHON3_EXECUTABLE} -m unittest -v tests.test_cellular_dialup)
+set_tests_properties(cellular_dialup_python PROPERTIES WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})

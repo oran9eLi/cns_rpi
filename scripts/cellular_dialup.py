@@ -11,14 +11,24 @@ config/config.json 里新增的 "cellular" 节。
 设计依据：docs/superpowers/specs/2026-07-09-cellular-dialup-design.md。
 """
 
+import dataclasses
 import glob
 import json
+import os
+import pathlib
 import re
 import subprocess
 import sys
 import time
+from typing import Optional
 
 import serial
+
+from scripts.cellular_link import (
+    parse_cops,
+    parse_csq,
+    parse_qeng,
+)
 
 
 AT_BAUDRATE = 115200
@@ -29,6 +39,41 @@ NCM_IFACE_NAME = "usb0"
 
 _CGDCONT_LINE_RE = re.compile(r'^\+CGDCONT:\s*(\d+),"([^"]*)","([^"]*)"')
 _CGACT_LINE_RE = re.compile(r'^\+CGACT:\s*(\d+),(\d+)')
+
+
+@dataclasses.dataclass(frozen=True)
+class InterfaceStatus:
+    """Linux 数据接口的基础链路和流量状态。"""
+
+    interface_present: bool = False
+    carrier_up: bool = False
+    has_ip_address: bool = False
+    has_default_route: bool = False
+    ip_address: Optional[str] = None
+    tx_bytes: Optional[int] = None
+    rx_bytes: Optional[int] = None
+
+    @property
+    def basic_ready(self):
+        return (
+            self.interface_present
+            and self.carrier_up
+            and self.has_ip_address
+            and self.has_default_route
+        )
+
+
+@dataclasses.dataclass(frozen=True)
+class RadioSample:
+    """单次无线质量采集结果。"""
+
+    operator: Optional[str] = None
+    access_technology: Optional[str] = None
+    rsrp_dbm: Optional[int] = None
+    rsrq_db: Optional[int] = None
+    sinr_db: Optional[int] = None
+    rssi_dbm: Optional[int] = None
+    error: Optional[str] = None
 
 
 def load_cellular_config(path):
@@ -97,6 +142,176 @@ def send_at_command(ser, command, timeout=AT_COMMAND_TIMEOUT_SECONDS):
             return False, lines
         lines.append(line)
     return False, lines
+
+
+def collect_radio_metrics(ser, sender=send_at_command):
+    """采集运营商和无线质量；单条 AT 查询失败不影响其他指标。"""
+
+    errors = []
+
+    cops_ok, cops_lines = sender(ser, "AT+COPS?")
+    operator = parse_cops(cops_lines) if cops_ok else None
+    if not cops_ok:
+        errors.append("COPS")
+
+    qeng_ok, qeng_lines = sender(ser, 'AT+QENG="servingcell"')
+    metrics = parse_qeng(qeng_lines) if qeng_ok else None
+    if not qeng_ok:
+        errors.append("QENG")
+
+    csq_ok, csq_lines = sender(ser, "AT+CSQ")
+    rssi_dbm = parse_csq(csq_lines) if csq_ok else None
+    if not csq_ok:
+        errors.append("CSQ")
+
+    return RadioSample(
+        operator=operator,
+        access_technology=(metrics.access_technology if metrics else None),
+        rsrp_dbm=(metrics.rsrp_dbm if metrics else None),
+        rsrq_db=(metrics.rsrq_db if metrics else None),
+        sinr_db=(metrics.sinr_db if metrics else None),
+        rssi_dbm=rssi_dbm,
+        error=(f"{'、'.join(errors)}查询失败" if errors else None),
+    )
+
+
+def probe_target(interface_name, target, timeout_seconds=2, runner=subprocess.run):
+    """强制通过指定接口执行一次公网 ICMP 探测。"""
+
+    command = [
+        "ping",
+        "-I",
+        interface_name,
+        "-c",
+        "1",
+        "-W",
+        str(timeout_seconds),
+        target,
+    ]
+    try:
+        result = runner(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds + 2,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return False
+    return result.returncode == 0
+
+
+def probe_interface(interface_name, net_root=pathlib.Path("/sys/class/net"),
+                    runner=subprocess.run):
+    """读取指定 Linux 网卡的载波、地址、路由和累计流量。"""
+
+    interface_path = pathlib.Path(net_root) / interface_name
+    if not interface_path.exists():
+        return InterfaceStatus()
+
+    carrier_up = _read_text(interface_path / "carrier") == "1"
+    tx_bytes = _read_nonnegative_int(interface_path / "statistics" / "tx_bytes")
+    rx_bytes = _read_nonnegative_int(interface_path / "statistics" / "rx_bytes")
+
+    ip_address = None
+    try:
+        address_result = runner(
+            ["ip", "-j", "address", "show", "dev", interface_name],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if address_result.returncode == 0:
+            ip_address = _first_global_ip(address_result.stdout)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+    has_default_route = False
+    try:
+        route_result = runner(
+            ["ip", "route", "show", "default", "dev", interface_name],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        has_default_route = (
+            route_result.returncode == 0
+            and any(
+                line.startswith("default ")
+                for line in route_result.stdout.splitlines()
+            )
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+    return InterfaceStatus(
+        interface_present=True,
+        carrier_up=carrier_up,
+        has_ip_address=ip_address is not None,
+        has_default_route=has_default_route,
+        ip_address=ip_address,
+        tx_bytes=tx_bytes,
+        rx_bytes=rx_bytes,
+    )
+
+
+def write_snapshot_atomic(path, snapshot):
+    """在同一目录写入临时文件后原子替换正式快照。"""
+
+    path = pathlib.Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_name(f"{path.name}.tmp.{os.getpid()}")
+    try:
+        temporary.write_text(
+            json.dumps(
+                snapshot.to_dict(),
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+            + "\n",
+            encoding="utf-8",
+        )
+        os.replace(temporary, path)
+    finally:
+        try:
+            temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _read_text(path):
+    try:
+        return path.read_text(encoding="ascii").strip()
+    except OSError:
+        return None
+
+
+def _read_nonnegative_int(path):
+    value = _read_text(path)
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _first_global_ip(payload):
+    try:
+        interfaces = json.loads(payload)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    for interface in interfaces:
+        for address in interface.get("addr_info", []):
+            if address.get("scope") == "global" and address.get("family") in (
+                "inet",
+                "inet6",
+            ):
+                local = address.get("local")
+                if isinstance(local, str) and local:
+                    return local
+    return None
 
 
 def find_at_port(interface_number, wait_seconds):
@@ -197,7 +412,7 @@ def dial_up(config):
               f"({CARRIER_WAIT_SECONDS}秒)")
         return False
 
-    print(f"[cellular_dialup] 拨号成功，{NCM_IFACE_NAME}已起来，DHCP交给NetworkManager处理")
+    print(f"[cellular_dialup] 拨号成功，{NCM_IFACE_NAME}已出现载波，DHCP交由NetworkManager")
     return True
 
 
