@@ -52,6 +52,18 @@ TEST_CASE("5G拨号单元是读取持久配置的常驻服务") {
   CHECK(text.find("RemainAfterExit=yes") == std::string::npos);
 }
 
+TEST_CASE("共享运行目录不随单个服务停止而删除") {
+  for (const auto* unit : {"/systemd/cns-rpi.service",
+                           "/systemd/cellular-dialup.service"}) {
+    std::ifstream input(std::string(SOURCE_DIR) + unit);
+    const std::string text{std::istreambuf_iterator<char>(input),
+                           std::istreambuf_iterator<char>()};
+    CAPTURE(unit);
+    CHECK(text.find("RuntimeDirectory=cns-rpi") != std::string::npos);
+    CHECK(text.find("RuntimeDirectoryPreserve=yes") != std::string::npos);
+  }
+}
+
 TEST_CASE("依赖安装脚本复用部署脚本") {
   std::ifstream input(SOURCE_DIR "/scripts/install_deps.sh");
   const std::string text{std::istreambuf_iterator<char>(input),

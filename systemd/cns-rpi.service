@@ -17,10 +17,12 @@ NotifyAccess=main
 WatchdogSec=30s
 User=dcdw
 WorkingDirectory=/home/dcdw/cns_rpi
-# 在 /run/cns-rpi 建可写暂存目录（tmpfs，属主为本服务用户，停止时自动清理）。
+# 在 /run/cns-rpi 建可写暂存目录（tmpfs，属主为本服务用户）。
 # 配置目录 /var/lib/cns-rpi 平时是只读挂载，候选文件不能建在那里。
+# 该目录同时承载 5G 状态快照，任一服务单独停止时均不得删除。
 RuntimeDirectory=cns-rpi
 RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
 # 配置路径必须是绝对路径且显式给出，程序不再有相对路径默认值。
 ExecStart=/home/dcdw/cns_rpi/build/cns_rpi /var/lib/cns-rpi/config.json --config-writer=helper --config-helper=/usr/local/libexec/cns-rpi-apply-config --config-staging=/run/cns-rpi
 Restart=always

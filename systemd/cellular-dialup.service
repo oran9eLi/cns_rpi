@@ -8,6 +8,7 @@ Type=simple
 User=dcdw
 RuntimeDirectory=cns-rpi
 RuntimeDirectoryMode=0700
+RuntimeDirectoryPreserve=yes
 Environment=PYTHONUNBUFFERED=1
 ExecStart=/usr/bin/python3 /home/dcdw/cns_rpi/scripts/cellular_dialup.py /var/lib/cns-rpi/config.json
 Restart=on-failure
