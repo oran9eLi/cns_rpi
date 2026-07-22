@@ -475,6 +475,14 @@ int main(int argc, char** argv) {
                   stm32_endpoint->component_id);
               if (!link->SendMessage(mavlink_message)) {
                 mark_link_disconnected();
+              } else {
+                const auto pending_ack = control_command::BuildPendingAck(*command);
+                if (!mqtt_client->Publish(control_ack_topic, pending_ack.dump(),
+                                          app_config->mqtt.topics.control_ack.qos,
+                                          /*retain=*/false)) {
+                  (*logger)->Warn("飞控命令执行中回执发布失败: command_id=" +
+                                  command->command_id);
+                }
               }
             }
           }

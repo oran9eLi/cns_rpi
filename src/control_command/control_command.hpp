@@ -39,6 +39,7 @@ mavlink_message_t EncodeCommandLong(const ControlCommand& command, std::uint8_t 
                                     std::uint8_t target_component);
 nlohmann::json BuildRejectedAck(std::string_view command_id, std::string_view command,
                                 const CommandError& error);
+nlohmann::json BuildPendingAck(const ControlCommand& command);
 nlohmann::json BuildMavlinkAck(const ControlCommand& command, std::uint8_t result,
                                std::uint8_t progress = 0,
                                std::int32_t result_param2 = 0);

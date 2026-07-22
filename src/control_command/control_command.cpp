@@ -158,6 +158,15 @@ nlohmann::json BuildRejectedAck(std::string_view command_id, std::string_view co
           {"message", error.message}};
 }
 
+nlohmann::json BuildPendingAck(const ControlCommand& command) {
+  return {{"command_id", command.command_id},
+          {"command", command.command},
+          {"mavlink_command", command.mavlink_command},
+          {"status", "in_progress"},
+          {"result_code", "pending"},
+          {"message", "命令已下发，正在等待单片机应答"}};
+}
+
 nlohmann::json BuildMavlinkAck(const ControlCommand& command, std::uint8_t result,
                                std::uint8_t progress, std::int32_t result_param2) {
   const bool accepted = result == MAV_RESULT_ACCEPTED;

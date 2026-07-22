@@ -22,15 +22,6 @@ nlohmann::json BuildBusyAck(const ControlCommand& command) {
           {"message", "已有控制命令等待单片机响应"}};
 }
 
-nlohmann::json BuildPendingAck(const ControlCommand& command) {
-  return {{"command_id", command.command_id},
-          {"command", command.command},
-          {"mavlink_command", command.mavlink_command},
-          {"status", "in_progress"},
-          {"result_code", "pending"},
-          {"message", "命令已下发，正在等待单片机应答"}};
-}
-
 nlohmann::json BuildStaleAckGuard(const ControlCommand& command) {
   return {{"command_id", command.command_id},
           {"command", command.command},

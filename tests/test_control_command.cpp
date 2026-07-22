@@ -61,6 +61,21 @@ TEST_CASE("按COMMAND_ACK生成服务器回执") {
   CHECK(progress["result_param2"] == 7);
 }
 
+TEST_CASE("成功下发后生成标准执行中回执") {
+  const auto command = control_command::Parse(
+      R"({"command_id":"flight-001","command":"takeoff","parameters":{}})");
+  REQUIRE(command.has_value());
+
+  const auto pending = control_command::BuildPendingAck(*command);
+
+  CHECK(pending == nlohmann::json{{"command_id", "flight-001"},
+                                  {"command", "takeoff"},
+                                  {"mavlink_command", control_command::kAutoTakeoff},
+                                  {"status", "in_progress"},
+                                  {"result_code", "pending"},
+                                  {"message", "命令已下发，正在等待单片机应答"}});
+}
+
 TEST_CASE("无参数命令拒绝多余参数") {
   const auto command = control_command::Parse(
       R"({"command_id":"1","command":"takeoff","parameters":{"height":10}})");
