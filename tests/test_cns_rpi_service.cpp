@@ -46,6 +46,7 @@ TEST_CASE("5G拨号单元是读取持久配置的常驻服务") {
   CHECK(text.find("Type=simple") != std::string::npos);
   CHECK(text.find("User=dcdw") != std::string::npos);
   CHECK(text.find("RuntimeDirectory=cns-rpi") != std::string::npos);
+  CHECK(text.find("Environment=PYTHONUNBUFFERED=1") != std::string::npos);
   CHECK(text.find("/var/lib/cns-rpi/config.json") != std::string::npos);
   CHECK(text.find("Restart=on-failure") != std::string::npos);
   CHECK(text.find("RemainAfterExit=yes") == std::string::npos);
