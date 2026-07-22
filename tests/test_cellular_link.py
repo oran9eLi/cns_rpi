@@ -27,11 +27,12 @@ class CellularConfigTest(unittest.TestCase):
 
         self.assertEqual(
             config.probe_targets,
-            ("112.124.52.232", "119.29.29.29"),
+            ("112.124.52.232",),
         )
         self.assertEqual(config.probe_interval_seconds, 10)
         self.assertEqual(config.quality_probe_interval_seconds, 5)
         self.assertEqual(config.offline_failure_threshold, 3)
+        self.assertEqual(config.degraded_failure_threshold, 2)
         self.assertEqual(config.online_success_threshold, 2)
         self.assertEqual(config.signal_sample_interval_seconds, 30)
         self.assertEqual(config.redial_attempts_before_reset, 3)
@@ -47,6 +48,7 @@ class CellularConfigTest(unittest.TestCase):
             ("probe_interval_seconds", 0),
             ("quality_probe_interval_seconds", 0),
             ("offline_failure_threshold", 0),
+            ("degraded_failure_threshold", 0),
             ("online_success_threshold", 0),
             ("signal_sample_interval_seconds", 0),
             ("redial_attempts_before_reset", 0),
@@ -64,6 +66,15 @@ class CellularConfigTest(unittest.TestCase):
                     **self.base,
                     "recovery_delay_seconds": 30,
                     "recovery_delay_max_seconds": 15,
+                }
+            )
+
+        with self.assertRaisesRegex(ValueError, "degraded_failure_threshold"):
+            CellularConfig.from_json(
+                {
+                    **self.base,
+                    "degraded_failure_threshold": 3,
+                    "offline_failure_threshold": 3,
                 }
             )
 
@@ -132,16 +143,29 @@ class AtResponseParserTest(unittest.TestCase):
 
 
 class LinkStateMachineTest(unittest.TestCase):
-    def test_three_double_failures_enter_offline(self):
-        machine = LinkStateMachine(offline_threshold=3, online_threshold=2)
+    def test_online_link_degrades_on_second_failure_and_offlines_on_third(self):
+        machine = LinkStateMachine(
+            offline_threshold=3,
+            online_threshold=2,
+            degraded_threshold=2,
+        )
+        machine.state = LinkState.ONLINE
 
-        self.assertEqual(
-            machine.observe(True, [False, False]), LinkState.DEGRADED
+        self.assertEqual(machine.observe(True, [False]), LinkState.ONLINE)
+        self.assertEqual(machine.observe(True, [False]), LinkState.DEGRADED)
+        self.assertEqual(machine.observe(True, [False]), LinkState.OFFLINE)
+
+    def test_success_clears_accumulated_failures(self):
+        machine = LinkStateMachine(
+            offline_threshold=3,
+            online_threshold=2,
+            degraded_threshold=2,
         )
-        self.assertEqual(
-            machine.observe(True, [False, False]), LinkState.DEGRADED
-        )
-        self.assertEqual(machine.observe(True, [False, False]), LinkState.OFFLINE)
+        machine.state = LinkState.ONLINE
+
+        self.assertEqual(machine.observe(True, [False]), LinkState.ONLINE)
+        self.assertEqual(machine.observe(True, [True]), LinkState.ONLINE)
+        self.assertEqual(machine.observe(True, [False]), LinkState.ONLINE)
 
     def test_recovering_requires_two_full_successes(self):
         machine = LinkStateMachine(offline_threshold=3, online_threshold=2)
@@ -150,13 +174,13 @@ class LinkStateMachineTest(unittest.TestCase):
         self.assertEqual(machine.observe(True, [True, True]), LinkState.RECOVERING)
         self.assertEqual(machine.observe(True, [True, True]), LinkState.ONLINE)
 
-    def test_one_reachable_target_is_degraded_without_offline(self):
+    def test_only_first_configured_target_affects_state(self):
         machine = LinkStateMachine(offline_threshold=3, online_threshold=2)
 
-        for _ in range(5):
-            self.assertEqual(
-                machine.observe(True, [True, False]), LinkState.DEGRADED
-            )
+        self.assertEqual(machine.observe(True, [True, False]), LinkState.UNKNOWN)
+        self.assertEqual(machine.observe(True, [True, False]), LinkState.ONLINE)
+        self.assertEqual(machine.observe(True, [False, True]), LinkState.ONLINE)
+        self.assertEqual(machine.observe(True, [False, True]), LinkState.DEGRADED)
 
     def test_missing_basic_network_enters_offline_immediately(self):
         machine = LinkStateMachine(offline_threshold=3, online_threshold=2)

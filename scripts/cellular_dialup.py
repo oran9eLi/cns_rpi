@@ -53,7 +53,6 @@ AT_BAUDRATE = 115200
 AT_COMMAND_TIMEOUT_SECONDS = 5
 CARRIER_WAIT_SECONDS = 10
 NCM_NETCARD_INDEX = 0
-QUALITY_PROBE_TARGET = "112.124.52.232"
 
 _CGDCONT_LINE_RE = re.compile(r'^\+CGDCONT:\s*(\d+),"([^"]*)","([^"]*)"')
 _CGACT_LINE_RE = re.compile(r'^\+CGACT:\s*(\d+),(\d+)')
@@ -183,32 +182,6 @@ def collect_radio_metrics(ser, sender=send_at_command):
         rssi_dbm=rssi_dbm,
         error=(f"{'、'.join(errors)}查询失败" if errors else None),
     )
-
-
-def probe_target(interface_name, target, timeout_seconds=2, runner=subprocess.run):
-    """强制通过指定接口执行一次公网 ICMP 探测。"""
-
-    command = [
-        "ping",
-        "-I",
-        interface_name,
-        "-c",
-        "1",
-        "-W",
-        str(timeout_seconds),
-        target,
-    ]
-    try:
-        result = runner(
-            command,
-            capture_output=True,
-            text=True,
-            timeout=timeout_seconds + 2,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        return False
-    return result.returncode == 0
 
 
 def probe_latency_ms(
@@ -510,7 +483,6 @@ class CellularDaemon:
         *,
         dialer=dial_up,
         interface_probe=probe_interface,
-        target_probe=probe_target,
         latency_probe=probe_latency_ms,
         quality_collector=collect_current_radio,
         module_resetter=reset_module,
@@ -523,7 +495,6 @@ class CellularDaemon:
         self.snapshot_path = pathlib.Path(snapshot_path)
         self.dialer = dialer
         self.interface_probe = interface_probe
-        self.target_probe = target_probe
         self.latency_probe = latency_probe
         self.quality_collector = quality_collector
         self.module_resetter = module_resetter
@@ -534,6 +505,7 @@ class CellularDaemon:
         self.state_machine = LinkStateMachine(
             config.offline_failure_threshold,
             config.online_success_threshold,
+            config.degraded_failure_threshold,
         )
         self.backoff = RecoveryBackoff(
             config.recovery_delay_seconds,
@@ -545,6 +517,7 @@ class CellularDaemon:
         self.last_error = None
         self.radio_sample = None
         self.link_quality = LinkQualityWindow(capacity=12)
+        self.latest_probe_reachable = None
         self.interface_status = InterfaceStatus()
         self.present = False
         self.initial_dial_pending = True
@@ -605,19 +578,14 @@ class CellularDaemon:
         self.interface_status = self.interface_probe(self.config.interface_name)
         if not self.interface_status.interface_present:
             self.present = False
-        target_results = []
-        if self.interface_status.basic_ready:
-            target_results = [
-                self.target_probe(self.config.interface_name, target)
-                for target in self.config.probe_targets
-            ]
-        state = self.state_machine.observe(
-            self.interface_status.basic_ready,
-            target_results,
-        )
 
         if latency_due:
             self._sample_link_quality(now)
+
+        state = self.state_machine.observe(
+            self.interface_status.basic_ready,
+            [self.latest_probe_reachable is True],
+        )
 
         if now >= self.next_quality_at and self.present:
             sample = self.quality_collector(self.config)
@@ -652,8 +620,9 @@ class CellularDaemon:
     def _sample_link_quality(self, now):
         latency_ms = self.latency_probe(
             self.config.interface_name,
-            QUALITY_PROBE_TARGET,
+            self.config.probe_targets[0],
         )
+        self.latest_probe_reachable = latency_ms is not None
         self.link_quality.add(latency_ms)
         self.next_latency_at = (
             now + self.config.quality_probe_interval_seconds

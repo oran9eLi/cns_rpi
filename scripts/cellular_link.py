@@ -11,7 +11,7 @@ import re
 from typing import Optional
 
 
-DEFAULT_PROBE_TARGETS = ("112.124.52.232", "119.29.29.29")
+DEFAULT_PROBE_TARGETS = ("112.124.52.232",)
 
 
 class LinkState(enum.Enum):
@@ -47,6 +47,7 @@ class CellularConfig:
     probe_interval_seconds: int = 10
     quality_probe_interval_seconds: int = 5
     offline_failure_threshold: int = 3
+    degraded_failure_threshold: int = 2
     online_success_threshold: int = 2
     signal_sample_interval_seconds: int = 30
     redial_attempts_before_reset: int = 3
@@ -80,6 +81,9 @@ class CellularConfig:
                 offline_failure_threshold=_optional_positive_int(
                     value, "offline_failure_threshold", 3
                 ),
+                degraded_failure_threshold=_optional_positive_int(
+                    value, "degraded_failure_threshold", 2
+                ),
                 online_success_threshold=_optional_positive_int(
                     value, "online_success_threshold", 2
                 ),
@@ -102,6 +106,10 @@ class CellularConfig:
         if config.recovery_delay_max_seconds < config.recovery_delay_seconds:
             raise ValueError(
                 "recovery_delay_max_seconds不能小于recovery_delay_seconds"
+            )
+        if config.degraded_failure_threshold >= config.offline_failure_threshold:
+            raise ValueError(
+                "degraded_failure_threshold必须小于offline_failure_threshold"
             )
         return config
 
@@ -186,13 +194,24 @@ class LinkQualityWindow:
 
 
 class LinkStateMachine:
-    """对双目标探测结果应用离线和上线迟滞。"""
+    """对业务入口探测结果应用降级、离线和上线迟滞。"""
 
-    def __init__(self, offline_threshold: int, online_threshold: int):
-        if offline_threshold <= 0 or online_threshold <= 0:
+    def __init__(
+        self,
+        offline_threshold: int,
+        online_threshold: int,
+        degraded_threshold: int = 2,
+    ):
+        if (
+            offline_threshold <= 0
+            or online_threshold <= 0
+            or degraded_threshold <= 0
+            or degraded_threshold >= offline_threshold
+        ):
             raise ValueError("状态迟滞阈值必须为正整数")
         self._offline_threshold = offline_threshold
         self._online_threshold = online_threshold
+        self._degraded_threshold = degraded_threshold
         self._failure_count = 0
         self._success_count = 0
         self.state = LinkState.UNKNOWN
@@ -209,11 +228,12 @@ class LinkStateMachine:
             self.state = LinkState.OFFLINE
             return self.state
 
-        all_reachable = bool(target_results) and all(target_results)
-        any_reachable = any(target_results)
-        if all_reachable:
+        reachable = bool(target_results) and target_results[0]
+        if reachable:
             self._failure_count = 0
             self._success_count += 1
+            if self.state == LinkState.ONLINE:
+                return self.state
             if self._success_count >= self._online_threshold:
                 self.state = LinkState.ONLINE
             elif self.state not in (LinkState.RECOVERING, LinkState.UNKNOWN):
@@ -221,16 +241,16 @@ class LinkStateMachine:
             return self.state
 
         self._success_count = 0
-        if any_reachable:
-            self._failure_count = 0
-            self.state = LinkState.DEGRADED
-            return self.state
-
         self._failure_count += 1
         if self._failure_count >= self._offline_threshold:
             self.state = LinkState.OFFLINE
-        else:
+        elif (
+            self._failure_count >= self._degraded_threshold
+            or self.state != LinkState.ONLINE
+        ):
             self.state = LinkState.DEGRADED
+        else:
+            self.state = LinkState.ONLINE
         return self.state
 
 

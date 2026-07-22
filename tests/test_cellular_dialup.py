@@ -14,7 +14,6 @@ from scripts.cellular_dialup import (
     collect_radio_metrics,
     probe_interface,
     probe_latency_ms,
-    probe_target,
     write_snapshot_atomic,
 )
 from scripts.cellular_link import (
@@ -59,33 +58,6 @@ class RuntimeAdapterTest(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertIn("用法:", result.stderr)
         self.assertNotIn("ModuleNotFoundError", result.stderr)
-
-    def test_probe_target_binds_selected_interface(self):
-        runner = mock.Mock(
-            return_value=subprocess.CompletedProcess([], 0, "", "")
-        )
-
-        self.assertTrue(
-            probe_target("usb0", "112.124.52.232", runner=runner)
-        )
-        self.assertEqual(
-            runner.call_args.args[0],
-            [
-                "ping",
-                "-I",
-                "usb0",
-                "-c",
-                "1",
-                "-W",
-                "2",
-                "112.124.52.232",
-            ],
-        )
-
-    def test_probe_target_reports_timeout_as_unreachable(self):
-        runner = mock.Mock(side_effect=subprocess.TimeoutExpired("ping", 4))
-
-        self.assertFalse(probe_target("usb0", "119.29.29.29", runner=runner))
 
     def test_probe_latency_parses_rtt_and_binds_selected_interface(self):
         runner = mock.Mock(
@@ -253,7 +225,6 @@ class CellularDaemonTest(unittest.TestCase):
         dependencies = {
             "dialer": mock.Mock(return_value=True),
             "interface_probe": mock.Mock(return_value=self.online_interface),
-            "target_probe": mock.Mock(return_value=True),
             "latency_probe": mock.Mock(return_value=42.7),
             "quality_collector": mock.Mock(
                 return_value=mock.Mock(
@@ -305,7 +276,7 @@ class CellularDaemonTest(unittest.TestCase):
 
         self.assertEqual(dependencies["quality_collector"].call_count, 2)
 
-    def test_latency_is_sampled_every_five_seconds_without_accelerating_link_probe(self):
+    def test_latency_probe_is_reused_by_ten_second_link_evaluation(self):
         daemon, dependencies = self.build_daemon()
 
         self.assertEqual(daemon.run_once(0), 5)
@@ -313,23 +284,24 @@ class CellularDaemonTest(unittest.TestCase):
         self.assertEqual(daemon.run_once(10), 15)
 
         self.assertEqual(dependencies["latency_probe"].call_count, 3)
-        self.assertEqual(dependencies["target_probe"].call_count, 4)
         latest = dependencies["snapshot_writer"].call_args.args[1]
+        self.assertEqual(latest.link_state, LinkState.ONLINE)
         self.assertEqual(latest.latency_ms, 42.7)
         self.assertEqual(latest.packet_loss_percent, 0.0)
 
-    def test_latency_probe_failure_only_updates_loss_statistics(self):
-        daemon, dependencies = self.build_daemon(
-            latency_probe=mock.Mock(return_value=None)
-        )
+    def test_single_failed_state_sample_keeps_online_and_does_not_set_error(self):
+        daemon, dependencies = self.build_daemon()
 
         daemon.run_once(0)
         daemon.run_once(5)
         daemon.run_once(10)
+        dependencies["latency_probe"].return_value = None
+        daemon.run_once(15)
+        daemon.run_once(20)
 
         latest = dependencies["snapshot_writer"].call_args.args[1]
-        self.assertIsNone(latest.latency_ms)
-        self.assertEqual(latest.packet_loss_percent, 100.0)
+        self.assertEqual(latest.latency_ms, 42.7)
+        self.assertEqual(latest.packet_loss_percent, 40.0)
         self.assertIsNone(latest.last_error)
         self.assertEqual(latest.link_state, LinkState.ONLINE)
 
@@ -347,20 +319,19 @@ class CellularDaemonTest(unittest.TestCase):
     def test_offline_recovery_resets_module_after_three_failed_redials(self):
         offline_config = dataclasses.replace(
             self.config,
-            offline_failure_threshold=1,
+            degraded_failure_threshold=1,
+            offline_failure_threshold=2,
             online_success_threshold=1,
             recovery_delay_seconds=15,
             recovery_delay_max_seconds=300,
         )
         dialer = mock.Mock(side_effect=[True, False, False, False])
-        target_probe = mock.Mock(return_value=False)
         snapshot_writer = mock.Mock()
         daemon = CellularDaemon(
             offline_config,
             snapshot_path=pathlib.Path("/run/cns-rpi/cellular_status.json"),
             dialer=dialer,
             interface_probe=mock.Mock(return_value=self.online_interface),
-            target_probe=target_probe,
             latency_probe=mock.Mock(return_value=None),
             quality_collector=mock.Mock(return_value=None),
             module_resetter=mock.Mock(return_value=True),
@@ -372,7 +343,7 @@ class CellularDaemonTest(unittest.TestCase):
             state_logger=mock.Mock(),
         )
 
-        for now in range(0, 50, 5):
+        for now in range(0, 60, 5):
             daemon.run_once(now)
 
         self.assertEqual(dialer.call_count, 4)
@@ -397,13 +368,16 @@ class CellularDaemonTest(unittest.TestCase):
         )
 
     def test_invalid_system_time_does_not_generate_recovery_timestamp(self):
-        config = dataclasses.replace(self.config, offline_failure_threshold=1)
+        config = dataclasses.replace(
+            self.config,
+            degraded_failure_threshold=1,
+            offline_failure_threshold=2,
+        )
         daemon = CellularDaemon(
             config,
             snapshot_path=pathlib.Path("/run/cns-rpi/cellular_status.json"),
             dialer=mock.Mock(side_effect=[True, False]),
             interface_probe=mock.Mock(return_value=self.online_interface),
-            target_probe=mock.Mock(return_value=False),
             latency_probe=mock.Mock(return_value=None),
             quality_collector=mock.Mock(return_value=None),
             module_resetter=mock.Mock(return_value=True),
@@ -416,24 +390,28 @@ class CellularDaemonTest(unittest.TestCase):
         )
 
         daemon.run_once(0)
+        daemon.run_once(5)
+        daemon.run_once(10)
 
         self.assertIsNone(daemon.last_recover_at)
 
     def test_successful_redial_is_verified_before_another_redial(self):
         config = dataclasses.replace(
             self.config,
-            offline_failure_threshold=1,
+            degraded_failure_threshold=1,
+            offline_failure_threshold=2,
             online_success_threshold=1,
         )
         dialer = mock.Mock(side_effect=[True, True])
-        target_probe = mock.Mock(side_effect=[False, False, True, True])
+        latency_probe = mock.Mock(
+            side_effect=[None, None, None, 42.0, 42.0]
+        )
         daemon = CellularDaemon(
             config,
             snapshot_path=pathlib.Path("/run/cns-rpi/cellular_status.json"),
             dialer=dialer,
             interface_probe=mock.Mock(return_value=self.online_interface),
-            target_probe=target_probe,
-            latency_probe=mock.Mock(return_value=None),
+            latency_probe=latency_probe,
             quality_collector=mock.Mock(return_value=None),
             module_resetter=mock.Mock(return_value=True),
             snapshot_writer=mock.Mock(),
@@ -447,6 +425,8 @@ class CellularDaemonTest(unittest.TestCase):
         self.assertEqual(daemon.run_once(0), 5)
         self.assertEqual(daemon.run_once(5), 10)
         self.assertEqual(daemon.run_once(10), 15)
+        self.assertEqual(daemon.run_once(15), 20)
+        self.assertEqual(daemon.run_once(20), 25)
 
         self.assertEqual(dialer.call_count, 2)
         self.assertEqual(daemon.state_machine.state, LinkState.ONLINE)
@@ -454,7 +434,8 @@ class CellularDaemonTest(unittest.TestCase):
     def test_recovering_snapshot_is_written_before_blocking_redial(self):
         config = dataclasses.replace(
             self.config,
-            offline_failure_threshold=1,
+            degraded_failure_threshold=1,
+            offline_failure_threshold=2,
             online_success_threshold=1,
         )
         snapshot_writer = mock.Mock()
@@ -466,7 +447,7 @@ class CellularDaemonTest(unittest.TestCase):
             dial_count += 1
             if dial_count == 1:
                 return True
-            self.assertEqual(snapshot_writer.call_count, 1)
+            self.assertGreaterEqual(snapshot_writer.call_count, 1)
             snapshot = snapshot_writer.call_args.args[1]
             self.assertEqual(snapshot.link_state, LinkState.RECOVERING)
             self.assertEqual(snapshot.recover_count, 1)
@@ -477,7 +458,6 @@ class CellularDaemonTest(unittest.TestCase):
             snapshot_path=pathlib.Path("/run/cns-rpi/cellular_status.json"),
             dialer=dialer,
             interface_probe=mock.Mock(return_value=self.online_interface),
-            target_probe=mock.Mock(return_value=False),
             latency_probe=mock.Mock(return_value=None),
             quality_collector=mock.Mock(return_value=None),
             module_resetter=mock.Mock(return_value=True),
@@ -490,6 +470,8 @@ class CellularDaemonTest(unittest.TestCase):
         )
 
         daemon.run_once(0)
+        daemon.run_once(5)
+        daemon.run_once(10)
 
 
 if __name__ == "__main__":
