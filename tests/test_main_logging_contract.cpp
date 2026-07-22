@@ -44,6 +44,8 @@ TEST_CASE("主程序只编排Logger并在遥测发布成功后记录同一JSON")
   CHECK(text.find("void LogJsonPayload(") == std::string::npos);
   CHECK(text.find("dump(2)") == std::string::npos);
   CHECK(text.find("LogPublishedTelemetry") != std::string::npos);
+  CHECK(text.find("BuildStartupSummary(*app_config, config_path)") != std::string::npos);
+  CHECK(text.find("cns_rpi M3c 启动") == std::string::npos);
 
   CHECK(text.find("帧只更新 state::StateStore") != std::string::npos);
   CHECK(text.find("日志格式和输出目标由 logging::Logger 独立负责") != std::string::npos);

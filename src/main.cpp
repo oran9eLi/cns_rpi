@@ -28,6 +28,7 @@
 #include "cellular/cellular_status.hpp"
 #include "common/mavlink.h"
 #include "config/app_config.hpp"
+#include "config/startup_summary.hpp"
 #include "config_command/config_store.hpp"
 #include "config_command/command_parser.hpp"
 #include "config_command/command_processor.hpp"
@@ -130,8 +131,7 @@ int main(int argc, char** argv) {
     return EXIT_FAILURE;
   }
 
-  (*logger)->Info("cns_rpi M3c 启动，串口配置=" + app_config->serial.device +
-                  " 波特率=" + std::to_string(app_config->serial.baud));
+  (*logger)->Info(config::BuildStartupSummary(*app_config, config_path));
 
   state::StateStore state_store;
   if (auto serial = protocol::ReadRpiSerial()) {

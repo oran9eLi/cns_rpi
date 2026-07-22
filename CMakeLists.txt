@@ -23,6 +23,7 @@ add_library(cns_rpi_core
     src/uart/mavlink_link.cpp
     src/uart/mavlink_port_discovery.cpp
     src/config/app_config.cpp
+    src/config/startup_summary.cpp
     src/state/state_store.cpp
     src/protocol/telemetry_decoder.cpp
     src/protocol/extension_decoder.cpp
@@ -81,6 +82,10 @@ add_test(NAME mavlink_port_discovery COMMAND test_mavlink_port_discovery)
 add_executable(test_app_config tests/test_app_config.cpp)
 target_link_libraries(test_app_config PRIVATE cns_rpi_core)
 add_test(NAME app_config COMMAND test_app_config)
+
+add_executable(test_startup_summary tests/test_startup_summary.cpp)
+target_link_libraries(test_startup_summary PRIVATE cns_rpi_core)
+add_test(NAME startup_summary COMMAND test_startup_summary)
 
 add_executable(test_logger tests/test_logger.cpp)
 target_link_libraries(test_logger PRIVATE cns_rpi_core)
