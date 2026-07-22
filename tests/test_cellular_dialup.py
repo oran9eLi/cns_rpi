@@ -1,11 +1,14 @@
+import dataclasses
 import json
 import pathlib
 import subprocess
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from unittest import mock
 
 from scripts.cellular_dialup import (
+    CellularDaemon,
     InterfaceStatus,
     collect_radio_metrics,
     probe_interface,
@@ -13,6 +16,7 @@ from scripts.cellular_dialup import (
     write_snapshot_atomic,
 )
 from scripts.cellular_link import (
+    CellularConfig,
     CellularSnapshot,
     LinkDiagnostics,
     LinkState,
@@ -161,6 +165,198 @@ class RadioCollectionTest(unittest.TestCase):
         self.assertIsNone(sample.access_technology)
         self.assertIsNone(sample.rssi_dbm)
         self.assertEqual(sample.error, "COPS、QENG、CSQ查询失败")
+
+
+class CellularDaemonTest(unittest.TestCase):
+    def setUp(self):
+        self.config = CellularConfig.from_json(
+            {
+                "apn": "CMMTM5GDCDW.JS",
+                "cid": 1,
+                "usb_interface_number": "05",
+                "at_port_wait_seconds": 30,
+                "interface_name": "usb0",
+                "probe_interval_seconds": 10,
+                "signal_sample_interval_seconds": 30,
+            }
+        )
+        self.online_interface = InterfaceStatus(
+            interface_present=True,
+            carrier_up=True,
+            has_ip_address=True,
+            has_default_route=True,
+            ip_address="100.77.73.48",
+            tx_bytes=123,
+            rx_bytes=456,
+        )
+
+    def build_daemon(self, **overrides):
+        dependencies = {
+            "dialer": mock.Mock(return_value=True),
+            "interface_probe": mock.Mock(return_value=self.online_interface),
+            "target_probe": mock.Mock(return_value=True),
+            "quality_collector": mock.Mock(
+                return_value=mock.Mock(
+                    operator="China Mobile",
+                    access_technology="NR5G-SA",
+                    rsrp_dbm=-87,
+                    rsrq_db=-10,
+                    sinr_db=-3,
+                    rssi_dbm=-75,
+                    error=None,
+                )
+            ),
+            "module_resetter": mock.Mock(return_value=True),
+            "snapshot_writer": mock.Mock(),
+            "metadata_loader": mock.Mock(return_value=(0, None)),
+            "wall_clock": mock.Mock(
+                return_value=datetime(2026, 7, 22, 15, 30, tzinfo=timezone.utc)
+            ),
+            "state_logger": mock.Mock(),
+        }
+        dependencies.update(overrides)
+        daemon = CellularDaemon(
+            self.config,
+            snapshot_path=pathlib.Path("/run/cns-rpi/cellular_status.json"),
+            **dependencies,
+        )
+        return daemon, dependencies
+
+    def test_initial_dial_is_not_repeated_while_link_is_usable(self):
+        daemon, dependencies = self.build_daemon()
+
+        self.assertEqual(daemon.run_once(0), 10)
+        self.assertEqual(daemon.run_once(10), 20)
+
+        dependencies["dialer"].assert_called_once_with(self.config)
+        self.assertEqual(dependencies["quality_collector"].call_count, 1)
+        latest = dependencies["snapshot_writer"].call_args.args[1]
+        self.assertEqual(latest.link_state, LinkState.ONLINE)
+
+    def test_quality_is_sampled_at_independent_interval(self):
+        daemon, dependencies = self.build_daemon()
+
+        daemon.run_once(0)
+        daemon.run_once(10)
+        daemon.run_once(20)
+        daemon.run_once(30)
+
+        self.assertEqual(dependencies["quality_collector"].call_count, 2)
+
+    def test_unavailable_at_port_marks_module_absent(self):
+        daemon, dependencies = self.build_daemon(
+            quality_collector=mock.Mock(return_value=None)
+        )
+
+        daemon.run_once(0)
+
+        latest = dependencies["snapshot_writer"].call_args.args[1]
+        self.assertFalse(latest.present)
+        self.assertEqual(latest.last_error, "无线质量查询失败")
+
+    def test_offline_recovery_resets_module_after_three_failed_redials(self):
+        offline_config = dataclasses.replace(
+            self.config,
+            offline_failure_threshold=1,
+            online_success_threshold=1,
+            recovery_delay_seconds=15,
+            recovery_delay_max_seconds=300,
+        )
+        dialer = mock.Mock(side_effect=[True, False, False, False])
+        target_probe = mock.Mock(return_value=False)
+        snapshot_writer = mock.Mock()
+        daemon = CellularDaemon(
+            offline_config,
+            snapshot_path=pathlib.Path("/run/cns-rpi/cellular_status.json"),
+            dialer=dialer,
+            interface_probe=mock.Mock(return_value=self.online_interface),
+            target_probe=target_probe,
+            quality_collector=mock.Mock(return_value=None),
+            module_resetter=mock.Mock(return_value=True),
+            snapshot_writer=snapshot_writer,
+            metadata_loader=mock.Mock(return_value=(0, None)),
+            wall_clock=mock.Mock(
+                return_value=datetime(2026, 7, 22, 15, 30, tzinfo=timezone.utc)
+            ),
+            state_logger=mock.Mock(),
+        )
+
+        self.assertEqual(daemon.run_once(0), 15)
+        self.assertEqual(daemon.run_once(15), 45)
+        self.assertEqual(daemon.run_once(45), 105)
+
+        self.assertEqual(dialer.call_count, 4)
+        daemon.module_resetter.assert_called_once_with(offline_config)
+        latest = snapshot_writer.call_args.args[1]
+        self.assertEqual(latest.recover_count, 1)
+        self.assertEqual(latest.link_state, LinkState.RECOVERING)
+
+    def test_recovery_metadata_continues_after_service_restart(self):
+        daemon, dependencies = self.build_daemon(
+            metadata_loader=mock.Mock(
+                return_value=(4, "2026-07-22T14:00:00.000+08:00")
+            )
+        )
+
+        daemon.run_once(0)
+
+        latest = dependencies["snapshot_writer"].call_args.args[1]
+        self.assertEqual(latest.recover_count, 4)
+        self.assertEqual(
+            latest.last_recover_at, "2026-07-22T14:00:00.000+08:00"
+        )
+
+    def test_invalid_system_time_does_not_generate_recovery_timestamp(self):
+        config = dataclasses.replace(self.config, offline_failure_threshold=1)
+        daemon = CellularDaemon(
+            config,
+            snapshot_path=pathlib.Path("/run/cns-rpi/cellular_status.json"),
+            dialer=mock.Mock(side_effect=[True, False]),
+            interface_probe=mock.Mock(return_value=self.online_interface),
+            target_probe=mock.Mock(return_value=False),
+            quality_collector=mock.Mock(return_value=None),
+            module_resetter=mock.Mock(return_value=True),
+            snapshot_writer=mock.Mock(),
+            metadata_loader=mock.Mock(return_value=(0, None)),
+            wall_clock=mock.Mock(
+                return_value=datetime(2024, 1, 1, tzinfo=timezone.utc)
+            ),
+            state_logger=mock.Mock(),
+        )
+
+        daemon.run_once(0)
+
+        self.assertIsNone(daemon.last_recover_at)
+
+    def test_successful_redial_is_verified_before_another_redial(self):
+        config = dataclasses.replace(
+            self.config,
+            offline_failure_threshold=1,
+            online_success_threshold=1,
+        )
+        dialer = mock.Mock(side_effect=[True, True])
+        target_probe = mock.Mock(side_effect=[False, False, True, True])
+        daemon = CellularDaemon(
+            config,
+            snapshot_path=pathlib.Path("/run/cns-rpi/cellular_status.json"),
+            dialer=dialer,
+            interface_probe=mock.Mock(return_value=self.online_interface),
+            target_probe=target_probe,
+            quality_collector=mock.Mock(return_value=None),
+            module_resetter=mock.Mock(return_value=True),
+            snapshot_writer=mock.Mock(),
+            metadata_loader=mock.Mock(return_value=(0, None)),
+            wall_clock=mock.Mock(
+                return_value=datetime(2026, 7, 22, tzinfo=timezone.utc)
+            ),
+            state_logger=mock.Mock(),
+        )
+
+        self.assertEqual(daemon.run_once(0), 10)
+        self.assertEqual(daemon.run_once(10), 20)
+
+        self.assertEqual(dialer.call_count, 2)
+        self.assertEqual(daemon.state_machine.state, LinkState.ONLINE)
 
 
 if __name__ == "__main__":

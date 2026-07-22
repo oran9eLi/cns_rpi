@@ -65,6 +65,14 @@
     "usb_interface_number": "05",
     "at_port_wait_seconds": 30,
     "interface_name": "usb0",
-    "heartbeat_interval_ms": 1000
+    "heartbeat_interval_ms": 1000,
+    "probe_targets": ["112.124.52.232", "119.29.29.29"],
+    "probe_interval_seconds": 10,
+    "offline_failure_threshold": 3,
+    "online_success_threshold": 2,
+    "signal_sample_interval_seconds": 30,
+    "redial_attempts_before_reset": 3,
+    "recovery_delay_seconds": 15,
+    "recovery_delay_max_seconds": 300
   }
 }

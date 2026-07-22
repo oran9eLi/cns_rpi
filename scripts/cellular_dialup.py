@@ -1,22 +1,19 @@
 #!/usr/bin/env python3
-"""
-scripts/cellular_dialup.py —— 5G模块开机拨号脚本。
+"""RM500U 首次拨号、链路监测、质量采集和分级自恢复服务。
 
-用途：把 docs/5G模块拨号验证.md 里手动敲的AT命令序列(AT+CGDCONT/AT+CGACT/
-AT+QNETDEVCTL)自动化，由 systemd/cellular-dialup.service 在开机时跑一次。
-
-跟 cns_rpi C++ 主程序完全独立(不同进程、不同语言、不进CMake构建)，只共享
-config/config.json 里新增的 "cellular" 节。
-
-设计依据：docs/superpowers/specs/2026-07-09-cellular-dialup-design.md。
+该进程是 AT 口的唯一所有者，通过状态快照向 cns_rpi C++ 主程序提供 5G
+链路信息。设计依据见
+docs/superpowers/specs/2026-07-22-5g-link-recovery-quality-report-design.md。
 """
 
 import dataclasses
+import datetime
 import glob
 import json
 import os
 import pathlib
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -25,6 +22,12 @@ from typing import Optional
 import serial
 
 from scripts.cellular_link import (
+    CellularConfig,
+    CellularSnapshot,
+    LinkDiagnostics,
+    LinkState,
+    LinkStateMachine,
+    RecoveryBackoff,
     parse_cops,
     parse_csq,
     parse_qeng,
@@ -35,7 +38,6 @@ AT_BAUDRATE = 115200
 AT_COMMAND_TIMEOUT_SECONDS = 5
 CARRIER_WAIT_SECONDS = 10
 NCM_NETCARD_INDEX = 0
-NCM_IFACE_NAME = "usb0"
 
 _CGDCONT_LINE_RE = re.compile(r'^\+CGDCONT:\s*(\d+),"([^"]*)","([^"]*)"')
 _CGACT_LINE_RE = re.compile(r'^\+CGACT:\s*(\d+),(\d+)')
@@ -77,18 +79,10 @@ class RadioSample:
 
 
 def load_cellular_config(path):
-    """读取config.json，取出cellular节。缺字段直接抛KeyError，脚本层面
-    在main()里统一捕获、打日志、退出非0，不做C++那边std::expected式的
-    细分错误类型——这是独立小脚本，不需要那么重的错误处理。"""
+    """读取并验证 config.json 的 cellular 配置节。"""
     with open(path, "r", encoding="utf-8") as f:
         root = json.load(f)
-    cellular = root["cellular"]
-    return {
-        "apn": cellular["apn"],
-        "cid": int(cellular["cid"]),
-        "usb_interface_number": cellular["usb_interface_number"],
-        "at_port_wait_seconds": int(cellular["at_port_wait_seconds"]),
-    }
+    return CellularConfig.from_json(root["cellular"])
 
 
 def parse_cgdcont_apn(lines, cid):
@@ -363,15 +357,15 @@ def dial_up(config):
     已经打印到stdout，不用异常传递失败原因——这是独立小脚本，退出码
     足够表达成败，不需要更复杂的错误类型)。
     """
-    port = find_at_port(config["usb_interface_number"], config["at_port_wait_seconds"])
+    port = find_at_port(config.usb_interface_number, config.at_port_wait_seconds)
     if port is None:
-        print(f"[cellular_dialup] 超时({config['at_port_wait_seconds']}秒)没找到AT口"
-              f"(interface_number={config['usb_interface_number']})")
+        print(f"[cellular_dialup] 在{config.at_port_wait_seconds}秒内未发现AT口"
+              f"(interface_number={config.usb_interface_number})")
         return False
     print(f"[cellular_dialup] 找到AT口: {port}")
 
-    cid = config["cid"]
-    apn = config["apn"]
+    cid = config.cid
+    apn = config.apn
 
     try:
         ser = serial.Serial(port, AT_BAUDRATE, timeout=1)
@@ -407,27 +401,280 @@ def dial_up(config):
             print("[cellular_dialup] AT+QNETDEVCTL 失败")
             return False
 
-    if not wait_for_carrier(NCM_IFACE_NAME):
-        print(f"[cellular_dialup] 等待{NCM_IFACE_NAME}出现LOWER_UP超时"
+    if not wait_for_carrier(config.interface_name):
+        print(f"[cellular_dialup] 等待{config.interface_name}出现LOWER_UP超时"
               f"({CARRIER_WAIT_SECONDS}秒)")
         return False
 
-    print(f"[cellular_dialup] 拨号成功，{NCM_IFACE_NAME}已出现载波，DHCP交由NetworkManager")
+    print(f"[cellular_dialup] 拨号成功，{config.interface_name}已出现载波，DHCP交由NetworkManager")
     return True
+
+
+def load_recovery_metadata(path):
+    """从本次启动的既有快照接续恢复次数和最近恢复时间。"""
+
+    try:
+        payload = json.loads(pathlib.Path(path).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError, TypeError):
+        return 0, None
+    recover_count = payload.get("recover_count", 0)
+    last_recover_at = payload.get("last_recover_at")
+    if isinstance(recover_count, bool) or not isinstance(recover_count, int):
+        recover_count = 0
+    if not isinstance(last_recover_at, str):
+        last_recover_at = None
+    return max(recover_count, 0), last_recover_at
+
+
+def collect_current_radio(config):
+    """动态发现 AT 口并执行一次无线质量采集。"""
+
+    port = find_at_port(config.usb_interface_number, 1)
+    if port is None:
+        return None
+    try:
+        with serial.Serial(port, AT_BAUDRATE, timeout=1) as ser:
+            return collect_radio_metrics(ser)
+    except serial.SerialException:
+        return None
+
+
+def reset_module(config):
+    """通过 CFUN 软重启 RM500U；USB 重新枚举由后续拨号流程处理。"""
+
+    port = find_at_port(config.usb_interface_number, config.at_port_wait_seconds)
+    if port is None:
+        return False
+    try:
+        with serial.Serial(port, AT_BAUDRATE, timeout=1) as ser:
+            ok, _ = send_at_command(ser, "AT+CFUN=0,1")
+            return ok
+    except serial.SerialException:
+        return False
+
+
+class CellularDaemon:
+    """负责首次拨号、持续监测、分级恢复和状态快照。"""
+
+    def __init__(
+        self,
+        config,
+        snapshot_path,
+        *,
+        dialer=dial_up,
+        interface_probe=probe_interface,
+        target_probe=probe_target,
+        quality_collector=collect_current_radio,
+        module_resetter=reset_module,
+        snapshot_writer=write_snapshot_atomic,
+        metadata_loader=load_recovery_metadata,
+        wall_clock=lambda: datetime.datetime.now().astimezone(),
+        state_logger=print,
+    ):
+        self.config = config
+        self.snapshot_path = pathlib.Path(snapshot_path)
+        self.dialer = dialer
+        self.interface_probe = interface_probe
+        self.target_probe = target_probe
+        self.quality_collector = quality_collector
+        self.module_resetter = module_resetter
+        self.snapshot_writer = snapshot_writer
+        self.wall_clock = wall_clock
+        self.state_logger = state_logger
+
+        self.state_machine = LinkStateMachine(
+            config.offline_failure_threshold,
+            config.online_success_threshold,
+        )
+        self.backoff = RecoveryBackoff(
+            config.recovery_delay_seconds,
+            config.recovery_delay_max_seconds,
+        )
+        self.recover_count, self.last_recover_at = metadata_loader(
+            self.snapshot_path
+        )
+        self.last_error = None
+        self.radio_sample = None
+        self.interface_status = InterfaceStatus()
+        self.present = False
+        self.initial_dial_pending = True
+        self.recovery_active = False
+        self.redial_attempts = 0
+        self.next_quality_at = 0.0
+        self.next_action_at = 0.0
+        self.stop_requested = False
+        self._last_logged_state = None
+
+    def request_stop(self, _signum=None, _frame=None):
+        self.stop_requested = True
+
+    def run(self, monotonic=time.monotonic, sleeper=time.sleep):
+        """持续运行至 systemd 发送终止信号。"""
+
+        while not self.stop_requested:
+            now = monotonic()
+            next_action = self.run_once(now)
+            sleeper(max(0.0, next_action - monotonic()))
+
+    def run_once(self, now):
+        """执行一个可测试的状态机步进并返回下一次运行时刻。"""
+
+        if now < self.next_action_at:
+            return self.next_action_at
+
+        if self.initial_dial_pending:
+            self.initial_dial_pending = False
+            if not self.dialer(self.config):
+                self.present = False
+                self.last_error = "5G首次拨号失败"
+                self._start_recovery()
+                self.next_action_at = now + self.backoff.next_delay()
+                self._write_snapshot()
+                return self.next_action_at
+            self.present = True
+
+        if self.recovery_active and self.redial_attempts > 0:
+            return self._perform_recovery(now)
+
+        self.interface_status = self.interface_probe(self.config.interface_name)
+        if not self.interface_status.interface_present:
+            self.present = False
+        target_results = []
+        if self.interface_status.basic_ready:
+            target_results = [
+                self.target_probe(self.config.interface_name, target)
+                for target in self.config.probe_targets
+            ]
+        state = self.state_machine.observe(
+            self.interface_status.basic_ready,
+            target_results,
+        )
+
+        if now >= self.next_quality_at and self.present:
+            sample = self.quality_collector(self.config)
+            if sample is not None:
+                self.radio_sample = sample
+                self.last_error = sample.error
+                self.present = True
+            else:
+                self.present = False
+                self.last_error = "无线质量查询失败"
+            self.next_quality_at = now + self.config.signal_sample_interval_seconds
+
+        if state == LinkState.OFFLINE:
+            if not self.recovery_active:
+                self._start_recovery()
+            return self._perform_recovery(now)
+
+        if state in (LinkState.ONLINE, LinkState.DEGRADED):
+            self.recovery_active = False
+            self.redial_attempts = 0
+            self.backoff.reset()
+            if state == LinkState.ONLINE and (
+                self.radio_sample is None or self.radio_sample.error is None
+            ):
+                self.last_error = None
+
+        self.next_action_at = now + self.config.probe_interval_seconds
+        self._write_snapshot()
+        return self.next_action_at
+
+    def _start_recovery(self):
+        self.recovery_active = True
+        self.redial_attempts = 0
+        self.recover_count += 1
+        self.last_recover_at = _format_trusted_time(self.wall_clock())
+        self.state_machine.mark_recovering()
+        self._log_state_change(LinkState.RECOVERING)
+
+    def _perform_recovery(self, now):
+        self.state_machine.mark_recovering()
+        self.redial_attempts += 1
+        dial_succeeded = self.dialer(self.config)
+        if dial_succeeded:
+            self.present = True
+            self.last_error = None
+            self.redial_attempts = 0
+            self.next_action_at = now + self.config.probe_interval_seconds
+            self._write_snapshot()
+            return self.next_action_at
+
+        self.last_error = (
+            f"第{self.redial_attempts}次5G重新拨号失败"
+        )
+        if self.redial_attempts >= self.config.redial_attempts_before_reset:
+            reset_succeeded = self.module_resetter(self.config)
+            self.present = False
+            self.redial_attempts = 0
+            self.last_error = (
+                "RM500U软重启已执行"
+                if reset_succeeded
+                else "RM500U软重启失败"
+            )
+
+        self.next_action_at = now + self.backoff.next_delay()
+        self._write_snapshot()
+        return self.next_action_at
+
+    def _write_snapshot(self):
+        sample = self.radio_sample
+        snapshot = CellularSnapshot(
+            present=self.present,
+            link_state=self.state_machine.state,
+            operator=(sample.operator if sample else None),
+            access_technology=(sample.access_technology if sample else None),
+            ip_address=self.interface_status.ip_address,
+            rsrp_dbm=(sample.rsrp_dbm if sample else None),
+            rsrq_db=(sample.rsrq_db if sample else None),
+            sinr_db=(sample.sinr_db if sample else None),
+            rssi_dbm=(sample.rssi_dbm if sample else None),
+            tx_bytes=self.interface_status.tx_bytes,
+            rx_bytes=self.interface_status.rx_bytes,
+            recover_count=self.recover_count,
+            last_recover_at=self.last_recover_at,
+            last_error=self.last_error,
+            diagnostics=LinkDiagnostics(
+                interface_present=self.interface_status.interface_present,
+                carrier_up=self.interface_status.carrier_up,
+                has_ip_address=self.interface_status.has_ip_address,
+                has_default_route=self.interface_status.has_default_route,
+            ),
+        )
+        self.snapshot_writer(self.snapshot_path, snapshot)
+        self._log_state_change(snapshot.link_state)
+
+    def _log_state_change(self, state):
+        if state == self._last_logged_state:
+            return
+        self.state_logger(f"[cellular_dialup] 5G链路状态变更: {state.value}")
+        self._last_logged_state = state
+
+
+def _format_trusted_time(value):
+    if value.year < 2025:
+        return None
+    return value.isoformat(timespec="milliseconds")
 
 
 def main():
     if len(sys.argv) != 2:
         print(f"用法: {sys.argv[0]} <config.json路径>", file=sys.stderr)
-        sys.exit(2)
+        return 2
     try:
         config = load_cellular_config(sys.argv[1])
-    except (OSError, KeyError, ValueError) as exc:
+    except (OSError, KeyError, ValueError, json.JSONDecodeError) as exc:
         print(f"[cellular_dialup] 读取配置失败: {exc}", file=sys.stderr)
-        sys.exit(1)
-    success = dial_up(config)
-    sys.exit(0 if success else 1)
+        return 1
+
+    daemon = CellularDaemon(
+        config,
+        snapshot_path=pathlib.Path("/run/cns-rpi/cellular_status.json"),
+    )
+    signal.signal(signal.SIGTERM, daemon.request_stop)
+    signal.signal(signal.SIGINT, daemon.request_stop)
+    daemon.run()
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

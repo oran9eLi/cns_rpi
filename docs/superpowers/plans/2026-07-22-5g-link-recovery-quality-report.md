@@ -11,6 +11,7 @@
 ## Global Constraints
 
 - 所有文档、回答、代码注释和运行日志使用中文；Git 提交前缀使用英文，说明使用中文。
+- 新增或修改的日志、注释和文档采用专业、客观的表述，避免口语化措辞。
 - 设计依据：`docs/superpowers/specs/2026-07-22-5g-link-recovery-quality-report-design.md`。
 - RM500U 型号为 `RM500U-CNV`，实测固件为 `RM500UCNVAAR03A14M2G`。
 - 质量采集以 `AT+QENG="servingcell"` 和 `AT+CSQ` 为准，不使用实机返回失败的 `AT+QCSQ`。
