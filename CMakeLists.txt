@@ -177,3 +177,6 @@ target_compile_definitions(test_main_logging_contract PRIVATE SOURCE_DIR="${CMAK
 add_test(NAME main_logging_contract COMMAND test_main_logging_contract)
 add_test(NAME apply_config_helper
     COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_apply_config_helper.py)
+add_test(NAME cellular_link_python
+    COMMAND ${PYTHON3_EXECUTABLE} -m unittest -v tests.test_cellular_link)
+set_tests_properties(cellular_link_python PROPERTIES WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
