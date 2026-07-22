@@ -21,17 +21,30 @@ from typing import Optional
 
 import serial
 
-from scripts.cellular_link import (
-    CellularConfig,
-    CellularSnapshot,
-    LinkDiagnostics,
-    LinkState,
-    LinkStateMachine,
-    RecoveryBackoff,
-    parse_cops,
-    parse_csq,
-    parse_qeng,
-)
+if __package__:
+    from scripts.cellular_link import (
+        CellularConfig,
+        CellularSnapshot,
+        LinkDiagnostics,
+        LinkState,
+        LinkStateMachine,
+        RecoveryBackoff,
+        parse_cops,
+        parse_csq,
+        parse_qeng,
+    )
+else:
+    from cellular_link import (
+        CellularConfig,
+        CellularSnapshot,
+        LinkDiagnostics,
+        LinkState,
+        LinkStateMachine,
+        RecoveryBackoff,
+        parse_cops,
+        parse_csq,
+        parse_qeng,
+    )
 
 
 AT_BAUDRATE = 115200

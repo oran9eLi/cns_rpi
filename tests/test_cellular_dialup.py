@@ -2,6 +2,7 @@ import dataclasses
 import json
 import pathlib
 import subprocess
+import sys
 import tempfile
 import unittest
 from datetime import datetime, timezone
@@ -42,6 +43,22 @@ def sample_snapshot():
 
 
 class RuntimeAdapterTest(unittest.TestCase):
+    def test_script_entry_can_run_outside_repository_root(self):
+        script = pathlib.Path(__file__).parents[1] / "scripts" / "cellular_dialup.py"
+
+        result = subprocess.run(
+            [sys.executable, str(script)],
+            cwd="/tmp",
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("用法:", result.stderr)
+        self.assertNotIn("ModuleNotFoundError", result.stderr)
+
     def test_probe_target_binds_selected_interface(self):
         runner = mock.Mock(
             return_value=subprocess.CompletedProcess([], 0, "", "")
