@@ -31,6 +31,8 @@ constexpr std::string_view kCompleteSnapshot = R"({
   "rssi_dbm": -75,
   "tx_bytes": 123,
   "rx_bytes": 456,
+  "latency_ms": 42.7,
+  "packet_loss_percent": 8.3,
   "recover_count": 2,
   "last_recover_at": "2026-07-22T15:30:00.000+08:00",
   "last_error": null,
@@ -56,6 +58,8 @@ TEST_CASE("完整5G状态快照可以解析") {
   CHECK(snapshot.operator_name == "China Mobile");
   CHECK(snapshot.access_technology == "NR5G-SA");
   CHECK(snapshot.rsrp_dbm == -87);
+  CHECK(snapshot.latency_ms == doctest::Approx(42.7));
+  CHECK(snapshot.packet_loss_percent == doctest::Approx(8.3));
   CHECK(snapshot.recover_count == 2);
   CHECK(snapshot.diagnostics.has_default_route);
 }
@@ -99,5 +103,39 @@ TEST_CASE("公开遥测不包含内部诊断字段") {
   CHECK(json["link_state"] == "DEGRADED");
   CHECK(json["operator"] == "China Mobile");
   CHECK(json["last_error"].is_null());
+  CHECK(json["latency_ms"] == doctest::Approx(42.7));
+  CHECK(json["packet_loss_percent"] == doctest::Approx(8.3));
   CHECK_FALSE(json.contains("diagnostics"));
+}
+
+TEST_CASE("旧快照缺少链路质量字段时保持兼容") {
+  auto legacy = nlohmann::json::parse(kCompleteSnapshot);
+  legacy.erase("latency_ms");
+  legacy.erase("packet_loss_percent");
+  const auto path = WriteSnapshot(legacy.dump());
+  const auto now = std::filesystem::file_time_type::clock::now();
+  std::filesystem::last_write_time(path, now);
+
+  const auto snapshot = cellular::ReadStatusSnapshot(path, 30s, now);
+  const auto json = cellular::BuildPublicTelemetryJson(snapshot);
+
+  CHECK(snapshot.link_state == cellular::LinkState::kDegraded);
+  CHECK_FALSE(snapshot.latency_ms.has_value());
+  CHECK_FALSE(snapshot.packet_loss_percent.has_value());
+  CHECK(json["latency_ms"].is_null());
+  CHECK(json["packet_loss_percent"].is_null());
+}
+
+TEST_CASE("链路质量字段显式为null时保持兼容") {
+  auto value = nlohmann::json::parse(kCompleteSnapshot);
+  value["latency_ms"] = nullptr;
+  value["packet_loss_percent"] = nullptr;
+  const auto path = WriteSnapshot(value.dump());
+  const auto now = std::filesystem::file_time_type::clock::now();
+  std::filesystem::last_write_time(path, now);
+
+  const auto snapshot = cellular::ReadStatusSnapshot(path, 30s, now);
+
+  CHECK_FALSE(snapshot.latency_ms.has_value());
+  CHECK_FALSE(snapshot.packet_loss_percent.has_value());
 }

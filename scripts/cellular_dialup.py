@@ -26,6 +26,7 @@ if __package__:
         CellularConfig,
         CellularSnapshot,
         LinkDiagnostics,
+        LinkQualityWindow,
         LinkState,
         LinkStateMachine,
         RecoveryBackoff,
@@ -38,6 +39,7 @@ else:
         CellularConfig,
         CellularSnapshot,
         LinkDiagnostics,
+        LinkQualityWindow,
         LinkState,
         LinkStateMachine,
         RecoveryBackoff,
@@ -51,6 +53,7 @@ AT_BAUDRATE = 115200
 AT_COMMAND_TIMEOUT_SECONDS = 5
 CARRIER_WAIT_SECONDS = 10
 NCM_NETCARD_INDEX = 0
+QUALITY_PROBE_TARGET = "112.124.52.232"
 
 _CGDCONT_LINE_RE = re.compile(r'^\+CGDCONT:\s*(\d+),"([^"]*)","([^"]*)"')
 _CGACT_LINE_RE = re.compile(r'^\+CGACT:\s*(\d+),(\d+)')
@@ -206,6 +209,37 @@ def probe_target(interface_name, target, timeout_seconds=2, runner=subprocess.ru
     except (OSError, subprocess.TimeoutExpired):
         return False
     return result.returncode == 0
+
+
+def probe_latency_ms(
+    interface_name, target, timeout_seconds=2, runner=subprocess.run
+):
+    """强制经指定接口探测目标，成功时返回单次 ICMP 往返延迟。"""
+
+    command = [
+        "ping",
+        "-I",
+        interface_name,
+        "-c",
+        "1",
+        "-W",
+        str(timeout_seconds),
+        target,
+    ]
+    try:
+        result = runner(
+            command,
+            capture_output=True,
+            text=True,
+            timeout=timeout_seconds + 2,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    if result.returncode != 0:
+        return None
+    match = re.search(r"\btime=([0-9]+(?:\.[0-9]+)?)\s*ms\b", result.stdout)
+    return float(match.group(1)) if match else None
 
 
 def probe_interface(interface_name, net_root=pathlib.Path("/sys/class/net"),
@@ -477,6 +511,7 @@ class CellularDaemon:
         dialer=dial_up,
         interface_probe=probe_interface,
         target_probe=probe_target,
+        latency_probe=probe_latency_ms,
         quality_collector=collect_current_radio,
         module_resetter=reset_module,
         snapshot_writer=write_snapshot_atomic,
@@ -489,6 +524,7 @@ class CellularDaemon:
         self.dialer = dialer
         self.interface_probe = interface_probe
         self.target_probe = target_probe
+        self.latency_probe = latency_probe
         self.quality_collector = quality_collector
         self.module_resetter = module_resetter
         self.snapshot_writer = snapshot_writer
@@ -508,12 +544,14 @@ class CellularDaemon:
         )
         self.last_error = None
         self.radio_sample = None
+        self.link_quality = LinkQualityWindow(capacity=12)
         self.interface_status = InterfaceStatus()
         self.present = False
         self.initial_dial_pending = True
         self.recovery_active = False
         self.redial_attempts = 0
         self.next_quality_at = 0.0
+        self.next_latency_at = 0.0
         self.next_action_at = 0.0
         self.stop_requested = False
         self._last_logged_state = None
@@ -532,8 +570,18 @@ class CellularDaemon:
     def run_once(self, now):
         """执行一个可测试的状态机步进并返回下一次运行时刻。"""
 
-        if now < self.next_action_at:
-            return self.next_action_at
+        next_wakeup = min(self.next_action_at, self.next_latency_at)
+        if now < next_wakeup:
+            return next_wakeup
+
+        action_due = now >= self.next_action_at
+        latency_due = now >= self.next_latency_at
+
+        if not action_due:
+            if latency_due:
+                self._sample_link_quality(now)
+                self._write_snapshot()
+            return min(self.next_action_at, self.next_latency_at)
 
         if self.initial_dial_pending:
             self.initial_dial_pending = False
@@ -541,12 +589,18 @@ class CellularDaemon:
                 self.present = False
                 self.last_error = "5G首次拨号失败"
                 self._start_recovery()
+                if latency_due:
+                    self._sample_link_quality(now)
                 self.next_action_at = now + self.backoff.next_delay()
-                return self.next_action_at
+                self._write_snapshot()
+                return min(self.next_action_at, self.next_latency_at)
             self.present = True
 
         if self.recovery_active and self.redial_attempts > 0:
-            return self._perform_recovery(now)
+            if latency_due:
+                self._sample_link_quality(now)
+            self._perform_recovery(now)
+            return min(self.next_action_at, self.next_latency_at)
 
         self.interface_status = self.interface_probe(self.config.interface_name)
         if not self.interface_status.interface_present:
@@ -562,6 +616,9 @@ class CellularDaemon:
             target_results,
         )
 
+        if latency_due:
+            self._sample_link_quality(now)
+
         if now >= self.next_quality_at and self.present:
             sample = self.quality_collector(self.config)
             if sample is not None:
@@ -576,7 +633,8 @@ class CellularDaemon:
         if state == LinkState.OFFLINE:
             if not self.recovery_active:
                 self._start_recovery()
-            return self._perform_recovery(now)
+            self._perform_recovery(now)
+            return min(self.next_action_at, self.next_latency_at)
 
         if state in (LinkState.ONLINE, LinkState.DEGRADED):
             self.recovery_active = False
@@ -589,7 +647,17 @@ class CellularDaemon:
 
         self.next_action_at = now + self.config.probe_interval_seconds
         self._write_snapshot()
-        return self.next_action_at
+        return min(self.next_action_at, self.next_latency_at)
+
+    def _sample_link_quality(self, now):
+        latency_ms = self.latency_probe(
+            self.config.interface_name,
+            QUALITY_PROBE_TARGET,
+        )
+        self.link_quality.add(latency_ms)
+        self.next_latency_at = (
+            now + self.config.quality_probe_interval_seconds
+        )
 
     def _start_recovery(self):
         self.recovery_active = True
@@ -630,6 +698,7 @@ class CellularDaemon:
 
     def _write_snapshot(self):
         sample = self.radio_sample
+        latency_ms, packet_loss_percent = self.link_quality.snapshot()
         snapshot = CellularSnapshot(
             present=self.present,
             link_state=self.state_machine.state,
@@ -642,6 +711,8 @@ class CellularDaemon:
             rssi_dbm=(sample.rssi_dbm if sample else None),
             tx_bytes=self.interface_status.tx_bytes,
             rx_bytes=self.interface_status.rx_bytes,
+            latency_ms=latency_ms,
+            packet_loss_percent=packet_loss_percent,
             recover_count=self.recover_count,
             last_recover_at=self.last_recover_at,
             last_error=self.last_error,

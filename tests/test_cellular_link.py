@@ -2,6 +2,7 @@ import unittest
 
 from scripts.cellular_link import (
     CellularConfig,
+    LinkQualityWindow,
     LinkState,
     LinkStateMachine,
     RecoveryBackoff,
@@ -29,6 +30,7 @@ class CellularConfigTest(unittest.TestCase):
             ("112.124.52.232", "119.29.29.29"),
         )
         self.assertEqual(config.probe_interval_seconds, 10)
+        self.assertEqual(config.quality_probe_interval_seconds, 5)
         self.assertEqual(config.offline_failure_threshold, 3)
         self.assertEqual(config.online_success_threshold, 2)
         self.assertEqual(config.signal_sample_interval_seconds, 30)
@@ -43,6 +45,7 @@ class CellularConfigTest(unittest.TestCase):
     def test_invalid_interval_and_backoff_are_rejected(self):
         invalid_values = (
             ("probe_interval_seconds", 0),
+            ("quality_probe_interval_seconds", 0),
             ("offline_failure_threshold", 0),
             ("online_success_threshold", 0),
             ("signal_sample_interval_seconds", 0),
@@ -169,6 +172,33 @@ class LinkStateMachineTest(unittest.TestCase):
         )
         backoff.reset()
         self.assertEqual(backoff.next_delay(), 15)
+
+
+class LinkQualityWindowTest(unittest.TestCase):
+    def test_mixed_samples_report_average_latency_and_loss(self):
+        window = LinkQualityWindow(capacity=12)
+
+        window.add(10.0)
+        window.add(None)
+        window.add(20.0)
+
+        self.assertEqual(window.snapshot(), (15.0, 33.3))
+
+    def test_window_discards_oldest_sample(self):
+        window = LinkQualityWindow(capacity=12)
+        window.add(None)
+        for _ in range(12):
+            window.add(10.0)
+
+        self.assertEqual(window.snapshot(), (10.0, 0.0))
+
+    def test_empty_and_fully_lost_windows_have_explicit_semantics(self):
+        window = LinkQualityWindow(capacity=12)
+        self.assertEqual(window.snapshot(), (None, None))
+
+        window.add(None)
+        window.add(None)
+        self.assertEqual(window.snapshot(), (None, 100.0))
 
 
 if __name__ == "__main__":

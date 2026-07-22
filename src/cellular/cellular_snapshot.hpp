@@ -36,6 +36,8 @@ struct StatusSnapshot {
   std::optional<int> rssi_dbm;
   std::optional<std::uint64_t> tx_bytes;
   std::optional<std::uint64_t> rx_bytes;
+  std::optional<double> latency_ms;
+  std::optional<double> packet_loss_percent;
   std::uint64_t recover_count = 0;
   std::optional<std::string> last_recover_at;
   std::optional<std::string> last_error;

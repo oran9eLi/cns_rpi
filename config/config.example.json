@@ -70,6 +70,7 @@
     "status_snapshot_max_age_seconds": 30,
     "probe_targets": ["112.124.52.232", "119.29.29.29"],
     "probe_interval_seconds": 10,
+    "quality_probe_interval_seconds": 5,
     "offline_failure_threshold": 3,
     "online_success_threshold": 2,
     "signal_sample_interval_seconds": 30,

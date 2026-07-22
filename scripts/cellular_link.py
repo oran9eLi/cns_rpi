@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import csv
+import collections
 import dataclasses
 import enum
 import re
@@ -44,6 +45,7 @@ class CellularConfig:
     interface_name: str = "usb0"
     probe_targets: tuple[str, ...] = DEFAULT_PROBE_TARGETS
     probe_interval_seconds: int = 10
+    quality_probe_interval_seconds: int = 5
     offline_failure_threshold: int = 3
     online_success_threshold: int = 2
     signal_sample_interval_seconds: int = 30
@@ -71,6 +73,9 @@ class CellularConfig:
                 probe_targets=_parse_probe_targets(value),
                 probe_interval_seconds=_optional_positive_int(
                     value, "probe_interval_seconds", 10
+                ),
+                quality_probe_interval_seconds=_optional_positive_int(
+                    value, "quality_probe_interval_seconds", 5
                 ),
                 offline_failure_threshold=_optional_positive_int(
                     value, "offline_failure_threshold", 3
@@ -126,6 +131,8 @@ class CellularSnapshot:
     rssi_dbm: Optional[int] = None
     tx_bytes: Optional[int] = None
     rx_bytes: Optional[int] = None
+    latency_ms: Optional[float] = None
+    packet_loss_percent: Optional[float] = None
     recover_count: int = 0
     last_recover_at: Optional[str] = None
     last_error: Optional[str] = None
@@ -144,6 +151,8 @@ class CellularSnapshot:
             "rssi_dbm": self.rssi_dbm,
             "tx_bytes": self.tx_bytes,
             "rx_bytes": self.rx_bytes,
+            "latency_ms": self.latency_ms,
+            "packet_loss_percent": self.packet_loss_percent,
             "recover_count": self.recover_count,
             "last_recover_at": self.last_recover_at,
             "last_error": self.last_error,
@@ -151,6 +160,29 @@ class CellularSnapshot:
         if include_diagnostics:
             result["diagnostics"] = dataclasses.asdict(self.diagnostics)
         return result
+
+
+class LinkQualityWindow:
+    """保存固定数量的 RTT 样本并计算平均延迟与丢包率。"""
+
+    def __init__(self, capacity: int = 12):
+        if capacity <= 0:
+            raise ValueError("质量统计窗口容量必须为正整数")
+        self._samples = collections.deque(maxlen=capacity)
+
+    def add(self, latency_ms: Optional[float]) -> None:
+        self._samples.append(latency_ms)
+
+    def snapshot(self) -> tuple[Optional[float], Optional[float]]:
+        if not self._samples:
+            return None, None
+        successful = [value for value in self._samples if value is not None]
+        latency_ms = (
+            round(sum(successful) / len(successful), 1) if successful else None
+        )
+        lost = len(self._samples) - len(successful)
+        packet_loss_percent = round(lost * 100.0 / len(self._samples), 1)
+        return latency_ms, packet_loss_percent
 
 
 class LinkStateMachine:

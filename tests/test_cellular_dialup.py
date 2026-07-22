@@ -13,6 +13,7 @@ from scripts.cellular_dialup import (
     InterfaceStatus,
     collect_radio_metrics,
     probe_interface,
+    probe_latency_ms,
     probe_target,
     write_snapshot_atomic,
 )
@@ -85,6 +86,47 @@ class RuntimeAdapterTest(unittest.TestCase):
         runner = mock.Mock(side_effect=subprocess.TimeoutExpired("ping", 4))
 
         self.assertFalse(probe_target("usb0", "119.29.29.29", runner=runner))
+
+    def test_probe_latency_parses_rtt_and_binds_selected_interface(self):
+        runner = mock.Mock(
+            return_value=subprocess.CompletedProcess(
+                [],
+                0,
+                "64 bytes from 112.124.52.232: icmp_seq=1 ttl=51 time=42.7 ms\n",
+                "",
+            )
+        )
+
+        self.assertEqual(
+            probe_latency_ms("usb0", "112.124.52.232", runner=runner),
+            42.7,
+        )
+        self.assertEqual(
+            runner.call_args.args[0],
+            [
+                "ping",
+                "-I",
+                "usb0",
+                "-c",
+                "1",
+                "-W",
+                "2",
+                "112.124.52.232",
+            ],
+        )
+
+    def test_probe_latency_returns_none_on_failure(self):
+        failed = mock.Mock(
+            return_value=subprocess.CompletedProcess([], 1, "", "")
+        )
+        timeout = mock.Mock(side_effect=subprocess.TimeoutExpired("ping", 4))
+
+        self.assertIsNone(
+            probe_latency_ms("usb0", "112.124.52.232", runner=failed)
+        )
+        self.assertIsNone(
+            probe_latency_ms("usb0", "112.124.52.232", runner=timeout)
+        )
 
     def test_write_snapshot_atomically_replaces_complete_json(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -212,6 +254,7 @@ class CellularDaemonTest(unittest.TestCase):
             "dialer": mock.Mock(return_value=True),
             "interface_probe": mock.Mock(return_value=self.online_interface),
             "target_probe": mock.Mock(return_value=True),
+            "latency_probe": mock.Mock(return_value=42.7),
             "quality_collector": mock.Mock(
                 return_value=mock.Mock(
                     operator="China Mobile",
@@ -242,8 +285,9 @@ class CellularDaemonTest(unittest.TestCase):
     def test_initial_dial_is_not_repeated_while_link_is_usable(self):
         daemon, dependencies = self.build_daemon()
 
-        self.assertEqual(daemon.run_once(0), 10)
-        self.assertEqual(daemon.run_once(10), 20)
+        self.assertEqual(daemon.run_once(0), 5)
+        self.assertEqual(daemon.run_once(5), 10)
+        self.assertEqual(daemon.run_once(10), 15)
 
         dependencies["dialer"].assert_called_once_with(self.config)
         self.assertEqual(dependencies["quality_collector"].call_count, 1)
@@ -254,11 +298,40 @@ class CellularDaemonTest(unittest.TestCase):
         daemon, dependencies = self.build_daemon()
 
         daemon.run_once(0)
+        daemon.run_once(5)
         daemon.run_once(10)
         daemon.run_once(20)
         daemon.run_once(30)
 
         self.assertEqual(dependencies["quality_collector"].call_count, 2)
+
+    def test_latency_is_sampled_every_five_seconds_without_accelerating_link_probe(self):
+        daemon, dependencies = self.build_daemon()
+
+        self.assertEqual(daemon.run_once(0), 5)
+        self.assertEqual(daemon.run_once(5), 10)
+        self.assertEqual(daemon.run_once(10), 15)
+
+        self.assertEqual(dependencies["latency_probe"].call_count, 3)
+        self.assertEqual(dependencies["target_probe"].call_count, 4)
+        latest = dependencies["snapshot_writer"].call_args.args[1]
+        self.assertEqual(latest.latency_ms, 42.7)
+        self.assertEqual(latest.packet_loss_percent, 0.0)
+
+    def test_latency_probe_failure_only_updates_loss_statistics(self):
+        daemon, dependencies = self.build_daemon(
+            latency_probe=mock.Mock(return_value=None)
+        )
+
+        daemon.run_once(0)
+        daemon.run_once(5)
+        daemon.run_once(10)
+
+        latest = dependencies["snapshot_writer"].call_args.args[1]
+        self.assertIsNone(latest.latency_ms)
+        self.assertEqual(latest.packet_loss_percent, 100.0)
+        self.assertIsNone(latest.last_error)
+        self.assertEqual(latest.link_state, LinkState.ONLINE)
 
     def test_unavailable_at_port_marks_module_absent(self):
         daemon, dependencies = self.build_daemon(
@@ -288,6 +361,7 @@ class CellularDaemonTest(unittest.TestCase):
             dialer=dialer,
             interface_probe=mock.Mock(return_value=self.online_interface),
             target_probe=target_probe,
+            latency_probe=mock.Mock(return_value=None),
             quality_collector=mock.Mock(return_value=None),
             module_resetter=mock.Mock(return_value=True),
             snapshot_writer=snapshot_writer,
@@ -298,9 +372,8 @@ class CellularDaemonTest(unittest.TestCase):
             state_logger=mock.Mock(),
         )
 
-        self.assertEqual(daemon.run_once(0), 15)
-        self.assertEqual(daemon.run_once(15), 45)
-        self.assertEqual(daemon.run_once(45), 105)
+        for now in range(0, 50, 5):
+            daemon.run_once(now)
 
         self.assertEqual(dialer.call_count, 4)
         daemon.module_resetter.assert_called_once_with(offline_config)
@@ -331,6 +404,7 @@ class CellularDaemonTest(unittest.TestCase):
             dialer=mock.Mock(side_effect=[True, False]),
             interface_probe=mock.Mock(return_value=self.online_interface),
             target_probe=mock.Mock(return_value=False),
+            latency_probe=mock.Mock(return_value=None),
             quality_collector=mock.Mock(return_value=None),
             module_resetter=mock.Mock(return_value=True),
             snapshot_writer=mock.Mock(),
@@ -359,6 +433,7 @@ class CellularDaemonTest(unittest.TestCase):
             dialer=dialer,
             interface_probe=mock.Mock(return_value=self.online_interface),
             target_probe=target_probe,
+            latency_probe=mock.Mock(return_value=None),
             quality_collector=mock.Mock(return_value=None),
             module_resetter=mock.Mock(return_value=True),
             snapshot_writer=mock.Mock(),
@@ -369,8 +444,9 @@ class CellularDaemonTest(unittest.TestCase):
             state_logger=mock.Mock(),
         )
 
-        self.assertEqual(daemon.run_once(0), 10)
-        self.assertEqual(daemon.run_once(10), 20)
+        self.assertEqual(daemon.run_once(0), 5)
+        self.assertEqual(daemon.run_once(5), 10)
+        self.assertEqual(daemon.run_once(10), 15)
 
         self.assertEqual(dialer.call_count, 2)
         self.assertEqual(daemon.state_machine.state, LinkState.ONLINE)
@@ -402,6 +478,7 @@ class CellularDaemonTest(unittest.TestCase):
             dialer=dialer,
             interface_probe=mock.Mock(return_value=self.online_interface),
             target_probe=mock.Mock(return_value=False),
+            latency_probe=mock.Mock(return_value=None),
             quality_collector=mock.Mock(return_value=None),
             module_resetter=mock.Mock(return_value=True),
             snapshot_writer=snapshot_writer,

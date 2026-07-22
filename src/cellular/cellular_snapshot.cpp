@@ -40,6 +40,16 @@ std::optional<T> ReadOptional(const nlohmann::json& root, std::string_view key) 
   return value.get<T>();
 }
 
+template <typename T>
+std::optional<T> ReadOptionalIfPresent(const nlohmann::json& root,
+                                       std::string_view key) {
+  const auto iterator = root.find(std::string(key));
+  if (iterator == root.end() || iterator->is_null()) {
+    return std::nullopt;
+  }
+  return iterator->get<T>();
+}
+
 StatusSnapshot ParseSnapshot(const nlohmann::json& root) {
   StatusSnapshot snapshot;
   snapshot.present = root.at("present").get<bool>();
@@ -53,6 +63,9 @@ StatusSnapshot ParseSnapshot(const nlohmann::json& root) {
   snapshot.rssi_dbm = ReadOptional<int>(root, "rssi_dbm");
   snapshot.tx_bytes = ReadOptional<std::uint64_t>(root, "tx_bytes");
   snapshot.rx_bytes = ReadOptional<std::uint64_t>(root, "rx_bytes");
+  snapshot.latency_ms = ReadOptionalIfPresent<double>(root, "latency_ms");
+  snapshot.packet_loss_percent =
+      ReadOptionalIfPresent<double>(root, "packet_loss_percent");
   snapshot.recover_count = root.at("recover_count").get<std::uint64_t>();
   snapshot.last_recover_at = ReadOptional<std::string>(root, "last_recover_at");
   snapshot.last_error = ReadOptional<std::string>(root, "last_error");
@@ -132,6 +145,8 @@ nlohmann::json BuildPublicTelemetryJson(const StatusSnapshot& snapshot) {
   AddOptional(out, "rssi_dbm", snapshot.rssi_dbm);
   AddOptional(out, "tx_bytes", snapshot.tx_bytes);
   AddOptional(out, "rx_bytes", snapshot.rx_bytes);
+  AddOptional(out, "latency_ms", snapshot.latency_ms);
+  AddOptional(out, "packet_loss_percent", snapshot.packet_loss_percent);
   out["recover_count"] = snapshot.recover_count;
   AddOptional(out, "last_recover_at", snapshot.last_recover_at);
   AddOptional(out, "last_error", snapshot.last_error);

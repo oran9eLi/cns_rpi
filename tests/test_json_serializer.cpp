@@ -30,6 +30,8 @@ TEST_CASE("5G状态快照写入telemetry且不公开内部诊断") {
   cellular_status.link_state = cellular::LinkState::kDegraded;
   cellular_status.operator_name = "China Mobile";
   cellular_status.rsrp_dbm = -87;
+  cellular_status.latency_ms = 42.7;
+  cellular_status.packet_loss_percent = 8.3;
   cellular_status.diagnostics = {
       .interface_present = true,
       .carrier_up = true,
@@ -44,6 +46,8 @@ TEST_CASE("5G状态快照写入telemetry且不公开内部诊断") {
   CHECK(cellular_json["link_state"] == "DEGRADED");
   CHECK(cellular_json["operator"] == "China Mobile");
   CHECK(cellular_json["rsrp_dbm"] == -87);
+  CHECK(cellular_json["latency_ms"] == doctest::Approx(42.7));
+  CHECK(cellular_json["packet_loss_percent"] == doctest::Approx(8.3));
   CHECK_FALSE(cellular_json.contains("diagnostics"));
 }
 
