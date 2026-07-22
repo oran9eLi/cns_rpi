@@ -375,6 +375,45 @@ class CellularDaemonTest(unittest.TestCase):
         self.assertEqual(dialer.call_count, 2)
         self.assertEqual(daemon.state_machine.state, LinkState.ONLINE)
 
+    def test_recovering_snapshot_is_written_before_blocking_redial(self):
+        config = dataclasses.replace(
+            self.config,
+            offline_failure_threshold=1,
+            online_success_threshold=1,
+        )
+        snapshot_writer = mock.Mock()
+
+        dial_count = 0
+
+        def dialer(_config):
+            nonlocal dial_count
+            dial_count += 1
+            if dial_count == 1:
+                return True
+            self.assertEqual(snapshot_writer.call_count, 1)
+            snapshot = snapshot_writer.call_args.args[1]
+            self.assertEqual(snapshot.link_state, LinkState.RECOVERING)
+            self.assertEqual(snapshot.recover_count, 1)
+            return False
+
+        daemon = CellularDaemon(
+            config,
+            snapshot_path=pathlib.Path("/run/cns-rpi/cellular_status.json"),
+            dialer=dialer,
+            interface_probe=mock.Mock(return_value=self.online_interface),
+            target_probe=mock.Mock(return_value=False),
+            quality_collector=mock.Mock(return_value=None),
+            module_resetter=mock.Mock(return_value=True),
+            snapshot_writer=snapshot_writer,
+            metadata_loader=mock.Mock(return_value=(0, None)),
+            wall_clock=mock.Mock(
+                return_value=datetime(2026, 7, 22, tzinfo=timezone.utc)
+            ),
+            state_logger=mock.Mock(),
+        )
+
+        daemon.run_once(0)
+
 
 if __name__ == "__main__":
     unittest.main()

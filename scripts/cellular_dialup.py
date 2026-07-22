@@ -542,7 +542,6 @@ class CellularDaemon:
                 self.last_error = "5G首次拨号失败"
                 self._start_recovery()
                 self.next_action_at = now + self.backoff.next_delay()
-                self._write_snapshot()
                 return self.next_action_at
             self.present = True
 
@@ -598,7 +597,7 @@ class CellularDaemon:
         self.recover_count += 1
         self.last_recover_at = _format_trusted_time(self.wall_clock())
         self.state_machine.mark_recovering()
-        self._log_state_change(LinkState.RECOVERING)
+        self._write_snapshot()
 
     def _perform_recovery(self, now):
         self.state_machine.mark_recovering()
