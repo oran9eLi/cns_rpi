@@ -39,6 +39,7 @@ add_library(cns_rpi_core
     src/control_command/control_transaction.cpp
     src/control_command/control_endpoint.cpp
     src/control_test/control_test_cli.cpp
+    src/cellular/cellular_snapshot.cpp
     src/cellular/cellular_status.cpp
     src/platform/systemd_watchdog.cpp
 )
@@ -144,6 +145,10 @@ add_test(NAME control_endpoint COMMAND test_control_endpoint)
 add_executable(test_cellular_status tests/test_cellular_status.cpp)
 target_link_libraries(test_cellular_status PRIVATE cns_rpi_core)
 add_test(NAME cellular_status COMMAND test_cellular_status)
+
+add_executable(test_cellular_snapshot tests/test_cellular_snapshot.cpp)
+target_link_libraries(test_cellular_snapshot PRIVATE cns_rpi_core)
+add_test(NAME cellular_snapshot COMMAND test_cellular_snapshot)
 
 add_executable(test_systemd_watchdog tests/test_systemd_watchdog.cpp)
 target_link_libraries(test_systemd_watchdog PRIVATE cns_rpi_core)

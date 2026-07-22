@@ -3,6 +3,7 @@
 
 #include <string>
 
+#include "cellular/cellular_snapshot.hpp"
 #include "cellular/cellular_status.hpp"
 
 TEST_CASE("RPICELL heartbeat packs online and diagnostic bits") {
@@ -43,4 +44,25 @@ TEST_CASE("RPICELL heartbeat uses NAMED_VALUE_INT name") {
   CHECK(std::string(decoded.name, decoded.name + 7) == "RPICELL");
   CHECK(decoded.time_boot_ms == 1234);
   CHECK(decoded.value == 0x1F);
+}
+
+TEST_CASE("RPICELL在线位由统一快照状态映射") {
+  cellular::StatusSnapshot snapshot;
+  snapshot.diagnostics = {
+      .interface_present = true,
+      .carrier_up = true,
+      .has_ip_address = true,
+      .has_default_route = true,
+  };
+
+  for (const auto state : {cellular::LinkState::kOnline, cellular::LinkState::kDegraded}) {
+    snapshot.link_state = state;
+    CHECK(cellular::PackRpiCellularValue(cellular::FromSnapshot(snapshot)) == 0x1F);
+  }
+
+  for (const auto state : {cellular::LinkState::kOffline, cellular::LinkState::kRecovering,
+                           cellular::LinkState::kUnknown}) {
+    snapshot.link_state = state;
+    CHECK(cellular::PackRpiCellularValue(cellular::FromSnapshot(snapshot)) == 0x1E);
+  }
 }

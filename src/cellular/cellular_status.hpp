@@ -11,6 +11,7 @@
 #include <string>
 #include <string_view>
 
+#include "cellular/cellular_snapshot.hpp"
 #include "common/mavlink.h"
 
 namespace cellular {
@@ -23,7 +24,7 @@ struct LinkStatus {
   bool online = false;
 };
 
-LinkStatus ProbeLink(std::string_view interface_name);
+LinkStatus FromSnapshot(const StatusSnapshot& snapshot);
 
 std::int32_t PackRpiCellularValue(const LinkStatus& status);
 
