@@ -232,28 +232,6 @@ TEST_CASE("控制台按级别过滤、分流并清理换行") {
   CHECK(err.str() == "[---------- --:--:--.---] [+000000.000s] [WARN ] 第一行 第二行\n");
 }
 
-TEST_CASE("真实系统时间和遥测JSON保持紧凑单行") {
-  const ScopedTimezone timezone("UTC0");
-  std::ostringstream out;
-  std::ostringstream err;
-  const auto system_time = std::chrono::sys_days{std::chrono::year{2026} / 7 / 18} +
-                           6h + 10min + 23s + 125ms;
-  const auto steady_start = std::chrono::steady_clock::time_point{10s};
-  logging::Clock clock{
-      .system_now = [system_time] { return system_time; },
-      .steady_now = [steady_start] { return steady_start; },
-  };
-  auto logger = logging::Logger::Create(ConsoleOptions(logging::Level::kDebug), out, err, clock);
-  REQUIRE(logger.has_value());
-
-  logging::LogPublishedTelemetry(**logger, R"({"value":1})");
-
-  CHECK(out.str().starts_with("[2026-07-18 06:10:23.125]"));
-  CHECK(out.str().find("[DEBUG] telemetry={\"value\":1}\n") != std::string::npos);
-  CHECK(out.str().find('\n') == out.str().size() - 1);
-  CHECK(err.str().empty());
-}
-
 TEST_CASE("系统时间按本地非UTC时区输出") {
   const ScopedTimezone timezone("UTC-8");
   std::ostringstream out;

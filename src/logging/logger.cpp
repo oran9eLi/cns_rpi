@@ -329,10 +329,4 @@ void Logger::FallBackToStandardError(std::string_view reason) {
   err_ << "[日志] " << reason << "，已降级到stderr\n";
 }
 
-void LogPublishedTelemetry(Logger& logger, std::string_view compact_json) {
-  if (logger.Enabled(Level::kDebug)) {
-    logger.Debug(std::string("telemetry=") + std::string(compact_json));
-  }
-}
-
 }  // namespace logging

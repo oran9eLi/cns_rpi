@@ -7,7 +7,7 @@
  * 解码失败时再尝试扩展帧和身份帧解码。日志格式和输出目标由 logging::Logger 独立负责，
  * main 仅在配置成功后创建并向业务模块传递同一实例。
  * 启动时读取 RPi 本机序列号作为 V1 过渡期权威键；设备身份就绪后连接 broker，
- * 按固定节拍发布遥测，并在 Publish 成功后记录同一份紧凑 JSON，失败时只记录警告。
+ * 按固定节拍发布遥测，发布失败时记录警告；不把遥测 JSON 写入运行日志。
  * 注册状态在连接、重连和身份元数据变化时 retained 发布；异常断线由 Last Will 标记
  * offline，正常退出主动发布 offline。
  */
@@ -131,7 +131,7 @@ int main(int argc, char** argv) {
     return EXIT_FAILURE;
   }
 
-  (*logger)->Info(config::BuildStartupSummary(*app_config, config_path));
+  (*logger)->Info(config::BuildStartupSummary(*app_config));
 
   state::StateStore state_store;
   if (auto serial = protocol::ReadRpiSerial()) {
@@ -526,10 +526,9 @@ int main(int argc, char** argv) {
       // retained 遥测会让新订阅者立刻收到最后一帧，却分不清那是实时数据还是
       // 设备掉电前的陈旧快照；设备是否在线由 registration topic 的 retained
       // online/offline 表达，不该由遥测兼任。
-      if (mqtt_client->Publish(telemetry_topic, json_str,
-                               app_config->mqtt.topics.telemetry.qos, /*retain=*/false)) {
-        logging::LogPublishedTelemetry(**logger, json_str);
-      } else {
+      if (!mqtt_client->Publish(telemetry_topic, json_str,
+                                app_config->mqtt.topics.telemetry.qos,
+                                /*retain=*/false)) {
         (*logger)->Warn("MQTT发布失败，下个节拍重试");
       }
       last_telemetry_publish = now;

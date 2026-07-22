@@ -31,7 +31,7 @@ std::string_view Between(std::string_view text, std::string_view begin,
 
 }  // namespace
 
-TEST_CASE("主程序只编排Logger并在遥测发布成功后记录同一JSON") {
+TEST_CASE("主程序只编排Logger且不记录原始遥测JSON") {
   const auto main_path = std::filesystem::path(SOURCE_DIR) / "src/main.cpp";
   std::ifstream input(main_path);
   REQUIRE(input.is_open());
@@ -43,13 +43,13 @@ TEST_CASE("主程序只编排Logger并在遥测发布成功后记录同一JSON")
   CHECK(text.find("void LogExtension(") == std::string::npos);
   CHECK(text.find("void LogJsonPayload(") == std::string::npos);
   CHECK(text.find("dump(2)") == std::string::npos);
-  CHECK(text.find("LogPublishedTelemetry") != std::string::npos);
-  CHECK(text.find("BuildStartupSummary(*app_config, config_path)") != std::string::npos);
+  CHECK(text.find("LogPublishedTelemetry") == std::string::npos);
+  CHECK(text.find("BuildStartupSummary(*app_config)") != std::string::npos);
   CHECK(text.find("cns_rpi M3c 启动") == std::string::npos);
 
   CHECK(text.find("帧只更新 state::StateStore") != std::string::npos);
   CHECK(text.find("日志格式和输出目标由 logging::Logger 独立负责") != std::string::npos);
-  CHECK(text.find("Publish 成功后记录同一份紧凑 JSON") != std::string::npos);
+  CHECK(text.find("不把遥测 JSON 写入运行日志") != std::string::npos);
 
   const auto logger_declaration = text.find("auto logger = logging::Logger::Create(");
   const auto mqtt_declaration = text.find("std::optional<mqtt::MqttClient> mqtt_client;");
@@ -68,17 +68,9 @@ TEST_CASE("主程序只编排Logger并在遥测发布成功后记录同一JSON")
   // 设备在线与否由 registration topic 的 retained online/offline 表达。
   CHECK(telemetry_branch.find("/*retain=*/false") != std::string_view::npos);
   CHECK(telemetry_branch.find("/*retain=*/true") == std::string_view::npos);
-  const auto publish_success = telemetry_branch.find(")) {");
-  const auto publish_failure = telemetry_branch.find("} else {");
-  REQUIRE(publish_success != std::string_view::npos);
-  REQUIRE(publish_failure != std::string_view::npos);
-  CHECK(telemetry_branch.find("LogPublishedTelemetry(**logger, json_str)", publish_success) <
-        publish_failure);
-  const auto failure_branch = telemetry_branch.substr(publish_failure);
-  CHECK(failure_branch.find("Warn(\"MQTT发布失败，下个节拍重试\")") !=
+  CHECK(telemetry_branch.find("if (!mqtt_client->Publish(") != std::string_view::npos);
+  CHECK(telemetry_branch.find("Warn(\"MQTT发布失败，下个节拍重试\")") !=
         std::string_view::npos);
-  CHECK(failure_branch.find("json_str") == std::string_view::npos);
-  CHECK(failure_branch.find("LogPublishedTelemetry") == std::string_view::npos);
 
   const auto configured_business_code = Between(
       text, "if (!logger) {", "return EXIT_SUCCESS;");

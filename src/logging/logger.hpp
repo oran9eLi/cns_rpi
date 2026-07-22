@@ -111,11 +111,4 @@ class Logger {
   mutable std::mutex mutex_;
 };
 
-/**
- * @brief 在 debug 开启时记录刚发布的紧凑 JSON，供现场追踪 MQTT 遥测。
- * @param compact_json 调用方已序列化的紧凑 JSON；其中 CR/LF 仍会被 Logger 清理。
- * @note 可在任意线程调用，不取得 JSON 所有权。
- */
-void LogPublishedTelemetry(Logger& logger, std::string_view compact_json);
-
 }  // namespace logging
