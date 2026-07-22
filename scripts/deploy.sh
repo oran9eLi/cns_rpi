@@ -103,7 +103,11 @@ fi
 echo "===== 加载并启用 systemd 服务 ====="
 sudo systemctl daemon-reload
 sudo systemctl enable cellular-dialup.service
-sudo systemctl start --no-block cellular-dialup.service
+if sudo systemctl is-active --quiet cellular-dialup.service; then
+  sudo systemctl restart cellular-dialup.service
+else
+  sudo systemctl start cellular-dialup.service
+fi
 # 配置卷存在时才启用挂载服务：尚未建立持久化卷的设备（开发机、迁移过渡期）
 # 直接用普通目录，不应因为多了这个单元而起不来。
 if [ -f /boot/firmware/cns-config.img ]; then

@@ -33,8 +33,22 @@ TEST_CASE("部署脚本安装生产helper和systemd服务") {
   CHECK(text.find("systemctl enable cns-rpi.service") != std::string::npos);
   CHECK(text.find("systemctl enable cellular-dialup.service") !=
         std::string::npos);
-  CHECK(text.find("systemctl start --no-block cellular-dialup.service") !=
+  CHECK(text.find("systemctl is-active --quiet cellular-dialup.service") !=
         std::string::npos);
+  CHECK(text.find("systemctl restart cellular-dialup.service") != std::string::npos);
+  CHECK(text.find("systemctl start cellular-dialup.service") != std::string::npos);
+}
+
+TEST_CASE("5G拨号单元是读取持久配置的常驻服务") {
+  std::ifstream input(SOURCE_DIR "/systemd/cellular-dialup.service");
+  const std::string text{std::istreambuf_iterator<char>(input),
+                         std::istreambuf_iterator<char>()};
+  CHECK(text.find("Type=simple") != std::string::npos);
+  CHECK(text.find("User=dcdw") != std::string::npos);
+  CHECK(text.find("RuntimeDirectory=cns-rpi") != std::string::npos);
+  CHECK(text.find("/var/lib/cns-rpi/config.json") != std::string::npos);
+  CHECK(text.find("Restart=on-failure") != std::string::npos);
+  CHECK(text.find("RemainAfterExit=yes") == std::string::npos);
 }
 
 TEST_CASE("依赖安装脚本复用部署脚本") {

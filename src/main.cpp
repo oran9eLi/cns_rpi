@@ -498,8 +498,7 @@ int main(int argc, char** argv) {
           payload::ToJson(
               state_store.Snapshot(), app_config->identity.school_name,
               cellular::ReadStatusSnapshot(app_config->cellular.status_snapshot_path,
-                                           app_config->cellular.status_snapshot_max_age))
-              .dump();
+                                           app_config->cellular.status_snapshot_max_age)).dump();
       // retain=false：遥测是按节拍刷新的实时值，不是设备状态的权威存档。
       // retained 遥测会让新订阅者立刻收到最后一帧，却分不清那是实时数据还是
       // 设备掉电前的陈旧快照；设备是否在线由 registration topic 的 retained
