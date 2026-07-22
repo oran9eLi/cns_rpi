@@ -631,7 +631,7 @@ git commit -m "docs: 同步5G自恢复部署与验收说明"
 - Consumes: Task 6 的完整构建和部署结果。
 - Produces: ARM 构建、真实 RM500U、白名单公网、MQTT 和 STM32 兼容的终验记录。
 
-- [ ] **Step 1: 推送或以 bundle 同步树莓派并构建**
+- [x] **Step 1: 推送或以 bundle 同步树莓派并构建**
 
 树莓派 GitHub 5G 访问不稳定时沿用已验证的 Git bundle 同步方式。执行：
 
@@ -643,13 +643,13 @@ ctest --test-dir /home/dcdw/cns_rpi/build --output-on-failure
 
 Expected: ARM 平台构建成功，全部测试通过。
 
-- [ ] **Step 2: 更新只读持久配置并部署**
+- [x] **Step 2: 更新只读持久配置并部署**
 
 通过现有配置 helper 写入新增字段，禁止直接修改只读挂载。确认
 `/var/lib/cns-rpi/config.json` 包含正式 APN 和双目标，再在根文件系统可持久写入的
 维护窗口执行 `./scripts/deploy.sh`。
 
-- [ ] **Step 3: 验证正常在线和质量快照**
+- [x] **Step 3: 验证正常在线和质量快照**
 
 ```bash
 systemctl status cellular-dialup.service cns-rpi.service
@@ -662,19 +662,19 @@ journalctl -u cellular-dialup.service -n 100 --no-pager
 Expected: cellular 服务为 `active (running)`；快照为 `ONLINE`，包含实测质量值；
 日志只出现启动和状态变化，不按 10 秒刷屏。
 
-- [ ] **Step 4: 在用户配合下验证拔插恢复**
+- [x] **Step 4: 在用户配合下验证拔插恢复**
 
 用户明确告知拔出 RM500U 后，确认快照变为 `present=false/OFFLINE`；用户插回后，
 确认动态发现新的 AT 枚举号、自动拨号并在两轮成功后回到 `ONLINE`。不得在用户
 未确认操作窗口时远程要求或假设硬件已拔插。
 
-- [ ] **Step 5: 验证遥测与 STM32 无感知**
+- [x] **Step 5: 验证遥测与 STM32 无感知**
 
 从 MQTT 实际遥测确认存在 `telemetry.cellular_5g` 且没有 `diagnostics`；确认 STM32
 仍收到 `RPICELL`，在线时 bit0=1。实机不主动破坏白名单或公网路由；持续断链与
 `CFUN` 阶梯使用测试替身覆盖，若需真机阻断必须再次取得用户确认。
 
-- [ ] **Step 6: 记录终验事实并提交**
+- [x] **Step 6: 记录终验事实并提交**
 
 把 ARM 构建结果、RM500U 固件响应、服务状态、快照样例、双目标可达性、拔插恢复
 耗时和 STM32 无感知结论写入技术文档。
