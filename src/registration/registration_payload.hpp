@@ -5,6 +5,7 @@
  * @brief 构造 MQTT 设备注册消息，不负责 topic、连接或发布时机。
  */
 
+#include <cstdint>
 #include <optional>
 #include <string>
 
