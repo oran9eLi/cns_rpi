@@ -42,6 +42,17 @@ struct DeviceConfig {
   device::DetectionMode mode{device::DetectionMode::kAuto};
 };
 
+/// PX4 专用的同一局域网 QGC 自动发现配置；配置段缺失时保持关闭以兼容旧设备。
+struct QgcUdpConfig {
+  bool enabled{false};
+  std::vector<std::string> lan_interfaces{"wlan0", "eth0"};
+  int listen_port{14540};
+  int qgc_port{14550};
+  std::chrono::milliseconds discovery_interval{1000};
+  std::chrono::milliseconds peer_timeout{5000};
+  bool allow_commands{true};
+};
+
 struct MqttConnectionConfig {
   std::string host;
   int port = 0;
@@ -106,6 +117,7 @@ struct CellularConfig {
 struct AppConfig {
   SerialConfig serial;
   DeviceConfig device;
+  QgcUdpConfig qgc_udp;
   MqttConfig mqtt;
   LoggingConfig logging;
   IdentityConfig identity;

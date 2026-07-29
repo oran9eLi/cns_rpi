@@ -22,6 +22,7 @@ add_library(cns_rpi_core
     src/uart/serial_port.cpp
     src/uart/mavlink_link.cpp
     src/uart/mavlink_port_discovery.cpp
+    src/network/qgc_udp_bridge.cpp
     src/config/app_config.cpp
     src/config/startup_summary.cpp
     src/state/state_store.cpp
@@ -79,6 +80,10 @@ add_test(NAME mavlink_link COMMAND test_mavlink_link)
 add_executable(test_mavlink_port_discovery tests/test_mavlink_port_discovery.cpp)
 target_link_libraries(test_mavlink_port_discovery PRIVATE cns_rpi_core)
 add_test(NAME mavlink_port_discovery COMMAND test_mavlink_port_discovery)
+
+add_executable(test_qgc_udp_bridge tests/test_qgc_udp_bridge.cpp)
+target_link_libraries(test_qgc_udp_bridge PRIVATE cns_rpi_core)
+add_test(NAME qgc_udp_bridge COMMAND test_qgc_udp_bridge)
 
 add_executable(test_app_config tests/test_app_config.cpp)
 target_link_libraries(test_app_config PRIVATE cns_rpi_core)

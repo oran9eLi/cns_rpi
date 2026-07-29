@@ -40,6 +40,7 @@
 #include "logging/logger.hpp"
 #include "mqtt/mqtt_client.hpp"
 #include "mqtt/topic.hpp"
+#include "network/qgc_udp_bridge.hpp"
 #include "payload/json_serializer.hpp"
 #include "platform/systemd_watchdog.hpp"
 #include "protocol/extension_decoder.hpp"
@@ -187,6 +188,7 @@ int main(int argc, char** argv) {
   control_command::ControlTransaction control_transaction(kControlAckTimeout);
   std::optional<control_command::ControlledDeviceEndpoint> controlled_device;
   std::optional<uart::MavlinkLink> link;
+  std::optional<network::QgcUdpBridge> qgc_udp_bridge;
   std::string active_serial_device;
   std::optional<mavlink_message_t> pending_first_message;
   bool ambiguous_device_type = false;
@@ -212,6 +214,7 @@ int main(int argc, char** argv) {
   auto last_telemetry_publish = std::chrono::steady_clock::now();
   auto last_px4_identity_request =
       std::chrono::steady_clock::now() - kPx4IdentityRequestInterval;
+  auto next_qgc_start_attempt = std::chrono::steady_clock::now();
 
   auto close_mqtt_session = [&](bool publish_offline) {
     if (control_transaction.HasPending()) {
@@ -254,6 +257,7 @@ int main(int argc, char** argv) {
     close_mqtt_session(/*publish_offline=*/true);
     (*logger)->Error("受控设备串口断开: " + active_serial_device);
     link.reset();
+    qgc_udp_bridge.reset();
     active_serial_device.clear();
     pending_first_message.reset();
     controlled_device.reset();
@@ -280,6 +284,7 @@ int main(int argc, char** argv) {
       close_mqtt_session(/*publish_offline=*/true);
       state_store.ResetDeviceState();
       controlled_device.reset();
+      qgc_udp_bridge.reset();
       ambiguous_device_type = true;
       return;
     }
@@ -308,6 +313,39 @@ int main(int argc, char** argv) {
           " compid=" +
           std::to_string(controlled_device->endpoint.component_id));
     }
+    if (controlled_device->type == device::Type::kFlightController &&
+        app_config->qgc_udp.enabled) {
+      if (!qgc_udp_bridge && now >= next_qgc_start_attempt) {
+        auto bridge = network::QgcUdpBridge::Open(
+            {.lan_interfaces = app_config->qgc_udp.lan_interfaces,
+             .listen_port =
+                 static_cast<std::uint16_t>(app_config->qgc_udp.listen_port),
+             .qgc_port =
+                 static_cast<std::uint16_t>(app_config->qgc_udp.qgc_port),
+             .discovery_interval =
+                 app_config->qgc_udp.discovery_interval,
+             .peer_timeout = app_config->qgc_udp.peer_timeout,
+             .allow_commands = app_config->qgc_udp.allow_commands});
+        if (bridge) {
+          qgc_udp_bridge.emplace(std::move(*bridge));
+          (*logger)->Info(
+              "QGC局域网UDP桥接已启动: listen=" +
+              std::to_string(qgc_udp_bridge->LocalPort()) +
+              " qgc=" + std::to_string(app_config->qgc_udp.qgc_port) +
+              " commands=" +
+              (app_config->qgc_udp.allow_commands ? "enabled" : "disabled"));
+        } else {
+          (*logger)->Warn(
+              "QGC局域网UDP桥接启动失败: " +
+              std::string(network::QgcUdpErrorMessage(bridge.error())));
+          next_qgc_start_attempt = now + std::chrono::seconds(5);
+        }
+      }
+      if (qgc_udp_bridge) {
+        qgc_udp_bridge->ForwardFlightControllerMessage(message, now);
+      }
+    }
+
     if (!control_command::IsMessageFromControlledDevice(message,
                                                          *controlled_device)) {
       return;
@@ -400,11 +438,36 @@ int main(int argc, char** argv) {
         pending_first_message.reset();
         process_mavlink_message(first_message, now);
       } else {
-        auto received = link->ReceiveMessage();
+        const auto serial_wait = qgc_udp_bridge
+                                     ? std::chrono::milliseconds(5)
+                                     : std::chrono::milliseconds(100);
+        auto received = link->ReceiveMessage(serial_wait);
         if (!received) {
           mark_link_disconnected();
         } else if (*received) {
           process_mavlink_message(**received, now);
+        }
+      }
+      if (link && qgc_udp_bridge) {
+        for (const auto& message :
+             qgc_udp_bridge->PollIncoming(std::chrono::steady_clock::now())) {
+          if (!link->SendMessage(message)) {
+            mark_link_disconnected();
+            break;
+          }
+        }
+        while (qgc_udp_bridge) {
+          const auto event = qgc_udp_bridge->TakePeerEvent();
+          if (!event) {
+            break;
+          }
+          if (event->type ==
+              network::QgcUdpBridge::PeerEventType::kConnected) {
+            (*logger)->Info("QGC局域网端已连接: " + event->endpoint);
+          } else {
+            (*logger)->Warn("QGC局域网端连接超时，恢复自动发现: " +
+                            event->endpoint);
+          }
         }
       }
       if (link && silence_watchdog.Expired(std::chrono::steady_clock::now())) {
