@@ -2,6 +2,7 @@
 #include <doctest/doctest.h>
 
 #include "protocol/identity.hpp"
+#include "protocol/px4_identity.hpp"
 
 TEST_CASE("FormatDcdwLabel对sysid=0补零到DCDW-000") {
   CHECK(protocol::FormatDcdwLabel(0) == "DCDW-000");
@@ -43,4 +44,45 @@ TEST_CASE("ExtractVendorId在uas_id写满20字节无null终止符时提取整20�
   auto result = protocol::ExtractVendorId(uas_id);
   CHECK(result.size() == 20);
   CHECK(result == "DCDWCNS1ABCDEFGHJKLM");
+}
+
+TEST_CASE("主控箱vendor id必须是20个ASCII字母数字") {
+  CHECK(protocol::IsValidCnsBoxVendorId("DCDWCNS1ABCDEFGHJKLM"));
+  CHECK_FALSE(protocol::IsValidCnsBoxVendorId("DCDWCNS1"));
+  CHECK_FALSE(protocol::IsValidCnsBoxVendorId("DCDWCNS1ABCDEFGHJK/M"));
+}
+
+TEST_CASE("PX4设备ID优先uid2并在uid2无效时回退uid") {
+  mavlink_autopilot_version_t version{};
+  version.uid = 0x0123456789ABCDEFULL;
+  version.uid2[0] = 0x01;
+  version.uid2[17] = 0xAB;
+
+  CHECK(protocol::FormatPx4Uid2(version) ==
+        "0100000000000000000000000000000000AB");
+  CHECK(protocol::FormatPx4Uid(version) == "0123456789ABCDEF");
+  CHECK(protocol::FormatPx4DeviceId(version) ==
+        "PX4U2-0100000000000000000000000000000000AB");
+
+  version.uid2[0] = 0;
+  version.uid2[17] = 0;
+  CHECK(protocol::FormatPx4DeviceId(version) ==
+        "PX4U1-0123456789ABCDEF");
+  version.uid = 0;
+  CHECK_FALSE(protocol::FormatPx4DeviceId(version).has_value());
+}
+
+TEST_CASE("PX4身份请求使用标准MAV_CMD_REQUEST_MESSAGE") {
+  const control_command::MavlinkEndpoint target{2, MAV_COMP_ID_AUTOPILOT1};
+  const auto message = protocol::BuildAutopilotVersionRequest(
+      2, MAV_COMP_ID_ONBOARD_COMPUTER, target);
+  CHECK(message.msgid == MAVLINK_MSG_ID_COMMAND_LONG);
+
+  mavlink_command_long_t command{};
+  mavlink_msg_command_long_decode(&message, &command);
+  CHECK(command.target_system == 2);
+  CHECK(command.target_component == MAV_COMP_ID_AUTOPILOT1);
+  CHECK(command.command == MAV_CMD_REQUEST_MESSAGE);
+  CHECK(command.param1 ==
+        doctest::Approx(MAVLINK_MSG_ID_AUTOPILOT_VERSION));
 }

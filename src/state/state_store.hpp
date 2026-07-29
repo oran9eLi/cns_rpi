@@ -20,6 +20,7 @@
 #include <string>
 
 #include "common/mavlink.h"
+#include "device/device_type.hpp"
 
 namespace state {
 
@@ -121,7 +122,15 @@ struct MessageLog {
 
 /// 一份遥测快照：每个字段在对应消息从未被解码过之前是 std::nullopt。
 struct TelemetryState {
+  /// 当前物理链路已确认的设备类别和 MAVLink 端点。
+  std::optional<device::Type> device_type;
+  std::optional<std::uint8_t> device_system_id;
+  std::optional<std::uint8_t> device_component_id;
+  /// 服务器、MQTT 主题和 Web 端统一使用的受控设备主身份。
+  std::optional<std::string> device_id;
+
   std::optional<mavlink_heartbeat_t> heartbeat;
+  std::optional<mavlink_autopilot_version_t> autopilot_version;
   std::optional<mavlink_gps_raw_int_t> gps_raw_int;
   std::optional<mavlink_attitude_t> attitude;
   std::optional<mavlink_global_position_int_t> global_position_int;
@@ -168,7 +177,11 @@ struct TelemetryState {
  */
 class StateStore {
  public:
+  void UpdateControlledDevice(device::Type type, std::uint8_t system_id,
+                              std::uint8_t component_id);
+  void UpdateDeviceId(const std::string& value);
   void UpdateHeartbeat(const mavlink_heartbeat_t& value);
+  void UpdateAutopilotVersion(const mavlink_autopilot_version_t& value);
   void UpdateGpsRawInt(const mavlink_gps_raw_int_t& value);
   void UpdateAttitude(const mavlink_attitude_t& value);
   void UpdateGlobalPositionInt(const mavlink_global_position_int_t& value);
@@ -209,6 +222,13 @@ class StateStore {
   void UpdateVendorId(const std::string& value);
   void UpdateDcdwLabel(const std::string& value);
   void UpdateRpiSerial(const std::string& value);
+
+  /**
+   * @brief 清除当前受控设备产生的全部状态，仅保留树莓派硬件序列号。
+   *
+   * 串口断线或换设备后必须调用，避免把上一台设备身份和遥测上传给下一台。
+   */
+  void ResetDeviceState();
 
   /// 加锁拷贝当前状态并返回，调用方拿到的是独立副本。
   TelemetryState Snapshot() const;

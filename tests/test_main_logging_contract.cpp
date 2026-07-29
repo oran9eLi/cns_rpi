@@ -94,7 +94,7 @@ TEST_CASE("主程序后台发现串口并保留失败与恢复诊断") {
   CHECK(text.find("discovery.TryTakeResult()") != std::string::npos);
   CHECK(text.find("uart::FormatCandidateFailures(attempt->failures)") !=
         std::string::npos);
-  CHECK(text.find("已重新发现STM32 MAVLink串口，链路恢复") !=
+  CHECK(text.find("已重新发现受控设备 MAVLink 串口，链路恢复") !=
         std::string::npos);
   CHECK(text.find("uart::DiscoverMavlinkPortOnce(") == std::string::npos);
 }
@@ -111,9 +111,10 @@ TEST_CASE("主程序在收到命令与应答时记录日志") {
   CHECK(text.find("配置命令回执: command_id=") != std::string::npos);
   // 收到飞控命令。
   CHECK(text.find("收到飞控命令: command_id=") != std::string::npos);
-  // 收到 STM32 的 COMMAND_ACK 应答，且日志取自事务处理结果而非丢弃。
-  const auto ack_branch = Between(text, "IsExpectedCommandAck(", "state_store.UpdateDcdwLabel");
-  CHECK(ack_branch.find("收到STM32应答") != std::string_view::npos);
+  // 收到当前受控设备的 COMMAND_ACK 应答，且日志取自事务处理结果而非丢弃。
+  const auto ack_branch = Between(text, "IsExpectedCommandAck(",
+                                  "if (!protocol::DecodeAndStore");
+  CHECK(ack_branch.find("收到设备应答") != std::string_view::npos);
   CHECK(ack_branch.find("control_command::ResultCode(ack.result)") != std::string_view::npos);
   // 应答处理结果必须被取用（用于区分最终/进行中/未匹配），不能再退回 (void) 丢弃。
   CHECK(ack_branch.find("(void)control_transaction.HandleMavlinkAck") == std::string_view::npos);

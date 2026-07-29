@@ -65,6 +65,36 @@ TEST_CASE("auto是合法串口配置值") {
   CHECK(result->serial.device == "auto");
 }
 
+TEST_CASE("设备识别模式默认auto且允许显式选择主控箱或PX4") {
+  const auto default_result = config::LoadAppConfig(WriteTempConfig(ValidConfig()));
+  REQUIRE(default_result.has_value());
+  CHECK(default_result->device.mode == device::DetectionMode::kAuto);
+
+  for (const auto& [name, expected] : {
+           std::pair{"cns_box", device::DetectionMode::kCnsBox},
+           std::pair{"px4", device::DetectionMode::kPx4},
+       }) {
+    const auto configured = ReplaceOnce(
+        ValidConfig(), "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},",
+        "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},"
+        "\n    \"device\": {\"mode\": \"" +
+            std::string{name} + "\"},");
+    const auto result = config::LoadAppConfig(WriteTempConfig(configured));
+    REQUIRE(result.has_value());
+    CHECK(result->device.mode == expected);
+  }
+}
+
+TEST_CASE("设备识别模式拒绝未知值") {
+  const auto configured = ReplaceOnce(
+      ValidConfig(), "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},",
+      "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},"
+      "\n    \"device\": {\"mode\": \"other\"},");
+  const auto result = config::LoadAppConfig(WriteTempConfig(configured));
+  REQUIRE_FALSE(result.has_value());
+  CHECK(result.error() == config::ConfigError::kInvalidValue);
+}
+
 TEST_CASE("完整合法嵌套配置能正确解析") {
   auto result = config::LoadAppConfig(WriteTempConfig(ValidConfig()));
 

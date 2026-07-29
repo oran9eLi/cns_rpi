@@ -5,6 +5,8 @@
 
 #include "protocol/identity.hpp"
 
+#include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
@@ -47,6 +49,13 @@ std::optional<std::string> ReadRpiSerial(const std::filesystem::path& path) {
 std::string ExtractVendorId(const std::uint8_t (&uas_id)[20]) {
   const char* data = reinterpret_cast<const char*>(uas_id);
   return std::string(data, strnlen(data, 20));
+}
+
+bool IsValidCnsBoxVendorId(const std::string& vendor_id) {
+  return vendor_id.size() == 20 &&
+         std::all_of(vendor_id.begin(), vendor_id.end(), [](unsigned char ch) {
+           return std::isalnum(ch) != 0;
+         });
 }
 
 }  // namespace protocol

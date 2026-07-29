@@ -3,6 +3,9 @@
     "device": "auto",
     "baud": 115200
   },
+  "device": {
+    "mode": "auto"
+  },
   "mqtt": {
     "connection": {
       "host": "112.124.52.232",

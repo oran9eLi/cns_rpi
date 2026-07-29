@@ -6,6 +6,7 @@
 #include "config/app_config.hpp"
 
 #include <fstream>
+#include <optional>
 #include <unordered_set>
 
 #include <nlohmann/json.hpp>
@@ -34,6 +35,13 @@ bool IsValidCommandId(const std::string& command_id) {
 
 bool IsValidLogLevel(const std::string& level) {
   return level == "debug" || level == "info" || level == "warn" || level == "error";
+}
+
+std::optional<device::DetectionMode> ParseDeviceMode(const std::string& mode) {
+  if (mode == "auto") return device::DetectionMode::kAuto;
+  if (mode == "cns_box") return device::DetectionMode::kCnsBox;
+  if (mode == "px4") return device::DetectionMode::kPx4;
+  return std::nullopt;
 }
 
 }  // namespace
@@ -71,6 +79,13 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
     const auto& serial = root.at("serial");
     cfg.serial.device = serial.at("device").get<std::string>();
     cfg.serial.baud = serial.at("baud").get<int>();
+
+    if (root.contains("device")) {
+      const auto parsed_mode =
+          ParseDeviceMode(root.at("device").at("mode").get<std::string>());
+      if (!parsed_mode) return std::unexpected(ConfigError::kInvalidValue);
+      cfg.device.mode = *parsed_mode;
+    }
 
     const auto& mqtt = root.at("mqtt");
     const auto& connection = mqtt.at("connection");

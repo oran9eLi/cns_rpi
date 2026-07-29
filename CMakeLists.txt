@@ -28,6 +28,7 @@ add_library(cns_rpi_core
     src/protocol/telemetry_decoder.cpp
     src/protocol/extension_decoder.cpp
     src/protocol/identity.cpp
+    src/protocol/px4_identity.cpp
     src/payload/json_serializer.cpp
     src/mqtt/topic.cpp
     src/registration/registration_payload.cpp

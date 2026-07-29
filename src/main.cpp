@@ -16,6 +16,7 @@
 #include <csignal>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <iostream>
 #include <optional>
@@ -43,6 +44,7 @@
 #include "platform/systemd_watchdog.hpp"
 #include "protocol/extension_decoder.hpp"
 #include "protocol/identity.hpp"
+#include "protocol/px4_identity.hpp"
 #include "protocol/telemetry_decoder.hpp"
 #include "registration/registration_payload.hpp"
 #include "registration/registration_state.hpp"
@@ -57,6 +59,7 @@ constexpr auto kDiscoveryProbeTimeout = std::chrono::milliseconds(300);
 constexpr auto kDiscoveryRetryInterval = std::chrono::seconds(1);
 constexpr auto kDiscoveryWarningInterval = std::chrono::seconds(10);
 constexpr auto kMavlinkSilenceTimeout = std::chrono::seconds(10);
+constexpr auto kPx4IdentityRequestInterval = std::chrono::seconds(2);
 
 volatile std::sig_atomic_t g_exit_requested = 0;
 
@@ -69,6 +72,38 @@ mavlink_message_t BuildHeartbeat(std::uint8_t system_id) {
                               MAV_AUTOPILOT_INVALID, /*base_mode=*/0, /*custom_mode=*/0,
                               MAV_STATE_ACTIVE);
   return msg;
+}
+
+std::optional<std::string> RemoteIdFrom(
+    const state::TelemetryState& snapshot) {
+  if (!snapshot.open_drone_id_basic_id) {
+    return std::nullopt;
+  }
+  const auto& basic_id = *snapshot.open_drone_id_basic_id;
+  return std::string{
+      reinterpret_cast<const char*>(basic_id.uas_id),
+      strnlen(reinterpret_cast<const char*>(basic_id.uas_id),
+              sizeof(basic_id.uas_id))};
+}
+
+registration::OnlineRegistration MakeOnlineRegistration(
+    const state::TelemetryState& snapshot, const std::string& school_name) {
+  return {
+      .device_id = *snapshot.device_id,
+      .device_type = *snapshot.device_type,
+      .vendor_id = snapshot.vendor_id,
+      .school_name = school_name,
+      .dcdw_label = snapshot.dcdw_label,
+      .remote_id = RemoteIdFrom(snapshot),
+      .gateway_id = snapshot.rpi_serial,
+      .system_id = snapshot.device_system_id,
+      .component_id = snapshot.device_component_id,
+      .mavlink_version =
+          snapshot.heartbeat
+              ? std::optional<std::uint8_t>(snapshot.heartbeat->mavlink_version)
+              : std::nullopt,
+      .autopilot_version = snapshot.autopilot_version,
+  };
 }
 
 }  // namespace
@@ -141,7 +176,7 @@ int main(int argc, char** argv) {
   auto last_cellular_heartbeat = std::chrono::steady_clock::now();
   std::optional<mqtt::MqttClient> mqtt_client;
   registration::RegistrationState registration_state;
-  std::optional<std::string> active_vendor_id;
+  std::optional<std::string> active_device_id;
   std::string registration_topic;
   std::string offline_payload;
   std::string telemetry_topic;
@@ -150,10 +185,11 @@ int main(int argc, char** argv) {
   std::string control_set_topic;
   std::string control_ack_topic;
   control_command::ControlTransaction control_transaction(kControlAckTimeout);
-  std::optional<control_command::MavlinkEndpoint> stm32_endpoint;
+  std::optional<control_command::ControlledDeviceEndpoint> controlled_device;
   std::optional<uart::MavlinkLink> link;
   std::string active_serial_device;
   std::optional<mavlink_message_t> pending_first_message;
+  bool ambiguous_device_type = false;
   uart::AsyncMavlinkDiscovery discovery;
   uart::DiscoveryLogLimiter discovery_log_limiter(kDiscoveryWarningInterval);
   uart::MavlinkSilenceWatchdog silence_watchdog(kMavlinkSilenceTimeout);
@@ -171,33 +207,118 @@ int main(int argc, char** argv) {
         "s");
   }
   auto next_discovery = std::chrono::steady_clock::now();
-  bool ever_connected_to_stm32 = false;
+  bool ever_connected_to_device = false;
   bool restart_requested = false;
   auto last_telemetry_publish = std::chrono::steady_clock::now();
+  auto last_px4_identity_request =
+      std::chrono::steady_clock::now() - kPx4IdentityRequestInterval;
+
+  auto close_mqtt_session = [&](bool publish_offline) {
+    if (control_transaction.HasPending()) {
+      (void)control_transaction.HandleLocalFailure(
+          {.code = "device_link_unavailable",
+           .message = "受控设备 MAVLink 链路不可用"});
+      if (mqtt_client && mqtt_client->IsConnected() &&
+          control_transaction.PendingAck() != nullptr &&
+          !control_ack_topic.empty()) {
+        if (mqtt_client->PublishAndWait(
+                control_ack_topic, control_transaction.PendingAck()->dump(),
+                app_config->mqtt.topics.control_ack.qos, /*retain=*/false,
+                std::chrono::seconds(2))) {
+          control_transaction.ConfirmAckPublished();
+        }
+      }
+    }
+    if (publish_offline && mqtt_client && mqtt_client->IsConnected() &&
+        !registration_topic.empty() && !offline_payload.empty()) {
+      (void)mqtt_client->PublishAndWait(
+          registration_topic, offline_payload,
+          app_config->mqtt.topics.registration.qos, /*retain=*/true,
+          std::chrono::seconds(2));
+    }
+    mqtt_client.reset();
+    registration_state = registration::RegistrationState{};
+    active_device_id.reset();
+    registration_topic.clear();
+    telemetry_topic.clear();
+    config_set_topic.clear();
+    config_ack_topic.clear();
+    control_set_topic.clear();
+    control_ack_topic.clear();
+    offline_payload.clear();
+    control_transaction =
+        control_command::ControlTransaction(kControlAckTimeout);
+  };
 
   auto mark_link_disconnected = [&] {
-    (*logger)->Error("STM32串口断开: " + active_serial_device);
+    close_mqtt_session(/*publish_offline=*/true);
+    (*logger)->Error("受控设备串口断开: " + active_serial_device);
     link.reset();
     active_serial_device.clear();
     pending_first_message.reset();
-    stm32_endpoint.reset();
+    controlled_device.reset();
+    ambiguous_device_type = false;
+    state_store.ResetDeviceState();
     silence_watchdog.Reset();
     next_discovery = std::chrono::steady_clock::now();
-    if (control_transaction.HasPending()) {
-      (void)control_transaction.HandleLocalFailure(
-          {.code = "stm32_link_unavailable", .message = "STM32串口链路不可用"});
-    }
   };
 
   auto process_mavlink_message = [&](const mavlink_message_t& message,
                                      std::chrono::steady_clock::time_point now) {
     silence_watchdog.ObserveValidFrame(now);
-    stm32_endpoint =
-        control_command::ObserveFlightControllerHeartbeat(message, stm32_endpoint);
-    const auto rpi_system_id = control_command::LearnedSystemId(stm32_endpoint);
+    const auto classified =
+        control_command::ClassifyControlledDeviceHeartbeat(
+            message, app_config->device.mode);
+    if (controlled_device && classified &&
+        (classified->type != controlled_device->type ||
+         classified->endpoint.system_id !=
+             controlled_device->endpoint.system_id ||
+         classified->endpoint.component_id !=
+             controlled_device->endpoint.component_id)) {
+      (*logger)->Error(
+          "同一串口检测到冲突的受控设备特征，停止 MQTT 上报并等待检查接线");
+      close_mqtt_session(/*publish_offline=*/true);
+      state_store.ResetDeviceState();
+      controlled_device.reset();
+      ambiguous_device_type = true;
+      return;
+    }
+    if (ambiguous_device_type) {
+      return;
+    }
+    const bool endpoint_was_unknown = !controlled_device.has_value();
+    controlled_device = control_command::ObserveControlledDeviceHeartbeat(
+        message, controlled_device, app_config->device.mode);
+    if (!controlled_device) {
+      return;
+    }
+    if (endpoint_was_unknown) {
+      state_store.UpdateControlledDevice(
+          controlled_device->type, controlled_device->endpoint.system_id,
+          controlled_device->endpoint.component_id);
+      if (controlled_device->type == device::Type::kCnsBox) {
+        state_store.UpdateDcdwLabel(
+            protocol::FormatDcdwLabel(controlled_device->endpoint.system_id));
+      }
+      (*logger)->Info(
+          "已识别受控设备: type=" +
+          std::string(device::TypeName(controlled_device->type)) +
+          " sysid=" +
+          std::to_string(controlled_device->endpoint.system_id) +
+          " compid=" +
+          std::to_string(controlled_device->endpoint.component_id));
+    }
+    if (!control_command::IsMessageFromControlledDevice(message,
+                                                         *controlled_device)) {
+      return;
+    }
+
+    const auto rpi_system_id =
+        control_command::LearnedControlledSystemId(controlled_device);
     if (rpi_system_id && mqtt_client &&
-        control_command::IsExpectedCommandAck(message, *stm32_endpoint, *rpi_system_id,
-                                              kComponentId)) {
+        control_command::IsExpectedCommandAck(
+            message, controlled_device->endpoint, *rpi_system_id,
+            kComponentId)) {
       mavlink_command_ack_t ack{};
       mavlink_msg_command_ack_decode(&message, &ack);
       const auto ack_status = control_transaction.HandleMavlinkAck(
@@ -206,12 +327,30 @@ int main(int argc, char** argv) {
           ack_status == control_command::MavlinkAckStatus::kFinal      ? "最终"
           : ack_status == control_command::MavlinkAckStatus::kInProgress ? "进行中"
                                                                          : "未匹配";
-      (*logger)->Info("收到STM32应答: mavlink_command=" + std::to_string(ack.command) +
+      (*logger)->Info("收到设备应答: mavlink_command=" + std::to_string(ack.command) +
                       " 结果=" + control_command::ResultCode(ack.result) + " (" + match + ")");
     }
-    state_store.UpdateDcdwLabel(protocol::FormatDcdwLabel(message.sysid));
     if (!protocol::DecodeAndStore(message, state_store)) {
       (void)protocol::DecodeExtensionAndStore(message, state_store);
+    }
+
+    if (message.msgid == MAVLINK_MSG_ID_OPEN_DRONE_ID_BASIC_ID &&
+        controlled_device->type == device::Type::kCnsBox) {
+      mavlink_open_drone_id_basic_id_t basic_id{};
+      mavlink_msg_open_drone_id_basic_id_decode(&message, &basic_id);
+      const std::string vendor_id = protocol::ExtractVendorId(basic_id.uas_id);
+      if (protocol::IsValidCnsBoxVendorId(vendor_id)) {
+        state_store.UpdateVendorId(vendor_id);
+        state_store.UpdateDeviceId(vendor_id);
+      }
+    }
+    if (message.msgid == MAVLINK_MSG_ID_AUTOPILOT_VERSION &&
+        controlled_device->type == device::Type::kFlightController) {
+      mavlink_autopilot_version_t version{};
+      mavlink_msg_autopilot_version_decode(&message, &version);
+      if (const auto device_id = protocol::FormatPx4DeviceId(version)) {
+        state_store.UpdateDeviceId(*device_id);
+      }
     }
   };
 
@@ -224,17 +363,18 @@ int main(int argc, char** argv) {
           pending_first_message = attempt->found->first_message;
           link.emplace(std::move(attempt->found->link));
           silence_watchdog.ObserveValidFrame(std::chrono::steady_clock::now());
-          if (ever_connected_to_stm32) {
-            (*logger)->Info("已重新发现STM32 MAVLink串口，链路恢复: " +
+          if (ever_connected_to_device) {
+            (*logger)->Info("已重新发现受控设备 MAVLink 串口，链路恢复: " +
                             active_serial_device);
           } else {
-            (*logger)->Info("已发现STM32 MAVLink串口: " + active_serial_device);
-            ever_connected_to_stm32 = true;
+            (*logger)->Info("已发现受控设备 MAVLink 串口: " +
+                            active_serial_device);
+            ever_connected_to_device = true;
           }
         } else if (!g_exit_requested) {
           const auto discovery_finished = std::chrono::steady_clock::now();
           if (discovery_log_limiter.ShouldLog(discovery_finished)) {
-            std::string warning = "尚未发现STM32 MAVLink串口，继续等待";
+            std::string warning = "尚未发现受控设备 MAVLink 串口，继续等待";
             if (!attempt->failures.empty()) {
               warning += "; 探测失败: " +
                          uart::FormatCandidateFailures(attempt->failures);
@@ -274,7 +414,8 @@ int main(int argc, char** argv) {
     }
 
     now = std::chrono::steady_clock::now();
-    const auto rpi_system_id = control_command::LearnedSystemId(stm32_endpoint);
+    const auto rpi_system_id =
+        control_command::LearnedControlledSystemId(controlled_device);
     if (link && rpi_system_id &&
         now - last_heartbeat >= app_config->runtime.heartbeat_interval) {
       mavlink_message_t heartbeat = BuildHeartbeat(*rpi_system_id);
@@ -302,56 +443,61 @@ int main(int argc, char** argv) {
       }
     }
 
-    auto mqtt_snapshot = state_store.Snapshot();
-    if (mqtt_client && active_vendor_id && mqtt_snapshot.vendor_id &&
-        *mqtt_snapshot.vendor_id != *active_vendor_id) {
-      if (control_transaction.HasPending()) {
-        (void)control_transaction.HandleLocalFailure(
-            {.code = "device_identity_changed", .message = "设备身份发生变化，取消当前控制事务"});
+    if (link && controlled_device &&
+        controlled_device->type == device::Type::kFlightController &&
+        rpi_system_id && !state_store.Snapshot().device_id &&
+        now - last_px4_identity_request >= kPx4IdentityRequestInterval) {
+      const auto request = protocol::BuildAutopilotVersionRequest(
+          *rpi_system_id, kComponentId, controlled_device->endpoint);
+      if (!link->SendMessage(request)) {
+        mark_link_disconnected();
       } else {
-        control_transaction.ResetIdentityScope();
-        mqtt_client->PublishAndWait(registration_topic, offline_payload,
-                                    app_config->mqtt.topics.registration.qos,
-                                    /*retain=*/true, std::chrono::seconds(2));
-        mqtt_client.reset();
-        registration_state = registration::RegistrationState{};
-        active_vendor_id.reset();
-        registration_topic.clear();
-        telemetry_topic.clear();
-        config_set_topic.clear();
-        config_ack_topic.clear();
-        control_set_topic.clear();
-        control_ack_topic.clear();
-        offline_payload.clear();
+        last_px4_identity_request = now;
       }
+    }
+
+    auto mqtt_snapshot = state_store.Snapshot();
+    if (mqtt_client && active_device_id && mqtt_snapshot.device_id &&
+        *mqtt_snapshot.device_id != *active_device_id) {
+      close_mqtt_session(/*publish_offline=*/true);
     }
 
     if (!mqtt_client) {
       auto snapshot = mqtt_snapshot;
-      if (snapshot.vendor_id) {
+      if (snapshot.device_id && snapshot.device_type) {
         if (!registration::IsValidDeviceIdentity(
-                app_config->mqtt.connection.client_id_prefix, *snapshot.vendor_id)) {
-          (*logger)->Warn("vendor_id或MQTT Client ID前缀含非法字符，暂不连接MQTT");
+                app_config->mqtt.connection.client_id_prefix,
+                *snapshot.device_id)) {
+          (*logger)->Warn(
+              "device_id或MQTT Client ID前缀含非法字符，暂不连接MQTT");
         } else {
           const auto& topics = app_config->mqtt.topics;
           registration_topic = mqtt::BuildRegistrationTopic(
-              topics.topic_namespace, *snapshot.vendor_id, topics.registration.suffix);
+              topics.topic_namespace, *snapshot.device_id,
+              topics.registration.suffix);
           telemetry_topic = mqtt::BuildTelemetryTopic(
-              topics.topic_namespace, *snapshot.vendor_id, topics.telemetry.suffix);
+              topics.topic_namespace, *snapshot.device_id,
+              topics.telemetry.suffix);
           config_set_topic = mqtt::BuildConfigSetTopic(
-              topics.topic_namespace, *snapshot.vendor_id, topics.config_set.suffix);
+              topics.topic_namespace, *snapshot.device_id,
+              topics.config_set.suffix);
           config_ack_topic = mqtt::BuildConfigAckTopic(
-              topics.topic_namespace, *snapshot.vendor_id, topics.config_ack.suffix);
+              topics.topic_namespace, *snapshot.device_id,
+              topics.config_ack.suffix);
           control_set_topic = mqtt::BuildControlSetTopic(
-              topics.topic_namespace, *snapshot.vendor_id, topics.control_set.suffix);
+              topics.topic_namespace, *snapshot.device_id,
+              topics.control_set.suffix);
           control_ack_topic = mqtt::BuildControlAckTopic(
-              topics.topic_namespace, *snapshot.vendor_id, topics.control_ack.suffix);
-          offline_payload = registration::BuildOfflinePayload(*snapshot.vendor_id);
+              topics.topic_namespace, *snapshot.device_id,
+              topics.control_ack.suffix);
+          offline_payload = registration::BuildOfflinePayload(
+              *snapshot.device_id, *snapshot.device_type);
           mqtt_client = mqtt::MqttClient::Open({
             .broker_host = app_config->mqtt.connection.host,
             .broker_port = app_config->mqtt.connection.port,
             .client_id = registration::BuildClientId(
-                app_config->mqtt.connection.client_id_prefix, *snapshot.vendor_id),
+                app_config->mqtt.connection.client_id_prefix,
+                *snapshot.device_id),
             .username = app_config->mqtt.auth.username,
             .password = app_config->mqtt.auth.password,
             .keepalive_seconds = app_config->mqtt.connection.keepalive_seconds,
@@ -368,7 +514,7 @@ int main(int argc, char** argv) {
                               {control_set_topic, topics.control_set.qos}},
           }, **logger);
           if (mqtt_client) {
-            active_vendor_id = *snapshot.vendor_id;
+            active_device_id = *snapshot.device_id;
             (*logger)->Info("MQTT连接中: broker=" + app_config->mqtt.connection.host +
                             " topic=" + telemetry_topic);
           } else {
@@ -378,15 +524,13 @@ int main(int argc, char** argv) {
       }
     }
 
-    if (mqtt_client && active_vendor_id && mqtt_snapshot.vendor_id &&
-        *active_vendor_id == *mqtt_snapshot.vendor_id) {
+    if (mqtt_client && active_device_id && mqtt_snapshot.device_id &&
+        *active_device_id == *mqtt_snapshot.device_id) {
       auto snapshot = state_store.Snapshot();
-      if (snapshot.vendor_id) {
-        const auto online_payload = registration::BuildOnlinePayload({
-            .vendor_id = *snapshot.vendor_id,
-            .school_name = app_config->identity.school_name,
-            .dcdw_label = snapshot.dcdw_label,
-        });
+      if (snapshot.device_id && snapshot.device_type) {
+        const auto online_payload = registration::BuildOnlinePayload(
+            MakeOnlineRegistration(snapshot,
+                                   app_config->identity.school_name));
         if (registration_state.ShouldPublish(mqtt_client->IsConnected(), online_payload)) {
           const auto& registration_config = app_config->mqtt.topics.registration;
           if (mqtt_client->Publish(registration_topic, online_payload, registration_config.qos,
@@ -399,8 +543,8 @@ int main(int argc, char** argv) {
       }
     }
 
-    if (mqtt_client && active_vendor_id && mqtt_snapshot.vendor_id &&
-        *active_vendor_id == *mqtt_snapshot.vendor_id) {
+    if (mqtt_client && active_device_id && mqtt_snapshot.device_id &&
+        *active_device_id == *mqtt_snapshot.device_id) {
       if (auto message = mqtt_client->TryPopMessage()) {
         if (message->topic == config_set_topic && !restart_requested) {
           config_command::CommandProcessResult result;
@@ -455,6 +599,16 @@ int main(int argc, char** argv) {
             (void)mqtt_client->Publish(control_ack_topic, ack.dump(),
                                        app_config->mqtt.topics.control_ack.qos,
                                        /*retain=*/false);
+          } else if (!controlled_device ||
+                     controlled_device->type != device::Type::kCnsBox) {
+            const auto ack = control_command::BuildRejectedAck(
+                command->command_id, command->command,
+                {.code = "unsupported_device_type",
+                 .message =
+                     "当前命令属于主控箱私有协议，不能发送给 PX4 飞控"});
+            (void)mqtt_client->Publish(
+                control_ack_topic, ack.dump(),
+                app_config->mqtt.topics.control_ack.qos, /*retain=*/false);
           } else {
             (*logger)->Info("收到飞控命令: command_id=" + command->command_id +
                             " command=" + command->command);
@@ -465,14 +619,17 @@ int main(int argc, char** argv) {
                                          /*retain=*/false);
             } else if (submission.should_send_to_mcu && !link) {
               (void)control_transaction.HandleLocalFailure(
-                  {.code = "stm32_link_unavailable", .message = "STM32串口链路不可用"});
+                  {.code = "device_link_unavailable",
+                   .message = "受控设备串口链路不可用"});
             } else if (submission.should_send_to_mcu && !rpi_system_id) {
               (void)control_transaction.HandleLocalFailure(
-                  {.code = "stm32_identity_unknown", .message = "尚未收到STM32心跳"});
+                  {.code = "device_identity_unknown",
+                   .message = "尚未识别受控设备心跳"});
             } else if (submission.should_send_to_mcu) {
               const auto mavlink_message = control_command::EncodeCommandLong(
-                  *command, *rpi_system_id, kComponentId, stm32_endpoint->system_id,
-                  stm32_endpoint->component_id);
+                  *command, *rpi_system_id, kComponentId,
+                  controlled_device->endpoint.system_id,
+                  controlled_device->endpoint.component_id);
               if (!link->SendMessage(mavlink_message)) {
                 mark_link_disconnected();
               } else {
@@ -514,8 +671,9 @@ int main(int argc, char** argv) {
       break;
     }
 
-    if (mqtt_client && active_vendor_id && mqtt_snapshot.vendor_id &&
-        *active_vendor_id == *mqtt_snapshot.vendor_id && mqtt_client->IsConnected() &&
+    if (mqtt_client && active_device_id && mqtt_snapshot.device_id &&
+        *active_device_id == *mqtt_snapshot.device_id &&
+        mqtt_client->IsConnected() &&
         now - last_telemetry_publish >= app_config->runtime.telemetry_publish_interval) {
       const std::string json_str =
           payload::ToJson(

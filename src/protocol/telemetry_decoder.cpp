@@ -15,6 +15,12 @@ bool DecodeAndStore(const mavlink_message_t& msg, state::StateStore& store) {
       store.UpdateHeartbeat(decoded);
       return true;
     }
+    case MAVLINK_MSG_ID_AUTOPILOT_VERSION: {
+      mavlink_autopilot_version_t decoded{};
+      mavlink_msg_autopilot_version_decode(&msg, &decoded);
+      store.UpdateAutopilotVersion(decoded);
+      return true;
+    }
     case MAVLINK_MSG_ID_GPS_RAW_INT: {
       mavlink_gps_raw_int_t decoded{};
       mavlink_msg_gps_raw_int_decode(&msg, &decoded);

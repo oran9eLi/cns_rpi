@@ -7,9 +7,29 @@
 
 namespace state {
 
+void StateStore::UpdateControlledDevice(device::Type type,
+                                        std::uint8_t system_id,
+                                        std::uint8_t component_id) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  state_.device_type = type;
+  state_.device_system_id = system_id;
+  state_.device_component_id = component_id;
+}
+
+void StateStore::UpdateDeviceId(const std::string& value) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  state_.device_id = value;
+}
+
 void StateStore::UpdateHeartbeat(const mavlink_heartbeat_t& value) {
   std::lock_guard<std::mutex> lock(mutex_);
   state_.heartbeat = value;
+}
+
+void StateStore::UpdateAutopilotVersion(
+    const mavlink_autopilot_version_t& value) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  state_.autopilot_version = value;
 }
 
 void StateStore::UpdateGpsRawInt(const mavlink_gps_raw_int_t& value) {
@@ -184,6 +204,13 @@ void StateStore::UpdateDcdwLabel(const std::string& value) {
 void StateStore::UpdateRpiSerial(const std::string& value) {
   std::lock_guard<std::mutex> lock(mutex_);
   state_.rpi_serial = value;
+}
+
+void StateStore::ResetDeviceState() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  const auto rpi_serial = state_.rpi_serial;
+  state_ = TelemetryState{};
+  state_.rpi_serial = rpi_serial;
 }
 
 TelemetryState StateStore::Snapshot() const {

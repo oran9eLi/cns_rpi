@@ -51,4 +51,12 @@ std::optional<std::string> ReadRpiSerial(const std::filesystem::path& path = "/p
  */
 std::string ExtractVendorId(const std::uint8_t (&uas_id)[20]);
 
+/**
+ * @brief 校验主控箱固件提供的 20 字节厂商设备 ID。
+ *
+ * MQTT 主题只能使用 20 个 ASCII 字母或数字；空值、截断值和带分隔符的
+ * Remote ID 均不能作为主控箱主身份。
+ */
+bool IsValidCnsBoxVendorId(const std::string& vendor_id);
+
 }  // namespace protocol

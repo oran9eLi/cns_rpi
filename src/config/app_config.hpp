@@ -18,6 +18,8 @@
 #include <string_view>
 #include <vector>
 
+#include "device/device_type.hpp"
+
 namespace config {
 
 /// 配置加载失败的原因。
@@ -34,6 +36,10 @@ std::string_view ConfigErrorMessage(ConfigError error);
 struct SerialConfig {
   std::string device;  ///< `auto` 或明确字符设备路径，例如 "/dev/ttyUSB0"
   int baud = 0;        ///< 波特率
+};
+
+struct DeviceConfig {
+  device::DetectionMode mode{device::DetectionMode::kAuto};
 };
 
 struct MqttConnectionConfig {
@@ -99,6 +105,7 @@ struct CellularConfig {
 
 struct AppConfig {
   SerialConfig serial;
+  DeviceConfig device;
   MqttConfig mqtt;
   LoggingConfig logging;
   IdentityConfig identity;

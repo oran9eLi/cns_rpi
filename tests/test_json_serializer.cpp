@@ -6,16 +6,18 @@
 #include "cellular/cellular_snapshot.hpp"
 #include "payload/json_serializer.hpp"
 
-TEST_CASE("空TelemetryState只输出identity.school_name其余顶层key都不存在") {
+TEST_CASE("空TelemetryState输出v2骨架和学校信息") {
   state::TelemetryState state{};
 
   auto json = payload::ToJson(state, "NNUTC");
 
   REQUIRE(json.contains("identity"));
+  CHECK(json["schema_version"] == 2);
+  CHECK(json["sent_at"].get<std::string>().ends_with("Z"));
   CHECK(json["identity"]["school_name"] == "NNUTC");
   CHECK_FALSE(json["identity"].contains("vendor_id"));
   CHECK_FALSE(json["identity"].contains("dcdw_label"));
-  CHECK_FALSE(json["identity"].contains("rpi_serial"));
+  CHECK_FALSE(json["gateway"].contains("gateway_id"));
   CHECK_FALSE(json.contains("telemetry"));
   CHECK_FALSE(json.contains("modules"));
   CHECK_FALSE(json.contains("alarms"));
@@ -59,14 +61,35 @@ TEST_CASE("identity三个可选字段各自独立按需省略") {
 
   CHECK(json["identity"]["vendor_id"] == "DCDWCNS1ABCDEFGHIJKL");
   CHECK_FALSE(json["identity"].contains("dcdw_label"));
-  CHECK_FALSE(json["identity"].contains("rpi_serial"));
+  CHECK_FALSE(json["gateway"].contains("gateway_id"));
 
   state.dcdw_label = "DCDW-007";
   state.rpi_serial = "100000001234abcd";
   auto json2 = payload::ToJson(state, "NNUTC");
 
   CHECK(json2["identity"]["dcdw_label"] == "DCDW-007");
-  CHECK(json2["identity"]["rpi_serial"] == "100000001234abcd");
+  CHECK(json2["gateway"]["gateway_id"] == "100000001234abcd");
+}
+
+TEST_CASE("PX4遥测v2区分设备主ID和Remote ID") {
+  state::TelemetryState state{};
+  state.device_type = device::Type::kFlightController;
+  state.device_id = "PX4U1-0123456789ABCDEF";
+  state.device_system_id = 2;
+  state.device_component_id = MAV_COMP_ID_AUTOPILOT1;
+  mavlink_open_drone_id_basic_id_t basic_id{};
+  std::memcpy(basic_id.uas_id, "RID-DEVICE-001", 14);
+  state.open_drone_id_basic_id = basic_id;
+
+  const auto json = payload::ToJson(state, "");
+
+  CHECK(json["schema_version"] == 2);
+  CHECK(json["device_id"] == "PX4U1-0123456789ABCDEF");
+  CHECK(json["device_type"] == "flight_controller");
+  CHECK(json["identity"]["remote_id"] == "RID-DEVICE-001");
+  CHECK(json["endpoint"]["sysid"] == 2);
+  CHECK_FALSE(json["identity"].contains("vendor_id"));
+  CHECK_FALSE(json["identity"].contains("school_name"));
 }
 
 TEST_CASE("heartbeat字段按原始数字透传,未收到时telemetry.heartbeat不存在") {

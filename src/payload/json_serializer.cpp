@@ -9,15 +9,28 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <numbers>
 #include <string>
 #include <string_view>
+
+#include "protocol/px4_identity.hpp"
 
 namespace payload {
 
 namespace {
 
-nlohmann::json BuildIdentity(const state::TelemetryState& state, const std::string& school_name) {
+std::string CurrentTimestampUtc() {
+  const std::time_t now = std::time(nullptr);
+  std::tm utc{};
+  gmtime_r(&now, &utc);
+  std::array<char, 32> buffer{};
+  std::strftime(buffer.data(), buffer.size(), "%Y-%m-%dT%H:%M:%SZ", &utc);
+  return std::string{buffer.data()};
+}
+
+nlohmann::json BuildIdentity(const state::TelemetryState& state,
+                             const std::string& school_name) {
   nlohmann::json identity;
   if (state.vendor_id) {
     identity["vendor_id"] = *state.vendor_id;
@@ -25,11 +38,59 @@ nlohmann::json BuildIdentity(const state::TelemetryState& state, const std::stri
   if (state.dcdw_label) {
     identity["dcdw_label"] = *state.dcdw_label;
   }
-  if (state.rpi_serial) {
-    identity["rpi_serial"] = *state.rpi_serial;
+  if (state.open_drone_id_basic_id) {
+    const auto& basic_id = *state.open_drone_id_basic_id;
+    identity["remote_id"] = std::string{
+        reinterpret_cast<const char*>(basic_id.uas_id),
+        strnlen(reinterpret_cast<const char*>(basic_id.uas_id),
+                sizeof(basic_id.uas_id))};
   }
-  identity["school_name"] = school_name;
+  if (state.autopilot_version) {
+    const auto& version = *state.autopilot_version;
+    if (const auto uid2 = protocol::FormatPx4Uid2(version)) {
+      identity["uid2"] = *uid2;
+    }
+    if (const auto uid = protocol::FormatPx4Uid(version)) {
+      identity["uid"] = *uid;
+    }
+    identity["autopilot"] = "PX4";
+    identity["firmware_version"] =
+        std::to_string((version.flight_sw_version >> 24) & 0xFFU) + "." +
+        std::to_string((version.flight_sw_version >> 16) & 0xFFU) + "." +
+        std::to_string((version.flight_sw_version >> 8) & 0xFFU);
+    identity["hardware_vendor_id"] = version.vendor_id;
+    identity["hardware_product_id"] = version.product_id;
+    identity["board_version"] = version.board_version;
+  }
+  if (!school_name.empty()) {
+    identity["school_name"] = school_name;
+  }
   return identity;
+}
+
+nlohmann::json BuildEndpoint(const state::TelemetryState& state) {
+  nlohmann::json endpoint = nlohmann::json::object();
+  if (state.device_system_id) {
+    endpoint["sysid"] = *state.device_system_id;
+  }
+  if (state.device_component_id) {
+    endpoint["compid"] = *state.device_component_id;
+  }
+  if (state.heartbeat) {
+    endpoint["mavlink_version"] = state.heartbeat->mavlink_version;
+  }
+  return endpoint;
+}
+
+nlohmann::json BuildGateway(const state::TelemetryState& state) {
+  nlohmann::json gateway{
+      {"software_version", "cns_rpi-2.0.0"},
+      {"connection", "5g"},
+  };
+  if (state.rpi_serial) {
+    gateway["gateway_id"] = *state.rpi_serial;
+  }
+  return gateway;
 }
 
 constexpr double kRadToDeg = 180.0 / std::numbers::pi;
@@ -453,8 +514,19 @@ void AddDroneIdSelfId(nlohmann::json& drone_id, const state::TelemetryState& sta
 }  // namespace
 
 nlohmann::json ToJson(const state::TelemetryState& state, const std::string& school_name) {
-  nlohmann::json out;
+  nlohmann::json out{
+      {"schema_version", 2},
+      {"sent_at", CurrentTimestampUtc()},
+  };
+  if (state.device_id) {
+    out["device_id"] = *state.device_id;
+  }
+  if (state.device_type) {
+    out["device_type"] = device::TypeName(*state.device_type);
+  }
   out["identity"] = BuildIdentity(state, school_name);
+  out["endpoint"] = BuildEndpoint(state);
+  out["gateway"] = BuildGateway(state);
 
   nlohmann::json telemetry = nlohmann::json::object();
   AddHeartbeat(telemetry, state);

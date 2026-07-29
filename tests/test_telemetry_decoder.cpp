@@ -227,3 +227,25 @@ TEST_CASE("SERVO_OUTPUT_RAW decodes first four PWM pulse widths") {
   CHECK(snapshot.motor_pulse->pwm_us[2] == 1500);
   CHECK(snapshot.motor_pulse->pwm_us[3] == 2000);
 }
+
+TEST_CASE("AUTOPILOT_VERSION stores PX4 hardware identity fields") {
+  std::uint8_t flight_custom_version[8] = {};
+  std::uint8_t middleware_custom_version[8] = {};
+  std::uint8_t os_custom_version[8] = {};
+  std::uint8_t uid2[18] = {};
+  uid2[0] = 0xAA;
+  mavlink_message_t message{};
+  mavlink_msg_autopilot_version_pack(
+      2, MAV_COMP_ID_AUTOPILOT1, &message, 0,
+      (1U << 24) | (17U << 16), 0, 0, 3,
+      flight_custom_version, middleware_custom_version, os_custom_version,
+      26, 7, 0x0123456789ABCDEFULL, uid2);
+  state::StateStore store;
+
+  CHECK(protocol::DecodeAndStore(message, store));
+  const auto snapshot = store.Snapshot();
+  REQUIRE(snapshot.autopilot_version.has_value());
+  CHECK(snapshot.autopilot_version->uid ==
+        0x0123456789ABCDEFULL);
+  CHECK(snapshot.autopilot_version->uid2[0] == 0xAA);
+}

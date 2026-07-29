@@ -197,3 +197,25 @@ TEST_CASE("New uplink fields update independently") {
   CHECK(snapshot.lora_counters->rx_frame_count == 34U);
   CHECK(snapshot.lora_counters->rx_last_ms == 4567U);
 }
+
+TEST_CASE("ResetDeviceState清空受控设备状态但保留树莓派身份") {
+  state::StateStore store;
+  store.UpdateRpiSerial("100000001234abcd");
+  store.UpdateControlledDevice(device::Type::kFlightController, 2, 1);
+  store.UpdateDeviceId("PX4U1-0123456789ABCDEF");
+  store.UpdateDcdwLabel("DCDW-002");
+  mavlink_heartbeat_t heartbeat{};
+  heartbeat.autopilot = MAV_AUTOPILOT_PX4;
+  store.UpdateHeartbeat(heartbeat);
+
+  store.ResetDeviceState();
+
+  const auto snapshot = store.Snapshot();
+  REQUIRE(snapshot.rpi_serial.has_value());
+  CHECK(*snapshot.rpi_serial == "100000001234abcd");
+  CHECK_FALSE(snapshot.device_type.has_value());
+  CHECK_FALSE(snapshot.device_id.has_value());
+  CHECK_FALSE(snapshot.device_system_id.has_value());
+  CHECK_FALSE(snapshot.heartbeat.has_value());
+  CHECK_FALSE(snapshot.dcdw_label.has_value());
+}
