@@ -14,6 +14,7 @@
  */
 
 #include <string>
+#include <cstdint>
 
 #include <nlohmann/json.hpp>
 
@@ -35,5 +36,14 @@ nlohmann::json ToJson(const state::TelemetryState& state, const std::string& sch
  */
 nlohmann::json ToJson(const state::TelemetryState& state, const std::string& school_name,
                       const cellular::StatusSnapshot& cellular_status);
+
+/**
+ * @brief 生成不入库的 PX4 高频紧凑帧。
+ *
+ * 只包含 Web 仪表盘需要的高频 MAVLink 数据，不读取 5G 状态文件、不携带日志和
+ * 模块表，使用 QoS 0 发布。浏览器处理不过来时允许丢旧帧。
+ */
+nlohmann::json ToPx4RealtimeJson(const state::TelemetryState& state,
+                                 std::uint64_t sequence);
 
 }  // namespace payload

@@ -53,6 +53,12 @@ struct QgcUdpConfig {
   bool allow_commands{true};
 };
 
+/// PX4 Web 控制台专用高频遥测；只对真实飞控生效，主控箱继续使用原遥测周期。
+struct Px4RealtimeConfig {
+  bool enabled{true};
+  std::chrono::milliseconds publish_interval{50};
+};
+
 struct MqttConnectionConfig {
   std::string host;
   int port = 0;
@@ -118,6 +124,7 @@ struct AppConfig {
   SerialConfig serial;
   DeviceConfig device;
   QgcUdpConfig qgc_udp;
+  Px4RealtimeConfig px4_realtime;
   MqttConfig mqtt;
   LoggingConfig logging;
   IdentityConfig identity;

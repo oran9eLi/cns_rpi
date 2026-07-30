@@ -181,6 +181,7 @@ int main(int argc, char** argv) {
   std::string registration_topic;
   std::string offline_payload;
   std::string telemetry_topic;
+  std::string px4_realtime_topic;
   std::string config_set_topic;
   std::string config_ack_topic;
   std::string control_set_topic;
@@ -212,6 +213,8 @@ int main(int argc, char** argv) {
   bool ever_connected_to_device = false;
   bool restart_requested = false;
   auto last_telemetry_publish = std::chrono::steady_clock::now();
+  auto last_px4_realtime_publish = std::chrono::steady_clock::now();
+  std::uint64_t px4_realtime_sequence = 0;
   auto last_px4_identity_request =
       std::chrono::steady_clock::now() - kPx4IdentityRequestInterval;
   auto next_qgc_start_attempt = std::chrono::steady_clock::now();
@@ -244,6 +247,7 @@ int main(int argc, char** argv) {
     active_device_id.reset();
     registration_topic.clear();
     telemetry_topic.clear();
+    px4_realtime_topic.clear();
     config_set_topic.clear();
     config_ack_topic.clear();
     control_set_topic.clear();
@@ -438,7 +442,10 @@ int main(int argc, char** argv) {
         pending_first_message.reset();
         process_mavlink_message(first_message, now);
       } else {
-        const auto serial_wait = qgc_udp_bridge
+        const auto serial_wait =
+            (qgc_udp_bridge ||
+             (app_config->px4_realtime.enabled && controlled_device &&
+              controlled_device->type == device::Type::kFlightController))
                                      ? std::chrono::milliseconds(5)
                                      : std::chrono::milliseconds(100);
         auto received = link->ReceiveMessage(serial_wait);
@@ -541,6 +548,8 @@ int main(int argc, char** argv) {
           telemetry_topic = mqtt::BuildTelemetryTopic(
               topics.topic_namespace, *snapshot.device_id,
               topics.telemetry.suffix);
+          px4_realtime_topic = mqtt::BuildPx4RealtimeTopic(
+              topics.topic_namespace, *snapshot.device_id);
           config_set_topic = mqtt::BuildConfigSetTopic(
               topics.topic_namespace, *snapshot.device_id,
               topics.config_set.suffix);
@@ -580,6 +589,15 @@ int main(int argc, char** argv) {
             active_device_id = *snapshot.device_id;
             (*logger)->Info("MQTT连接中: broker=" + app_config->mqtt.connection.host +
                             " topic=" + telemetry_topic);
+            if (controlled_device &&
+                controlled_device->type == device::Type::kFlightController &&
+                app_config->px4_realtime.enabled) {
+              (*logger)->Info(
+                  "PX4实时遥测已启用: interval=" +
+                  std::to_string(
+                      app_config->px4_realtime.publish_interval.count()) +
+                  "ms topic=" + px4_realtime_topic);
+            }
           } else {
             (*logger)->Warn("MQTT客户端创建失败，下一轮重试");
           }
@@ -753,6 +771,24 @@ int main(int argc, char** argv) {
         (*logger)->Warn("MQTT发布失败，下个节拍重试");
       }
       last_telemetry_publish = now;
+    }
+
+    if (app_config->px4_realtime.enabled && mqtt_client &&
+        controlled_device &&
+        controlled_device->type == device::Type::kFlightController &&
+        active_device_id && mqtt_snapshot.device_id &&
+        *active_device_id == *mqtt_snapshot.device_id &&
+        mqtt_client->IsConnected() &&
+        now - last_px4_realtime_publish >=
+            app_config->px4_realtime.publish_interval) {
+      const auto frame = payload::ToPx4RealtimeJson(
+          state_store.Snapshot(), px4_realtime_sequence++);
+      // 高频帧采用 QoS 0 且不 retain。失败时直接等下一帧，避免重传旧数据积累延迟。
+      if (!mqtt_client->Publish(px4_realtime_topic, frame.dump(),
+                                /*qos=*/0, /*retain=*/false)) {
+        (*logger)->Warn("PX4实时遥测发布失败，丢弃当前帧");
+      }
+      last_px4_realtime_publish = now;
     }
 
     // 放在循环末尾：走到这里说明本轮迭代已完整跑完，没有卡在任何一步。

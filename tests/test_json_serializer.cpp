@@ -71,6 +71,36 @@ TEST_CASE("identity三个可选字段各自独立按需省略") {
   CHECK(json2["gateway"]["gateway_id"] == "100000001234abcd");
 }
 
+TEST_CASE("PX4高频帧只包含紧凑遥测和毫秒时间戳") {
+  state::TelemetryState state{};
+  state.device_id = "PX4U2-ABC123";
+
+  mavlink_attitude_t attitude{};
+  attitude.roll = 0.1F;
+  attitude.pitch = -0.2F;
+  state.attitude = attitude;
+
+  mavlink_sys_status_t system{};
+  system.voltage_battery = 16800;
+  system.current_battery = -1;
+  state.sys_status = system;
+
+  const auto json = payload::ToPx4RealtimeJson(state, 42);
+
+  CHECK(json["schema_version"] == 1);
+  CHECK(json["device_id"] == "PX4U2-ABC123");
+  CHECK(json["sequence"] == 42);
+  CHECK(json["sent_at"].get<std::string>().ends_with("Z"));
+  CHECK(json["sent_at"].get<std::string>().find('.') != std::string::npos);
+  REQUIRE(json.contains("telemetry"));
+  CHECK(json["telemetry"].contains("attitude"));
+  CHECK(json["telemetry"].contains("sys_status"));
+  CHECK_FALSE(json.contains("identity"));
+  CHECK_FALSE(json.contains("gateway"));
+  CHECK_FALSE(json.contains("logs"));
+  CHECK_FALSE(json.contains("modules"));
+}
+
 TEST_CASE("PX4遥测v2区分设备主ID和Remote ID") {
   state::TelemetryState state{};
   state.device_type = device::Type::kFlightController;

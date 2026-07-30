@@ -120,6 +120,17 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
       }
     }
 
+    if (root.contains("px4_realtime")) {
+      const auto& px4_realtime = root.at("px4_realtime");
+      if (px4_realtime.contains("enabled")) {
+        cfg.px4_realtime.enabled = px4_realtime.at("enabled").get<bool>();
+      }
+      if (px4_realtime.contains("publish_interval_ms")) {
+        cfg.px4_realtime.publish_interval = std::chrono::milliseconds(
+            px4_realtime.at("publish_interval_ms").get<int>());
+      }
+    }
+
     const auto& mqtt = root.at("mqtt");
     const auto& connection = mqtt.at("connection");
     cfg.mqtt.connection.host = connection.at("host").get<std::string>();
@@ -207,6 +218,7 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
   const auto cellular_snapshot_max_age = cfg.cellular.status_snapshot_max_age.count();
   const auto qgc_discovery_ms = cfg.qgc_udp.discovery_interval.count();
   const auto qgc_peer_timeout_ms = cfg.qgc_udp.peer_timeout.count();
+  const auto px4_realtime_ms = cfg.px4_realtime.publish_interval.count();
   std::unordered_set<std::string> qgc_interfaces;
   bool valid_qgc_interfaces = !cfg.qgc_udp.lan_interfaces.empty();
   for (const auto& interface_name : cfg.qgc_udp.lan_interfaces) {
@@ -236,6 +248,7 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
       qgc_discovery_ms > 60000 || qgc_peer_timeout_ms < 500 ||
       qgc_peer_timeout_ms > 60000 ||
       qgc_peer_timeout_ms < qgc_discovery_ms * 2 ||
+      px4_realtime_ms < 20 || px4_realtime_ms > 1000 ||
       !IsValidLogLevel(cfg.logging.level) || max_file_size_kb < 64 ||
       max_file_size_kb > 102400 ||
       !IsValidTopicSegment(topics.topic_namespace) ||

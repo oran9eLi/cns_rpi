@@ -132,6 +132,41 @@ TEST_CASE("QGC UDP bridge configuration can be enabled explicitly") {
   CHECK_FALSE(result->qgc_udp.allow_commands);
 }
 
+TEST_CASE("PX4实时遥测默认开启且支持显式配置") {
+  const auto default_result =
+      config::LoadAppConfig(WriteTempConfig(ValidConfig()));
+  REQUIRE(default_result.has_value());
+  CHECK(default_result->px4_realtime.enabled);
+  CHECK(default_result->px4_realtime.publish_interval ==
+        std::chrono::milliseconds(50));
+
+  const auto configured = ReplaceOnce(
+      ValidConfig(),
+      "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},",
+      "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},\n"
+      "    \"px4_realtime\": {\"enabled\": false, "
+      "\"publish_interval_ms\": 100},");
+  const auto result = config::LoadAppConfig(WriteTempConfig(configured));
+  REQUIRE(result.has_value());
+  CHECK_FALSE(result->px4_realtime.enabled);
+  CHECK(result->px4_realtime.publish_interval ==
+        std::chrono::milliseconds(100));
+}
+
+TEST_CASE("PX4实时遥测周期必须在20到1000毫秒之间") {
+  for (const int interval : {19, 1001}) {
+    const auto configured = ReplaceOnce(
+        ValidConfig(),
+        "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},",
+        "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},\n"
+        "    \"px4_realtime\": {\"enabled\": true, "
+        "\"publish_interval_ms\": " +
+            std::to_string(interval) + "},");
+    const auto result = config::LoadAppConfig(WriteTempConfig(configured));
+    CHECK_FALSE(result.has_value());
+  }
+}
+
 TEST_CASE("QGC UDP bridge can be disabled with the short rollback form") {
   const auto configured = ReplaceOnce(
       ValidConfig(), "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},",

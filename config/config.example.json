@@ -16,6 +16,10 @@
     "peer_timeout_ms": 5000,
     "allow_commands": true
   },
+  "px4_realtime": {
+    "enabled": true,
+    "publish_interval_ms": 50
+  },
   "mqtt": {
     "connection": {
       "host": "112.124.52.232",

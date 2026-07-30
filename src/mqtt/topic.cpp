@@ -27,6 +27,11 @@ std::string BuildTelemetryTopic(const std::string& topic_namespace, const std::s
   return BuildDeviceTopic(topic_namespace, vendor_id, suffix);
 }
 
+std::string BuildPx4RealtimeTopic(const std::string& topic_namespace,
+                                  const std::string& device_id) {
+  return BuildDeviceTopic(topic_namespace, device_id, "px4/realtime/v1");
+}
+
 std::string BuildConfigSetTopic(const std::string& topic_namespace,
                                 const std::string& vendor_id, const std::string& suffix) {
   return BuildDeviceTopic(topic_namespace, vendor_id, suffix);

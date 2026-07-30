@@ -6,6 +6,7 @@
 #include "payload/json_serializer.hpp"
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -26,6 +27,24 @@ std::string CurrentTimestampUtc() {
   gmtime_r(&now, &utc);
   std::array<char, 32> buffer{};
   std::strftime(buffer.data(), buffer.size(), "%Y-%m-%dT%H:%M:%SZ", &utc);
+  return std::string{buffer.data()};
+}
+
+std::string CurrentTimestampUtcMillis() {
+  const auto now = std::chrono::system_clock::now();
+  const auto milliseconds =
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          now.time_since_epoch()) %
+      std::chrono::seconds(1);
+  const std::time_t time = std::chrono::system_clock::to_time_t(now);
+  std::tm utc{};
+  gmtime_r(&time, &utc);
+  std::array<char, 32> buffer{};
+  const auto date_length =
+      std::strftime(buffer.data(), buffer.size(), "%Y-%m-%dT%H:%M:%S", &utc);
+  std::snprintf(buffer.data() + date_length, buffer.size() - date_length,
+                ".%03lldZ",
+                static_cast<long long>(milliseconds.count()));
   return std::string{buffer.data()};
 }
 
@@ -575,6 +594,29 @@ nlohmann::json ToJson(const state::TelemetryState& state, const std::string& sch
                       const cellular::StatusSnapshot& cellular_status) {
   auto out = ToJson(state, school_name);
   out["telemetry"]["cellular_5g"] = cellular::BuildPublicTelemetryJson(cellular_status);
+  return out;
+}
+
+nlohmann::json ToPx4RealtimeJson(const state::TelemetryState& state,
+                                 std::uint64_t sequence) {
+  nlohmann::json out{
+      {"schema_version", 1},
+      {"sequence", sequence},
+      {"sent_at", CurrentTimestampUtcMillis()},
+  };
+  if (state.device_id) {
+    out["device_id"] = *state.device_id;
+  }
+
+  nlohmann::json telemetry = nlohmann::json::object();
+  AddHeartbeat(telemetry, state);
+  AddAttitude(telemetry, state);
+  AddGps(telemetry, state);
+  AddGlobalPosition(telemetry, state);
+  AddSysStatus(telemetry, state);
+  AddBattery(telemetry, state);
+  AddPressure(telemetry, state);
+  out["telemetry"] = std::move(telemetry);
   return out;
 }
 
