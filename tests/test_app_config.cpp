@@ -103,6 +103,7 @@ TEST_CASE("QGC UDP bridge is backward-compatible and defaults to disabled") {
   CHECK_FALSE(result->qgc_udp.enabled);
   CHECK(result->qgc_udp.lan_interfaces ==
         std::vector<std::string>{"wlan0", "eth0"});
+  CHECK(result->qgc_udp.peer_policy == "first_valid_wins");
   CHECK(result->qgc_udp.listen_port == 14540);
   CHECK(result->qgc_udp.qgc_port == 14550);
   CHECK(result->qgc_udp.discovery_interval ==
@@ -117,7 +118,8 @@ TEST_CASE("QGC UDP bridge configuration can be enabled explicitly") {
       "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},\n"
       "    \"qgc_udp\": {"
       "\"enabled\": true, \"mode\": \"auto_discovery\", "
-      "\"lan_interfaces\": [\"wlan0\"], \"listen_port\": 14540, "
+      "\"lan_interfaces\": [\"wlan0\", \"wg0\"], "
+      "\"peer_policy\": \"first_valid_wins\", \"listen_port\": 14540, "
       "\"qgc_port\": 14550, \"discovery_interval_ms\": 500, "
       "\"peer_timeout_ms\": 3000, \"allow_commands\": false},");
   const auto result = config::LoadAppConfig(WriteTempConfig(configured));
@@ -125,7 +127,8 @@ TEST_CASE("QGC UDP bridge configuration can be enabled explicitly") {
   REQUIRE(result.has_value());
   CHECK(result->qgc_udp.enabled);
   CHECK(result->qgc_udp.lan_interfaces ==
-        std::vector<std::string>{"wlan0"});
+        std::vector<std::string>{"wlan0", "wg0"});
+  CHECK(result->qgc_udp.peer_policy == "first_valid_wins");
   CHECK(result->qgc_udp.discovery_interval ==
         std::chrono::milliseconds(500));
   CHECK(result->qgc_udp.peer_timeout == std::chrono::milliseconds(3000));
@@ -188,6 +191,10 @@ TEST_CASE("QGC UDP bridge rejects unsafe or inconsistent settings") {
            "\"listen_port\":14540,\"qgc_port\":14550,"
            "\"discovery_interval_ms\":1000,\"peer_timeout_ms\":5000,"
            "\"allow_commands\":true}",
+           "{\"enabled\":true,\"lan_interfaces\":[\"wlan0\",\"wg0\"],"
+           "\"peer_policy\":\"last_valid_wins\",\"listen_port\":14540,"
+           "\"qgc_port\":14550,\"discovery_interval_ms\":1000,"
+           "\"peer_timeout_ms\":5000,\"allow_commands\":true}",
            "{\"enabled\":true,\"lan_interfaces\":[\"wlan0\",\"wlan0\"],"
            "\"listen_port\":14540,\"qgc_port\":14550,"
            "\"discovery_interval_ms\":1000,\"peer_timeout_ms\":5000,"

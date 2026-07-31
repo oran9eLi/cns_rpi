@@ -20,13 +20,13 @@ namespace {
 
 class UdpPeer {
  public:
-  UdpPeer() {
+  explicit UdpPeer(const char* bind_address = "127.0.0.2") {
     fd_ = ::socket(AF_INET, SOCK_DGRAM | SOCK_CLOEXEC, 0);
     REQUIRE(fd_ >= 0);
     sockaddr_in local{};
     local.sin_family = AF_INET;
     local.sin_port = 0;
-    REQUIRE(::inet_pton(AF_INET, "127.0.0.2", &local.sin_addr) == 1);
+    REQUIRE(::inet_pton(AF_INET, bind_address, &local.sin_addr) == 1);
     REQUIRE(::bind(fd_, reinterpret_cast<const sockaddr*>(&local),
                    sizeof(local)) == 0);
   }
@@ -59,6 +59,11 @@ class UdpPeer {
     const ssize_t count = ::recv(fd_, buffer.data(), buffer.size(), 0);
     REQUIRE(count > 0);
     return {buffer.begin(), buffer.begin() + count};
+  }
+
+  bool HasPending(std::chrono::milliseconds timeout) const {
+    pollfd descriptor{fd_, POLLIN, 0};
+    return ::poll(&descriptor, 1, static_cast<int>(timeout.count())) == 1;
   }
 
  private:
@@ -166,4 +171,42 @@ TEST_CASE("inactive QGC peer is released and discovery can resume") {
   REQUIRE(event.has_value());
   CHECK(event->type ==
         network::QgcUdpBridge::PeerEventType::kDisconnected);
+}
+
+TEST_CASE("first valid QGC keeps sole control until timeout then another can win") {
+  const auto timeout = std::chrono::milliseconds(20);
+  auto bridge = OpenBridge(true, timeout);
+  UdpPeer first("127.0.0.2");
+  UdpPeer second("127.0.0.3");
+  const auto connected_at = std::chrono::steady_clock::now();
+  const auto qgc_heartbeat =
+      Encode(PackHeartbeat(255, MAV_COMP_ID_MISSIONPLANNER));
+
+  first.Send(qgc_heartbeat, bridge.LocalPort());
+  REQUIRE(bridge.PollIncoming(connected_at).size() == 1);
+  REQUIRE(bridge.TakePeerEvent().has_value());
+
+  second.Send(qgc_heartbeat, bridge.LocalPort());
+  CHECK(bridge.PollIncoming(connected_at + std::chrono::milliseconds(1)).empty());
+
+  bridge.ForwardFlightControllerMessage(
+      PackHeartbeat(1, MAV_COMP_ID_AUTOPILOT1),
+      connected_at + std::chrono::milliseconds(2));
+  CHECK_FALSE(first.Receive().empty());
+  CHECK_FALSE(second.HasPending(std::chrono::milliseconds(20)));
+
+  CHECK(bridge.PollIncoming(connected_at + timeout).empty());
+  CHECK_FALSE(bridge.HasPeer());
+  REQUIRE(bridge.TakePeerEvent().has_value());
+
+  second.Send(qgc_heartbeat, bridge.LocalPort());
+  REQUIRE(bridge.PollIncoming(connected_at + timeout +
+                              std::chrono::milliseconds(1))
+              .size() == 1);
+  CHECK(bridge.HasPeer());
+  const auto event = bridge.TakePeerEvent();
+  REQUIRE(event.has_value());
+  CHECK(event->type ==
+        network::QgcUdpBridge::PeerEventType::kConnected);
+  CHECK(event->endpoint.starts_with("127.0.0.3:"));
 }

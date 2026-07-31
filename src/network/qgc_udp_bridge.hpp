@@ -2,12 +2,13 @@
 
 /**
  * @file qgc_udp_bridge.hpp
- * @brief PX4 串口会话与同一局域网 QGroundControl 之间的非阻塞 MAVLink UDP 桥接。
+ * @brief PX4 串口会话与获准网络上的 QGroundControl 之间的非阻塞 MAVLink UDP 桥接。
  *
  * @details
  * 本模块不打开飞控串口、不解析业务字段、不接触 StateStore 或 MQTT。主循环把已通过
  * CRC 校验的飞控帧交给它发送，并把它返回的 QGC 帧写入现有串口。仅从配置指定的
- * LAN 接口计算子网与定向广播，禁止把 5G 公网接口隐式纳入控制面。
+ * 网络接口计算子网与定向广播。可同时配置 wlan0 和 WireGuard 的 wg0，但不会把
+ * 5G 公网接口 usb0 隐式纳入控制面。
  */
 
 #include <chrono>
@@ -32,10 +33,11 @@ enum class QgcUdpError {
 std::string_view QgcUdpErrorMessage(QgcUdpError error);
 
 /**
- * @brief 在 cns_rpi 独占的 PX4 串口会话与一个同网段 QGC 端点之间转发合法帧。
+ * @brief 在 cns_rpi 独占的 PX4 串口会话与一个获准 QGC 端点之间转发合法帧。
  * @details 未发现端点时只定时广播 PX4 HEARTBEAT；第一个返回合法 MAVLink 帧的
- * 同网段端点被锁定，超时后释放。所有 socket 操作均非阻塞，UDP 故障不得阻塞串口
- * 或 MQTT 主链路。本类只在 cns_rpi 主线程调用。
+ * 端点获得唯一控制权，其他端点在占用期间被忽略，超时后释放并重新竞选。所有
+ * socket 操作均非阻塞，UDP 故障不得阻塞串口或 MQTT 主链路。本类只在 cns_rpi
+ * 主线程调用。
  */
 class QgcUdpBridge {
  public:
@@ -71,7 +73,7 @@ class QgcUdpBridge {
       const mavlink_message_t& message,
       std::chrono::steady_clock::time_point now);
 
-  /// @brief 非阻塞排空当前 UDP 数据报，只返回获准 LAN 端点的合法 MAVLink 帧。
+  /// @brief 非阻塞排空当前 UDP 数据报，只返回当前控制端的合法 MAVLink 帧。
   /// @details `allow_commands=false` 时仍可学习端点，但返回空数组，保证只读观察。
   std::vector<mavlink_message_t> PollIncoming(
       std::chrono::steady_clock::time_point now);

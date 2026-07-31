@@ -42,10 +42,11 @@ struct DeviceConfig {
   device::DetectionMode mode{device::DetectionMode::kAuto};
 };
 
-/// PX4 专用的同一局域网 QGC 自动发现配置；配置段缺失时保持关闭以兼容旧设备。
+/// PX4 专用 QGC 自动发现配置；可同时允许局域网和 WireGuard 安全隧道入口。
 struct QgcUdpConfig {
   bool enabled{false};
   std::vector<std::string> lan_interfaces{"wlan0", "eth0"};
+  std::string peer_policy{"first_valid_wins"};
   int listen_port{14540};
   int qgc_port{14550};
   std::chrono::milliseconds discovery_interval{1000};

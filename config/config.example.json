@@ -9,11 +9,12 @@
   "qgc_udp": {
     "enabled": false,
     "mode": "auto_discovery",
-    "lan_interfaces": ["wlan0", "eth0"],
+    "lan_interfaces": ["wlan0", "wg0"],
+    "peer_policy": "first_valid_wins",
     "listen_port": 14540,
     "qgc_port": 14550,
     "discovery_interval_ms": 1000,
-    "peer_timeout_ms": 5000,
+    "peer_timeout_ms": 10000,
     "allow_commands": true
   },
   "px4_realtime": {

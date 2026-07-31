@@ -100,6 +100,10 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
         cfg.qgc_udp.lan_interfaces =
             qgc_udp.at("lan_interfaces").get<std::vector<std::string>>();
       }
+      if (qgc_udp.contains("peer_policy")) {
+        cfg.qgc_udp.peer_policy =
+            qgc_udp.at("peer_policy").get<std::string>();
+      }
       if (qgc_udp.contains("listen_port")) {
         cfg.qgc_udp.listen_port = qgc_udp.at("listen_port").get<int>();
       }
@@ -242,7 +246,9 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
       cfg.cellular.status_snapshot_path.empty() ||
       !cfg.cellular.status_snapshot_path.is_absolute() ||
       cellular_snapshot_max_age < 10 || cellular_snapshot_max_age > 300 ||
-      !valid_qgc_interfaces || cfg.qgc_udp.listen_port < 1 ||
+      !valid_qgc_interfaces ||
+      cfg.qgc_udp.peer_policy != "first_valid_wins" ||
+      cfg.qgc_udp.listen_port < 1 ||
       cfg.qgc_udp.listen_port > 65535 || cfg.qgc_udp.qgc_port < 1 ||
       cfg.qgc_udp.qgc_port > 65535 || qgc_discovery_ms < 100 ||
       qgc_discovery_ms > 60000 || qgc_peer_timeout_ms < 500 ||

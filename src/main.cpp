@@ -337,15 +337,25 @@ int main(int argc, char** argv) {
              .allow_commands = app_config->qgc_udp.allow_commands});
         if (bridge) {
           qgc_udp_bridge.emplace(std::move(*bridge));
+          std::string qgc_interfaces;
+          for (const auto& interface_name :
+               app_config->qgc_udp.lan_interfaces) {
+            if (!qgc_interfaces.empty()) {
+              qgc_interfaces += ",";
+            }
+            qgc_interfaces += interface_name;
+          }
           (*logger)->Info(
-              "QGC局域网UDP桥接已启动: listen=" +
+              "QGC UDP单控制权桥接已启动: listen=" +
               std::to_string(qgc_udp_bridge->LocalPort()) +
               " qgc=" + std::to_string(app_config->qgc_udp.qgc_port) +
+              " interfaces=" + qgc_interfaces +
+              " policy=" + app_config->qgc_udp.peer_policy +
               " commands=" +
               (app_config->qgc_udp.allow_commands ? "enabled" : "disabled"));
         } else {
           (*logger)->Warn(
-              "QGC局域网UDP桥接启动失败: " +
+              "QGC UDP单控制权桥接启动失败: " +
               std::string(network::QgcUdpErrorMessage(bridge.error())));
           next_qgc_start_attempt = now + std::chrono::seconds(5);
         }
@@ -475,9 +485,9 @@ int main(int argc, char** argv) {
           }
           if (event->type ==
               network::QgcUdpBridge::PeerEventType::kConnected) {
-            (*logger)->Info("QGC局域网端已连接: " + event->endpoint);
+            (*logger)->Info("QGC控制端已锁定: " + event->endpoint);
           } else {
-            (*logger)->Warn("QGC局域网端连接超时，恢复自动发现: " +
+            (*logger)->Warn("QGC控制权已释放，恢复双入口竞选: " +
                             event->endpoint);
           }
         }
