@@ -37,6 +37,7 @@
 #include "control_command/control_command.hpp"
 #include "control_command/control_endpoint.hpp"
 #include "control_command/control_transaction.hpp"
+#include "latency/px4_latency.hpp"
 #include "logging/logger.hpp"
 #include "mqtt/mqtt_client.hpp"
 #include "mqtt/topic.hpp"
@@ -182,6 +183,8 @@ int main(int argc, char** argv) {
   std::string offline_payload;
   std::string telemetry_topic;
   std::string px4_realtime_topic;
+  std::string px4_latency_probe_topic;
+  std::string px4_latency_ack_topic;
   std::string config_set_topic;
   std::string config_ack_topic;
   std::string control_set_topic;
@@ -248,6 +251,8 @@ int main(int argc, char** argv) {
     registration_topic.clear();
     telemetry_topic.clear();
     px4_realtime_topic.clear();
+    px4_latency_probe_topic.clear();
+    px4_latency_ack_topic.clear();
     config_set_topic.clear();
     config_ack_topic.clear();
     control_set_topic.clear();
@@ -550,6 +555,10 @@ int main(int argc, char** argv) {
               topics.telemetry.suffix);
           px4_realtime_topic = mqtt::BuildPx4RealtimeTopic(
               topics.topic_namespace, *snapshot.device_id);
+          px4_latency_probe_topic = mqtt::BuildPx4LatencyProbeTopic(
+              topics.topic_namespace, *snapshot.device_id);
+          px4_latency_ack_topic = mqtt::BuildPx4LatencyAckTopic(
+              topics.topic_namespace, *snapshot.device_id);
           config_set_topic = mqtt::BuildConfigSetTopic(
               topics.topic_namespace, *snapshot.device_id,
               topics.config_set.suffix);
@@ -582,8 +591,16 @@ int main(int argc, char** argv) {
                 .qos = topics.registration.qos,
                 .retain = true,
             },
-            .subscriptions = {{config_set_topic, topics.config_set.qos},
-                              {control_set_topic, topics.control_set.qos}},
+            .subscriptions = [&]() {
+              std::vector<std::pair<std::string, int>> subscriptions{
+                  {config_set_topic, topics.config_set.qos},
+                  {control_set_topic, topics.control_set.qos}};
+              if (snapshot.device_type &&
+                  *snapshot.device_type == device::Type::kFlightController) {
+                subscriptions.emplace_back(px4_latency_probe_topic, 0);
+              }
+              return subscriptions;
+            }(),
           }, **logger);
           if (mqtt_client) {
             active_device_id = *snapshot.device_id;
@@ -627,7 +644,20 @@ int main(int argc, char** argv) {
     if (mqtt_client && active_device_id && mqtt_snapshot.device_id &&
         *active_device_id == *mqtt_snapshot.device_id) {
       if (auto message = mqtt_client->TryPopMessage()) {
-        if (message->topic == config_set_topic && !restart_requested) {
+        if (message->topic == px4_latency_probe_topic &&
+            controlled_device &&
+            controlled_device->type == device::Type::kFlightController) {
+          const auto probe =
+              latency::ParsePx4LatencyProbe(message->payload, *active_device_id);
+          if (!probe) {
+            (*logger)->Warn("丢弃非法PX4链路探测: " + probe.error());
+          } else if (!mqtt_client->Publish(
+                         px4_latency_ack_topic,
+                         latency::BuildPx4LatencyAck(*probe).dump(),
+                         /*qos=*/0, /*retain=*/false)) {
+            (*logger)->Warn("PX4链路探测ACK发布失败");
+          }
+        } else if (message->topic == config_set_topic && !restart_requested) {
           config_command::CommandProcessResult result;
           auto parsed = config_command::ParseConfigCommand(message->payload);
           (*logger)->Info(

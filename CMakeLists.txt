@@ -19,6 +19,7 @@ pkg_check_modules(MOSQUITTO REQUIRED IMPORTED_TARGET libmosquitto)
 # 这样 tests/ 下的单测能直接链接这些代码，不用把 main() 也一起拖进测试二进制。
 add_library(cns_rpi_core
     src/logging/logger.cpp
+    src/latency/px4_latency.cpp
     src/uart/serial_port.cpp
     src/uart/mavlink_link.cpp
     src/uart/mavlink_port_discovery.cpp
@@ -124,6 +125,10 @@ add_test(NAME json_serializer COMMAND test_json_serializer)
 add_executable(test_mqtt_topic tests/test_mqtt_topic.cpp)
 target_link_libraries(test_mqtt_topic PRIVATE cns_rpi_core)
 add_test(NAME mqtt_topic COMMAND test_mqtt_topic)
+
+add_executable(test_px4_latency tests/test_px4_latency.cpp)
+target_link_libraries(test_px4_latency PRIVATE cns_rpi_core)
+add_test(NAME px4_latency COMMAND test_px4_latency)
 
 add_executable(test_registration_payload tests/test_registration_payload.cpp)
 target_link_libraries(test_registration_payload PRIVATE cns_rpi_core)

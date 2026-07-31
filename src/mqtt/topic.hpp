@@ -35,6 +35,14 @@ std::string BuildTelemetryTopic(const std::string& topic_namespace, const std::s
 std::string BuildPx4RealtimeTopic(const std::string& topic_namespace,
                                   const std::string& device_id);
 
+/// 服务端向 PX4 树莓派发送真实 RTT 探测的 QoS 0 topic。
+std::string BuildPx4LatencyProbeTopic(const std::string& topic_namespace,
+                                      const std::string& device_id);
+
+/// PX4 树莓派原样返回 RTT 探测关联标识符的 QoS 0 topic。
+std::string BuildPx4LatencyAckTopic(const std::string& topic_namespace,
+                                    const std::string& device_id);
+
 /// 拼服务器向设备下发配置命令的 topic。
 std::string BuildConfigSetTopic(const std::string& topic_namespace,
                                 const std::string& vendor_id, const std::string& suffix);
