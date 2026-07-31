@@ -114,6 +114,10 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
         cfg.qgc_udp.discovery_interval = std::chrono::milliseconds(
             qgc_udp.at("discovery_interval_ms").get<int>());
       }
+      if (qgc_udp.contains("handover_idle_ms")) {
+        cfg.qgc_udp.handover_idle = std::chrono::milliseconds(
+            qgc_udp.at("handover_idle_ms").get<int>());
+      }
       if (qgc_udp.contains("peer_timeout_ms")) {
         cfg.qgc_udp.peer_timeout = std::chrono::milliseconds(
             qgc_udp.at("peer_timeout_ms").get<int>());
@@ -221,6 +225,7 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
   const auto cellular_heartbeat_ms = cfg.cellular.heartbeat_interval.count();
   const auto cellular_snapshot_max_age = cfg.cellular.status_snapshot_max_age.count();
   const auto qgc_discovery_ms = cfg.qgc_udp.discovery_interval.count();
+  const auto qgc_handover_idle_ms = cfg.qgc_udp.handover_idle.count();
   const auto qgc_peer_timeout_ms = cfg.qgc_udp.peer_timeout.count();
   const auto px4_realtime_ms = cfg.px4_realtime.publish_interval.count();
   std::unordered_set<std::string> qgc_interfaces;
@@ -251,7 +256,10 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
       cfg.qgc_udp.listen_port < 1 ||
       cfg.qgc_udp.listen_port > 65535 || cfg.qgc_udp.qgc_port < 1 ||
       cfg.qgc_udp.qgc_port > 65535 || qgc_discovery_ms < 100 ||
-      qgc_discovery_ms > 60000 || qgc_peer_timeout_ms < 500 ||
+      qgc_discovery_ms > 60000 ||
+      qgc_handover_idle_ms < qgc_discovery_ms * 2 ||
+      qgc_handover_idle_ms >= qgc_peer_timeout_ms ||
+      qgc_peer_timeout_ms < 500 ||
       qgc_peer_timeout_ms > 60000 ||
       qgc_peer_timeout_ms < qgc_discovery_ms * 2 ||
       px4_realtime_ms < 20 || px4_realtime_ms > 1000 ||

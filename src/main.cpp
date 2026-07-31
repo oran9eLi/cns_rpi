@@ -333,6 +333,7 @@ int main(int argc, char** argv) {
                  static_cast<std::uint16_t>(app_config->qgc_udp.qgc_port),
              .discovery_interval =
                  app_config->qgc_udp.discovery_interval,
+             .handover_idle = app_config->qgc_udp.handover_idle,
              .peer_timeout = app_config->qgc_udp.peer_timeout,
              .allow_commands = app_config->qgc_udp.allow_commands});
         if (bridge) {
@@ -351,6 +352,8 @@ int main(int argc, char** argv) {
               " qgc=" + std::to_string(app_config->qgc_udp.qgc_port) +
               " interfaces=" + qgc_interfaces +
               " policy=" + app_config->qgc_udp.peer_policy +
+              " handover_idle_ms=" +
+              std::to_string(app_config->qgc_udp.handover_idle.count()) +
               " commands=" +
               (app_config->qgc_udp.allow_commands ? "enabled" : "disabled"));
         } else {
@@ -486,6 +489,9 @@ int main(int argc, char** argv) {
           if (event->type ==
               network::QgcUdpBridge::PeerEventType::kConnected) {
             (*logger)->Info("QGC控制端已锁定: " + event->endpoint);
+          } else if (event->type ==
+                     network::QgcUdpBridge::PeerEventType::kSwitched) {
+            (*logger)->Info("QGC控制端已自动切换: " + event->endpoint);
           } else {
             (*logger)->Warn("QGC控制权已释放，恢复双入口竞选: " +
                             event->endpoint);

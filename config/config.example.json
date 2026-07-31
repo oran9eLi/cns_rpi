@@ -14,6 +14,7 @@
     "listen_port": 14540,
     "qgc_port": 14550,
     "discovery_interval_ms": 1000,
+    "handover_idle_ms": 2500,
     "peer_timeout_ms": 10000,
     "allow_commands": true
   },

@@ -35,9 +35,9 @@ std::string_view QgcUdpErrorMessage(QgcUdpError error);
 /**
  * @brief 在 cns_rpi 独占的 PX4 串口会话与一个获准 QGC 端点之间转发合法帧。
  * @details 未发现端点时只定时广播 PX4 HEARTBEAT；第一个返回合法 MAVLink 帧的
- * 端点获得唯一控制权，其他端点在占用期间被忽略，超时后释放并重新竞选。所有
- * socket 操作均非阻塞，UDP 故障不得阻塞串口或 MQTT 主链路。本类只在 cns_rpi
- * 主线程调用。
+ * 端点获得唯一控制权；当前端持续通信时其他端点被忽略，当前端进入短暂空闲后允许
+ * 新端点以合法帧快速接管，完全超时后释放。所有 socket 操作均非阻塞，UDP 故障
+ * 不得阻塞串口或 MQTT 主链路。本类只在 cns_rpi 主线程调用。
  */
 class QgcUdpBridge {
  public:
@@ -46,6 +46,7 @@ class QgcUdpBridge {
     std::uint16_t listen_port{14540};
     std::uint16_t qgc_port{14550};
     std::chrono::milliseconds discovery_interval{1000};
+    std::chrono::milliseconds handover_idle{2500};
     std::chrono::milliseconds peer_timeout{5000};
     bool allow_commands{true};
   };
@@ -53,6 +54,7 @@ class QgcUdpBridge {
   enum class PeerEventType {
     kConnected,
     kDisconnected,
+    kSwitched,
   };
 
   struct PeerEvent {
@@ -105,6 +107,8 @@ class QgcUdpBridge {
   bool IsOwnAddress(std::uint32_t address) const;
   bool IsSelectedPeer(std::uint32_t address, std::uint16_t port) const;
   void SelectPeer(std::uint32_t address, std::uint16_t port,
+                  std::chrono::steady_clock::time_point now);
+  void SwitchPeer(std::uint32_t address, std::uint16_t port,
                   std::chrono::steady_clock::time_point now);
   void ClearPeer();
   void SendMessage(const mavlink_message_t& message, std::uint32_t address,
