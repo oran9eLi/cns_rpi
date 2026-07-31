@@ -219,6 +219,17 @@ void QgcUdpBridge::SelectPeer(
       {PeerEventType::kConnected, FormatEndpoint(address, port)});
 }
 
+void QgcUdpBridge::SwitchPeer(
+    std::uint32_t address, std::uint16_t port,
+    std::chrono::steady_clock::time_point now) {
+  const std::string previous =
+      FormatEndpoint(peer_->address, peer_->port);
+  const std::string next = FormatEndpoint(address, port);
+  peer_ = Peer{address, port, now};
+  peer_events_.push(
+      {PeerEventType::kSwitched, previous + " -> " + next});
+}
+
 void QgcUdpBridge::ClearPeer() {
   if (!peer_) {
     return;
@@ -291,8 +302,7 @@ std::vector<mavlink_message_t> QgcUdpBridge::PollIncoming(
 
     const std::uint32_t address = sender.sin_addr.s_addr;
     const std::uint16_t port = ntohs(sender.sin_port);
-    if (!IsAllowedPeer(address) ||
-        (peer_ && !IsSelectedPeer(address, port))) {
+    if (!IsAllowedPeer(address)) {
       continue;
     }
 
@@ -308,7 +318,12 @@ std::vector<mavlink_message_t> QgcUdpBridge::PollIncoming(
       continue;
     }
 
-    if (!peer_) {
+    if (peer_ && !IsSelectedPeer(address, port)) {
+      if (now - peer_->last_valid_frame < settings_.handover_idle) {
+        continue;
+      }
+      SwitchPeer(address, port, now);
+    } else if (!peer_) {
       SelectPeer(address, port, now);
     } else {
       peer_->last_valid_frame = now;

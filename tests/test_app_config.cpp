@@ -108,6 +108,7 @@ TEST_CASE("QGC UDP bridge is backward-compatible and defaults to disabled") {
   CHECK(result->qgc_udp.qgc_port == 14550);
   CHECK(result->qgc_udp.discovery_interval ==
         std::chrono::milliseconds(1000));
+  CHECK(result->qgc_udp.handover_idle == std::chrono::milliseconds(2500));
   CHECK(result->qgc_udp.peer_timeout == std::chrono::milliseconds(5000));
   CHECK(result->qgc_udp.allow_commands);
 }
@@ -121,7 +122,8 @@ TEST_CASE("QGC UDP bridge configuration can be enabled explicitly") {
       "\"lan_interfaces\": [\"wlan0\", \"wg0\"], "
       "\"peer_policy\": \"first_valid_wins\", \"listen_port\": 14540, "
       "\"qgc_port\": 14550, \"discovery_interval_ms\": 500, "
-      "\"peer_timeout_ms\": 3000, \"allow_commands\": false},");
+      "\"handover_idle_ms\": 1200, \"peer_timeout_ms\": 3000, "
+      "\"allow_commands\": false},");
   const auto result = config::LoadAppConfig(WriteTempConfig(configured));
 
   REQUIRE(result.has_value());
@@ -131,6 +133,7 @@ TEST_CASE("QGC UDP bridge configuration can be enabled explicitly") {
   CHECK(result->qgc_udp.peer_policy == "first_valid_wins");
   CHECK(result->qgc_udp.discovery_interval ==
         std::chrono::milliseconds(500));
+  CHECK(result->qgc_udp.handover_idle == std::chrono::milliseconds(1200));
   CHECK(result->qgc_udp.peer_timeout == std::chrono::milliseconds(3000));
   CHECK_FALSE(result->qgc_udp.allow_commands);
 }
@@ -185,6 +188,10 @@ TEST_CASE("QGC UDP bridge can be disabled with the short rollback form") {
 TEST_CASE("QGC UDP bridge rejects unsafe or inconsistent settings") {
   for (const auto& qgc_config : {
            "{\"enabled\":true,\"lan_interfaces\":[],\"listen_port\":14540,"
+           "\"qgc_port\":14550,\"discovery_interval_ms\":1000,"
+           "\"peer_timeout_ms\":5000,\"allow_commands\":true}",
+           "{\"enabled\":true,\"lan_interfaces\":[\"wlan0\",\"wg0\"],"
+           "\"handover_idle_ms\":5000,\"listen_port\":14540,"
            "\"qgc_port\":14550,\"discovery_interval_ms\":1000,"
            "\"peer_timeout_ms\":5000,\"allow_commands\":true}",
            "{\"enabled\":true,\"mode\":\"fixed\",\"lan_interfaces\":[\"wlan0\"],"

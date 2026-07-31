@@ -50,6 +50,7 @@ struct QgcUdpConfig {
   int listen_port{14540};
   int qgc_port{14550};
   std::chrono::milliseconds discovery_interval{1000};
+  std::chrono::milliseconds handover_idle{2500};
   std::chrono::milliseconds peer_timeout{5000};
   bool allow_commands{true};
 };
