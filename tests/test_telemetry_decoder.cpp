@@ -244,8 +244,13 @@ TEST_CASE("AUTOPILOT_VERSION stores PX4 hardware identity fields") {
 
   CHECK(protocol::DecodeAndStore(message, store));
   const auto snapshot = store.Snapshot();
-  REQUIRE(snapshot.autopilot_version.has_value());
-  CHECK(snapshot.autopilot_version->uid ==
-        0x0123456789ABCDEFULL);
-  CHECK(snapshot.autopilot_version->uid2[0] == 0xAA);
+  // 只保留产品与版本元数据：uid/uid2 标识飞控硬件，不是受控设备身份，
+  // 解码后即被丢弃，state 里没有任何字段能再取到它们。
+  CHECK(snapshot.autopilot_version_received);
+  REQUIRE(snapshot.product.has_value());
+  CHECK(snapshot.product->manufacturer_code == "26");
+  CHECK(snapshot.product->model_code == "7");
+  REQUIRE(snapshot.version.has_value());
+  CHECK(snapshot.version->firmware == "1.17.0");
+  CHECK_FALSE(snapshot.device_id.has_value());
 }

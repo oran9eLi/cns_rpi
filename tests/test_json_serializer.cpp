@@ -6,23 +6,53 @@
 #include "cellular/cellular_snapshot.hpp"
 #include "payload/json_serializer.hpp"
 
-TEST_CASE("空TelemetryState输出v2骨架和学校信息") {
+TEST_CASE("空TelemetryState输出v3骨架和学校信息") {
   state::TelemetryState state{};
 
   auto json = payload::ToJson(state, "NNUTC");
 
-  REQUIRE(json.contains("identity"));
-  CHECK(json["schema_version"] == 2);
+  CHECK(json["schema_version"] == 3);
   CHECK(json["sent_at"].get<std::string>().ends_with("Z"));
-  CHECK(json["identity"]["school_name"] == "NNUTC");
-  CHECK_FALSE(json["identity"].contains("vendor_id"));
-  CHECK_FALSE(json["identity"].contains("dcdw_label"));
-  CHECK_FALSE(json["gateway"].contains("gateway_id"));
+  CHECK(json["school_name"] == "NNUTC");
+  CHECK_FALSE(json.contains("dcdw_label"));
   CHECK_FALSE(json.contains("telemetry"));
   CHECK_FALSE(json.contains("modules"));
   CHECK_FALSE(json.contains("alarms"));
   CHECK_FALSE(json.contains("logs"));
   CHECK_FALSE(json.contains("drone_id"));
+}
+
+TEST_CASE("遥测不再输出identity/endpoint/gateway三个对象及其字段") {
+  state::TelemetryState state{};
+  state.device_type = device::Type::kFlightController;
+  state.device_id = "PX4RID123456789ABCDE";
+  state.device_system_id = 2;
+  state.device_component_id = MAV_COMP_ID_AUTOPILOT1;
+  state.dcdw_label = "DCDW-007";
+  state.product = device::ProductInfo{.manufacturer_code = "26",
+                                      .model_code = "7"};
+  state.version = device::VersionInfo{.hardware = "42", .firmware = "1.17.3"};
+  mavlink_open_drone_id_basic_id_t basic_id{};
+  std::memcpy(basic_id.uas_id, "PX4RID123456789ABCDE", 20);
+  state.open_drone_id_basic_id = basic_id;
+
+  const auto text = payload::ToJson(state, "NNUTC").dump();
+  const auto json = nlohmann::json::parse(text);
+
+  for (const char* removed : {"identity", "endpoint", "gateway"}) {
+    CHECK_FALSE(json.contains(removed));
+  }
+  for (const char* removed : {"\"vendor_id\":", "\"uid\":", "\"uid2\":",
+                              "\"gateway_id\":", "\"rpi_serial\":",
+                              "\"sysid\":", "\"compid\":", "\"uas_id\":"}) {
+    CHECK(text.find(removed) == std::string::npos);
+  }
+  // 产品与版本只走 retained registration，不在按节拍刷新的遥测里重复。
+  CHECK_FALSE(json.contains("product"));
+  CHECK_FALSE(json.contains("version"));
+  // 校名和角色号平铺在顶层。
+  CHECK(json["school_name"] == "NNUTC");
+  CHECK(json["dcdw_label"] == "DCDW-007");
 }
 
 TEST_CASE("5G状态快照写入telemetry且不公开内部诊断") {
@@ -53,27 +83,26 @@ TEST_CASE("5G状态快照写入telemetry且不公开内部诊断") {
   CHECK_FALSE(cellular_json.contains("diagnostics"));
 }
 
-TEST_CASE("identity三个可选字段各自独立按需省略") {
+TEST_CASE("顶层可选身份字段各自独立按需省略") {
   state::TelemetryState state{};
-  state.vendor_id = "DCDWCNS1ABCDEFGHIJKL";
+  state.device_id = "DCDWCNS1ABCDEFGHIJKL";
 
-  auto json = payload::ToJson(state, "NNUTC");
+  auto json = payload::ToJson(state, "");
 
-  CHECK(json["identity"]["vendor_id"] == "DCDWCNS1ABCDEFGHIJKL");
-  CHECK_FALSE(json["identity"].contains("dcdw_label"));
-  CHECK_FALSE(json["gateway"].contains("gateway_id"));
+  CHECK(json["device_id"] == "DCDWCNS1ABCDEFGHIJKL");
+  CHECK_FALSE(json.contains("dcdw_label"));
+  CHECK_FALSE(json.contains("school_name"));
 
   state.dcdw_label = "DCDW-007";
-  state.rpi_serial = "100000001234abcd";
   auto json2 = payload::ToJson(state, "NNUTC");
 
-  CHECK(json2["identity"]["dcdw_label"] == "DCDW-007");
-  CHECK(json2["gateway"]["gateway_id"] == "100000001234abcd");
+  CHECK(json2["dcdw_label"] == "DCDW-007");
+  CHECK(json2["school_name"] == "NNUTC");
 }
 
 TEST_CASE("PX4高频帧只包含紧凑遥测和毫秒时间戳") {
   state::TelemetryState state{};
-  state.device_id = "PX4U2-ABC123";
+  state.device_id = "PX4RID123456789ABCDE";
 
   mavlink_attitude_t attitude{};
   attitude.roll = 0.1F;
@@ -87,8 +116,9 @@ TEST_CASE("PX4高频帧只包含紧凑遥测和毫秒时间戳") {
 
   const auto json = payload::ToPx4RealtimeJson(state, 42);
 
+  // 高频实时协议有独立版本号，不因本次字段整理自动升级(设计文档 §5.2)。
   CHECK(json["schema_version"] == 1);
-  CHECK(json["device_id"] == "PX4U2-ABC123");
+  CHECK(json["device_id"] == "PX4RID123456789ABCDE");
   CHECK(json["sequence"] == 42);
   CHECK(json["sent_at"].get<std::string>().ends_with("Z"));
   CHECK(json["sent_at"].get<std::string>().find('.') != std::string::npos);
@@ -101,25 +131,28 @@ TEST_CASE("PX4高频帧只包含紧凑遥测和毫秒时间戳") {
   CHECK_FALSE(json.contains("modules"));
 }
 
-TEST_CASE("PX4遥测v2区分设备主ID和Remote ID") {
+TEST_CASE("PX4遥测v3的device_id就是Basic ID,身份只出现一次") {
   state::TelemetryState state{};
   state.device_type = device::Type::kFlightController;
-  state.device_id = "PX4U1-0123456789ABCDEF";
+  state.device_id = "PX4RID123456789ABCDE";
   state.device_system_id = 2;
   state.device_component_id = MAV_COMP_ID_AUTOPILOT1;
   mavlink_open_drone_id_basic_id_t basic_id{};
-  std::memcpy(basic_id.uas_id, "RID-DEVICE-001", 14);
+  basic_id.id_type = 1;
+  basic_id.ua_type = 2;
+  std::memcpy(basic_id.uas_id, "PX4RID123456789ABCDE", 20);
   state.open_drone_id_basic_id = basic_id;
 
   const auto json = payload::ToJson(state, "");
 
-  CHECK(json["schema_version"] == 2);
-  CHECK(json["device_id"] == "PX4U1-0123456789ABCDEF");
+  CHECK(json["schema_version"] == 3);
+  CHECK(json["device_id"] == "PX4RID123456789ABCDE");
   CHECK(json["device_type"] == "flight_controller");
-  CHECK(json["identity"]["remote_id"] == "RID-DEVICE-001");
-  CHECK(json["endpoint"]["sysid"] == 2);
-  CHECK_FALSE(json["identity"].contains("vendor_id"));
-  CHECK_FALSE(json["identity"].contains("school_name"));
+  CHECK_FALSE(json.contains("school_name"));
+  // basic_id 保留标准属性，但不重复输出 uas_id。
+  CHECK(json["drone_id"]["basic_id"]["id_type"] == 1);
+  CHECK(json["drone_id"]["basic_id"]["ua_type"] == 2);
+  CHECK_FALSE(json["drone_id"]["basic_id"].contains("uas_id"));
 }
 
 TEST_CASE("heartbeat字段按原始数字透传,未收到时telemetry.heartbeat不存在") {
@@ -466,7 +499,7 @@ TEST_CASE("一键起飞传感器异常日志带服务器可读告警") {
   CHECK(entry["message"] == "姿态或环境异常，一键起飞失败");
 }
 
-TEST_CASE("drone_id.basic_id:uas_id去除尾部空字符") {
+TEST_CASE("drone_id.basic_id只保留标准属性,不重复输出uas_id") {
   state::TelemetryState state{};
   mavlink_open_drone_id_basic_id_t basic{};
   basic.id_type = 1;
@@ -479,7 +512,7 @@ TEST_CASE("drone_id.basic_id:uas_id去除尾部空字符") {
 
   CHECK(out["id_type"] == 1);
   CHECK(out["ua_type"] == 2);
-  CHECK(out["uas_id"] == "DCDWCNS1AB12CD34EF56");
+  CHECK_FALSE(out.contains("uas_id"));
 }
 
 TEST_CASE("drone_id五个子块都不输出target_system/target_component/id_or_mac") {
@@ -667,7 +700,6 @@ TEST_CASE("全部字段同时填充,顶层结构完整,alarms/logs按截断数�
 
   auto json = payload::ToJson(state, "NNUTC");
 
-  REQUIRE(json.contains("identity"));
   REQUIRE(json.contains("telemetry"));
   REQUIRE(json.contains("modules"));
   REQUIRE(json.contains("alarms"));
@@ -701,7 +733,7 @@ TEST_CASE("全部字段同时填充,顶层结构完整,alarms/logs按截断数�
   CHECK(json["logs"]["entries"][0]["time"] == "00:00:01");
 
   const auto& d = json["drone_id"];
-  CHECK(d["basic_id"]["uas_id"] == "DCDWCNS1AB12CD34EF56");
+  CHECK_FALSE(d["basic_id"].contains("uas_id"));
   CHECK(d["location"]["altitude_barometric"].get<double>() == doctest::Approx(45.2));
   CHECK(d["system"]["operator_altitude_geo"].get<double>() == doctest::Approx(45.0));
   CHECK(d["operator_id"]["operator_id"] == "CAAB1234567890");

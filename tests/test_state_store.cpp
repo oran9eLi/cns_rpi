@@ -107,24 +107,62 @@ TEST_CASE("身份类字段各自独立更新,不影响其他字段") {
   std::memcpy(basic_id.uas_id, "DCDWCNS1ABCDEFGHIJKL", 20);
 
   store.UpdateOpenDroneIdBasicId(basic_id);
-  store.UpdateVendorId("DCDWCNS1ABCDEFGHIJKL");
+  CHECK(store.UpdateDeviceId("DCDWCNS1ABCDEFGHIJKL") ==
+        state::DeviceIdUpdate::kAccepted);
   store.UpdateDcdwLabel("DCDW-007");
-  store.UpdateRpiSerial("100000001234abcd");
 
   auto snapshot = store.Snapshot();
   REQUIRE(snapshot.open_drone_id_basic_id.has_value());
   CHECK(snapshot.open_drone_id_basic_id->id_type == 1);
   CHECK(snapshot.open_drone_id_basic_id->ua_type == 2);
-  REQUIRE(snapshot.vendor_id.has_value());
-  CHECK(*snapshot.vendor_id == "DCDWCNS1ABCDEFGHIJKL");
+  REQUIRE(snapshot.device_id.has_value());
+  CHECK(*snapshot.device_id == "DCDWCNS1ABCDEFGHIJKL");
   REQUIRE(snapshot.dcdw_label.has_value());
   CHECK(*snapshot.dcdw_label == "DCDW-007");
-  REQUIRE(snapshot.rpi_serial.has_value());
-  CHECK(*snapshot.rpi_serial == "100000001234abcd");
   CHECK_FALSE(snapshot.open_drone_id_location.has_value());
   CHECK_FALSE(snapshot.open_drone_id_system.has_value());
   CHECK_FALSE(snapshot.open_drone_id_operator_id.has_value());
   CHECK_FALSE(snapshot.open_drone_id_self_id.has_value());
+}
+
+TEST_CASE("会话内首个device_id被锁定,重复上报不算冲突,不同身份报冲突") {
+  state::StateStore store;
+
+  CHECK(store.UpdateDeviceId("DCDWCNS1ABCDEFGHIJKL") ==
+        state::DeviceIdUpdate::kAccepted);
+  CHECK(store.UpdateDeviceId("DCDWCNS1ABCDEFGHIJKL") ==
+        state::DeviceIdUpdate::kUnchanged);
+  CHECK(store.UpdateDeviceId("PX4RID123456789ABCDE") ==
+        state::DeviceIdUpdate::kConflict);
+  // 冲突不得静默改写已锁定身份，切换由调用方走会话清理后重新锁定。
+  CHECK(*store.Snapshot().device_id == "DCDWCNS1ABCDEFGHIJKL");
+
+  store.ResetDeviceState();
+  CHECK(store.UpdateDeviceId("PX4RID123456789ABCDE") ==
+        state::DeviceIdUpdate::kAccepted);
+}
+
+TEST_CASE("AUTOPILOT_VERSION只写产品与版本元数据,全未知时仍置位已收到标志") {
+  state::StateStore store;
+
+  store.UpdateAutopilotVersionMetadata(
+      device::ProductInfo{.manufacturer_code = "26", .model_code = "7"},
+      device::VersionInfo{.hardware = "42", .firmware = "1.17.3"});
+
+  auto snapshot = store.Snapshot();
+  CHECK(snapshot.autopilot_version_received);
+  REQUIRE(snapshot.product.has_value());
+  CHECK(snapshot.product->manufacturer_code == "26");
+  REQUIRE(snapshot.version.has_value());
+  CHECK(snapshot.version->firmware == "1.17.3");
+
+  // PX4 全报 0 时元数据缺失，但标志必须置位，否则主循环会无限重复请求。
+  state::StateStore unknown_store;
+  unknown_store.UpdateAutopilotVersionMetadata(std::nullopt, std::nullopt);
+  snapshot = unknown_store.Snapshot();
+  CHECK(snapshot.autopilot_version_received);
+  CHECK_FALSE(snapshot.product.has_value());
+  CHECK_FALSE(snapshot.version.has_value());
 }
 
 TEST_CASE("UpdateMotorPwmLow只影响duty_percent的0-1号,UpdateMotorPwmHigh只影响2-3号,run_state/speed_level以最新一帧为准") {
@@ -198,12 +236,15 @@ TEST_CASE("New uplink fields update independently") {
   CHECK(snapshot.lora_counters->rx_last_ms == 4567U);
 }
 
-TEST_CASE("ResetDeviceState清空受控设备状态但保留树莓派身份") {
+TEST_CASE("ResetDeviceState清空全部状态,树莓派不再保留任何业务身份") {
   state::StateStore store;
-  store.UpdateRpiSerial("100000001234abcd");
   store.UpdateControlledDevice(device::Type::kFlightController, 2, 1);
-  store.UpdateDeviceId("PX4U1-0123456789ABCDEF");
+  CHECK(store.UpdateDeviceId("PX4RID123456789ABCDE") ==
+        state::DeviceIdUpdate::kAccepted);
   store.UpdateDcdwLabel("DCDW-002");
+  store.UpdateAutopilotVersionMetadata(
+      device::ProductInfo{.manufacturer_code = "26", .model_code = "7"},
+      std::nullopt);
   mavlink_heartbeat_t heartbeat{};
   heartbeat.autopilot = MAV_AUTOPILOT_PX4;
   store.UpdateHeartbeat(heartbeat);
@@ -211,11 +252,11 @@ TEST_CASE("ResetDeviceState清空受控设备状态但保留树莓派身份") {
   store.ResetDeviceState();
 
   const auto snapshot = store.Snapshot();
-  REQUIRE(snapshot.rpi_serial.has_value());
-  CHECK(*snapshot.rpi_serial == "100000001234abcd");
   CHECK_FALSE(snapshot.device_type.has_value());
   CHECK_FALSE(snapshot.device_id.has_value());
   CHECK_FALSE(snapshot.device_system_id.has_value());
   CHECK_FALSE(snapshot.heartbeat.has_value());
   CHECK_FALSE(snapshot.dcdw_label.has_value());
+  CHECK_FALSE(snapshot.product.has_value());
+  CHECK_FALSE(snapshot.autopilot_version_received);
 }

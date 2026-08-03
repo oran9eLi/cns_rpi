@@ -6,7 +6,8 @@
  * 收到 MAVLink 帧只更新 state::StateStore，不在逐帧路径输出业务日志；标准遥测
  * 解码失败时再尝试扩展帧和身份帧解码。日志格式和输出目标由 logging::Logger 独立负责，
  * main 仅在配置成功后创建并向业务模块传递同一实例。
- * 启动时读取 RPi 本机序列号作为 V1 过渡期权威键；设备身份就绪后连接 broker，
+ * 受控设备身份统一来自 OPEN_DRONE_ID_BASIC_ID.uas_id：主控箱被动接收，PX4 需要
+ * 周期主动请求；树莓派自身不持有任何业务身份。身份就绪后才连接 broker，
  * 按固定节拍发布遥测，发布失败时记录警告；不把遥测 JSON 写入运行日志。
  * 注册状态在连接、重连和身份元数据变化时 retained 发布；异常断线由 Last Will 标记
  * offline，正常退出主动发布 offline。
@@ -62,6 +63,8 @@ constexpr auto kDiscoveryRetryInterval = std::chrono::seconds(1);
 constexpr auto kDiscoveryWarningInterval = std::chrono::seconds(10);
 constexpr auto kMavlinkSilenceTimeout = std::chrono::seconds(10);
 constexpr auto kPx4IdentityRequestInterval = std::chrono::seconds(2);
+/// 身份未就绪的提示日志间隔。请求节拍是 2s，逐次告警会淹没日志。
+constexpr auto kIdentityWarningInterval = std::chrono::seconds(10);
 
 volatile std::sig_atomic_t g_exit_requested = 0;
 
@@ -76,35 +79,15 @@ mavlink_message_t BuildHeartbeat(std::uint8_t system_id) {
   return msg;
 }
 
-std::optional<std::string> RemoteIdFrom(
-    const state::TelemetryState& snapshot) {
-  if (!snapshot.open_drone_id_basic_id) {
-    return std::nullopt;
-  }
-  const auto& basic_id = *snapshot.open_drone_id_basic_id;
-  return std::string{
-      reinterpret_cast<const char*>(basic_id.uas_id),
-      strnlen(reinterpret_cast<const char*>(basic_id.uas_id),
-              sizeof(basic_id.uas_id))};
-}
-
 registration::OnlineRegistration MakeOnlineRegistration(
     const state::TelemetryState& snapshot, const std::string& school_name) {
   return {
       .device_id = *snapshot.device_id,
       .device_type = *snapshot.device_type,
-      .vendor_id = snapshot.vendor_id,
       .school_name = school_name,
       .dcdw_label = snapshot.dcdw_label,
-      .remote_id = RemoteIdFrom(snapshot),
-      .gateway_id = snapshot.rpi_serial,
-      .system_id = snapshot.device_system_id,
-      .component_id = snapshot.device_component_id,
-      .mavlink_version =
-          snapshot.heartbeat
-              ? std::optional<std::uint8_t>(snapshot.heartbeat->mavlink_version)
-              : std::nullopt,
-      .autopilot_version = snapshot.autopilot_version,
+      .product = snapshot.product,
+      .version = snapshot.version,
   };
 }
 
@@ -171,9 +154,6 @@ int main(int argc, char** argv) {
   (*logger)->Info(config::BuildStartupSummary(*app_config));
 
   state::StateStore state_store;
-  if (auto serial = protocol::ReadRpiSerial()) {
-    state_store.UpdateRpiSerial(*serial);
-  }
   auto last_heartbeat = std::chrono::steady_clock::now();
   auto last_cellular_heartbeat = std::chrono::steady_clock::now();
   std::optional<mqtt::MqttClient> mqtt_client;
@@ -198,6 +178,10 @@ int main(int argc, char** argv) {
   bool ambiguous_device_type = false;
   uart::AsyncMavlinkDiscovery discovery;
   uart::DiscoveryLogLimiter discovery_log_limiter(kDiscoveryWarningInterval);
+  // 两条限频器分开：身份未就绪和 uas_id 非法是两种完全不同的现场故障，
+  // 共用一个限频器会让其中一种被另一种饿死(设计文档 §3.4)。
+  uart::DiscoveryLogLimiter identity_wait_log_limiter(kIdentityWarningInterval);
+  uart::DiscoveryLogLimiter uas_id_invalid_log_limiter(kIdentityWarningInterval);
   uart::MavlinkSilenceWatchdog silence_watchdog(kMavlinkSilenceTimeout);
   // systemd watchdog 只证明主循环还在转，不反映业务健康：串口断开和 MQTT 断连
   // 各有自己的恢复逻辑（且已验证能自愈），不应升级成整个进程重启。
@@ -218,8 +202,12 @@ int main(int argc, char** argv) {
   auto last_telemetry_publish = std::chrono::steady_clock::now();
   auto last_px4_realtime_publish = std::chrono::steady_clock::now();
   std::uint64_t px4_realtime_sequence = 0;
-  auto last_px4_identity_request =
+  auto last_px4_basic_id_request =
       std::chrono::steady_clock::now() - kPx4IdentityRequestInterval;
+  auto last_px4_version_request =
+      std::chrono::steady_clock::now() - kPx4IdentityRequestInterval;
+  // 第一次请求刚发出就报"PX4 未响应"是误报，至少要等一个请求周期落空。
+  unsigned px4_basic_id_requests_sent = 0;
   auto next_qgc_start_attempt = std::chrono::steady_clock::now();
 
   auto close_mqtt_session = [&](bool publish_offline) {
@@ -272,6 +260,7 @@ int main(int argc, char** argv) {
     controlled_device.reset();
     ambiguous_device_type = false;
     state_store.ResetDeviceState();
+    px4_basic_id_requests_sent = 0;
     silence_watchdog.Reset();
     next_discovery = std::chrono::steady_clock::now();
   };
@@ -381,23 +370,46 @@ int main(int argc, char** argv) {
       (void)protocol::DecodeExtensionAndStore(message, state_store);
     }
 
-    if (message.msgid == MAVLINK_MSG_ID_OPEN_DRONE_ID_BASIC_ID &&
-        controlled_device->type == device::Type::kCnsBox) {
-      mavlink_open_drone_id_basic_id_t basic_id{};
-      mavlink_msg_open_drone_id_basic_id_decode(&message, &basic_id);
-      const std::string vendor_id = protocol::ExtractVendorId(basic_id.uas_id);
-      if (protocol::IsValidCnsBoxVendorId(vendor_id)) {
-        state_store.UpdateVendorId(vendor_id);
-        state_store.UpdateDeviceId(vendor_id);
-      }
+    // 主控箱和 PX4 统一从 Basic ID 取身份：uas_id 就是 device_id，不再按设备
+    // 类型分叉，也不再用 AUTOPILOT_VERSION 的 uid/uid2 冒充受控设备身份。
+    if (message.msgid != MAVLINK_MSG_ID_OPEN_DRONE_ID_BASIC_ID) {
+      return;
     }
-    if (message.msgid == MAVLINK_MSG_ID_AUTOPILOT_VERSION &&
-        controlled_device->type == device::Type::kFlightController) {
-      mavlink_autopilot_version_t version{};
-      mavlink_msg_autopilot_version_decode(&message, &version);
-      if (const auto device_id = protocol::FormatPx4DeviceId(version)) {
-        state_store.UpdateDeviceId(*device_id);
+    mavlink_open_drone_id_basic_id_t basic_id{};
+    mavlink_msg_open_drone_id_basic_id_decode(&message, &basic_id);
+    const std::string uas_id = protocol::ExtractUasId(basic_id.uas_id);
+    if (!protocol::IsValidUasId(uas_id)) {
+      if (uas_id_invalid_log_limiter.ShouldLog(now)) {
+        (*logger)->Warn("受控设备 Basic ID 的 uas_id 非法，身份未就绪: \"" +
+                        uas_id + "\"");
       }
+      return;
+    }
+    switch (state_store.UpdateDeviceId(uas_id)) {
+      case state::DeviceIdUpdate::kUnchanged:
+        break;
+      case state::DeviceIdUpdate::kAccepted:
+        if (controlled_device->type == device::Type::kCnsBox) {
+          if (auto product = protocol::CnsBoxProductFrom(uas_id)) {
+            state_store.UpdateProduct(*product);
+          } else {
+            (*logger)->Warn(
+                "主控箱 device_id 缺少 DCDWCNS1 产品前缀，检查固件身份配置: " +
+                uas_id);
+          }
+        }
+        (*logger)->Info("受控设备身份就绪: device_id=" + uas_id);
+        break;
+      case state::DeviceIdUpdate::kConflict:
+        // 不静默切 topic：先让旧身份正确离线，再清空状态重新识别设备。
+        (*logger)->Error("受控设备身份冲突，旧身份下线并重新识别: 新 uas_id=" +
+                         uas_id);
+        close_mqtt_session(/*publish_offline=*/true);
+        state_store.ResetDeviceState();
+        controlled_device.reset();
+        qgc_udp_bridge.reset();
+        px4_basic_id_requests_sent = 0;
+        break;
     }
   };
 
@@ -518,16 +530,52 @@ int main(int argc, char** argv) {
       }
     }
 
+    // PX4 在普通遥测链路上既不主动发 BASIC_ID 也不主动发 AUTOPILOT_VERSION，
+    // 两者都要周期请求。两条请求的停止条件必须各自独立：device_id 来自 Basic ID，
+    // 会先于 AUTOPILOT_VERSION 到达，若共用 !device_id 作为条件，产品与版本
+    // 元数据将永远采集不到(设计文档 §3.2)。
+    // 用 else if 错开发送：MAV_CMD_REQUEST_MESSAGE 的 COMMAND_ACK 不带被请求的
+    // 消息号，同一轮连发会让应答无法归属到具体某条请求。
+    const auto identity_snapshot = state_store.Snapshot();
     if (link && controlled_device &&
         controlled_device->type == device::Type::kFlightController &&
-        rpi_system_id && !state_store.Snapshot().device_id &&
-        now - last_px4_identity_request >= kPx4IdentityRequestInterval) {
-      const auto request = protocol::BuildAutopilotVersionRequest(
-          *rpi_system_id, kComponentId, controlled_device->endpoint);
-      if (!link->SendMessage(request)) {
-        mark_link_disconnected();
-      } else {
-        last_px4_identity_request = now;
+        rpi_system_id) {
+      if (!identity_snapshot.device_id &&
+          now - last_px4_basic_id_request >= kPx4IdentityRequestInterval) {
+        const auto request = protocol::BuildMessageRequest(
+            MAVLINK_MSG_ID_OPEN_DRONE_ID_BASIC_ID, *rpi_system_id, kComponentId,
+            controlled_device->endpoint.system_id,
+            controlled_device->endpoint.component_id);
+        if (!link->SendMessage(request)) {
+          mark_link_disconnected();
+        } else {
+          last_px4_basic_id_request = now;
+          ++px4_basic_id_requests_sent;
+        }
+      } else if (!identity_snapshot.autopilot_version_received &&
+                 now - last_px4_version_request >= kPx4IdentityRequestInterval) {
+        const auto request = protocol::BuildMessageRequest(
+            MAVLINK_MSG_ID_AUTOPILOT_VERSION, *rpi_system_id, kComponentId,
+            controlled_device->endpoint.system_id,
+            controlled_device->endpoint.component_id);
+        if (!link->SendMessage(request)) {
+          mark_link_disconnected();
+        } else {
+          last_px4_version_request = now;
+        }
+      }
+    }
+
+    if (link && controlled_device && !identity_snapshot.device_id) {
+      const char* waiting_reason = nullptr;
+      if (controlled_device->type != device::Type::kFlightController) {
+        waiting_reason = "等待受控设备 Basic ID，身份未就绪";
+      } else if (px4_basic_id_requests_sent > 1) {
+        waiting_reason =
+            "PX4 未响应 Basic ID 请求，身份未就绪；确认 PX4 已配置 UAS ID";
+      }
+      if (waiting_reason != nullptr && identity_wait_log_limiter.ShouldLog(now)) {
+        (*logger)->Warn(waiting_reason);
       }
     }
 
