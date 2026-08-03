@@ -6,6 +6,12 @@
 
 适用范围：CNS 设备、硬件部上位机、管控中心、`cns_server` 与目标 RPi 之间的配置命令流转，以及 RPi 运行参数持久化和 systemd 重启生效流程。
 
+> 术语更新（2026-08-03）：本文原先用 `vendor_id` 指代 topic 中的设备寻址字段，
+> 现统一为 `device_id`，来源是 `OPEN_DRONE_ID_BASIC_ID.uas_id`。对主控箱取值不变
+> （原厂商唯一产品识别码本身就是它的 Remote ID），对 PX4 则从旧的 `PX4U2-*`/
+> `PX4U1-*` 改为 Basic ID。见
+> `docs/2026-08-03-主控箱与PX4统一身份数据结构设计.md`。
+
 ## 1. 背景与目标
 
 当前 RPi 程序仍有四个运行参数写死在代码中：
@@ -43,7 +49,7 @@
 
 | 来源 | `source_id` 规则 |
 |---|---|
-| CNS 设备 | 使用本设备 `vendor_id` |
+| CNS 设备 | 使用本设备 `device_id` |
 | 硬件部上位机 | 由服务器管理员分配，例如 `hardware-console` |
 | 管控中心 | 由服务器管理员分配，例如 `main-control` |
 
@@ -55,13 +61,13 @@
 
 - 登记和识别命令来源。
 - 按来源执行权限检查。
-- 把学校名和内部编号解析为目标 `vendor_id`。
+- 把学校名和内部编号解析为目标 `device_id`。
 - 生成服务器内部 `command_id`。
 - 持久化命令状态和幂等记录。
 - 向目标设备转发规范化命令。
 - 接收目标设备 ACK，并把结果路由回原命令来源。
 
-即使命令来源已经知道目标 `vendor_id`，也必须先经过 `cns_server`，不能直接向设备命令 topic 发布。
+即使命令来源已经知道目标 `device_id`，也必须先经过 `cns_server`，不能直接向设备命令 topic 发布。
 
 ### 2.3 RPi 职责
 
@@ -98,10 +104,10 @@ cns_server
   2. 校验来源是否登记、启用
   3. 按 (source_id, request_id) 幂等处理
   4. 校验目标寻址和学校权限
-  5. 查询数据库得到 target_vendor_id
+  5. 查询数据库得到 target_device_id
   6. 生成 command_id 并记录映射
         |
-        | {namespace}/{target_vendor_id}/config/set
+        | {namespace}/{target_device_id}/config/set
         v
 目标 RPi
   1. 校验 topic、command_id 和参数
@@ -111,7 +117,7 @@ cns_server
   5. 发布执行 ACK
   6. 主动退出
         |
-        | {namespace}/{target_vendor_id}/config/ack
+        | {namespace}/{target_device_id}/config/ack
         v
 cns_server
   1. 按 command_id 查原始来源
@@ -129,10 +135,10 @@ cns_server
 |---|---|---:|---|---|
 | `{namespace}/sources/{source_id}/config/request` | 来源 → 服务器 | 2 | false | 向服务器提交配置请求 |
 | `{namespace}/sources/{source_id}/config/ack` | 服务器 → 来源 | 2 | false | 返回路由或执行结果 |
-| `{namespace}/{vendor_id}/config/set` | 服务器 → 目标设备 | 2 | false | 下发规范化配置命令 |
-| `{namespace}/{vendor_id}/config/ack` | 目标设备 → 服务器 | 2 | false | 返回目标设备执行结果 |
-| `{namespace}/{vendor_id}/telemetry` | 设备 → 服务器 | 0 | false | 1Hz 上报实时遥测 |
-| `{namespace}/{vendor_id}/registration` | 设备 → 服务器 | 2 | **true** | 设备发现与 online/offline 状态 |
+| `{namespace}/{device_id}/config/set` | 服务器 → 目标设备 | 2 | false | 下发规范化配置命令 |
+| `{namespace}/{device_id}/config/ack` | 目标设备 → 服务器 | 2 | false | 返回目标设备执行结果 |
+| `{namespace}/{device_id}/telemetry` | 设备 → 服务器 | 0 | false | 1Hz 上报实时遥测 |
+| `{namespace}/{device_id}/registration` | 设备 → 服务器 | 2 | **true** | 设备发现与 online/offline 状态 |
 
 遥测使用 `retain=false`：它是按节拍刷新的实时值，retained 会让新订阅者把设备掉电前的最后一帧当成实时数据。设备在线与否由 `registration` 的 retained `online`/`offline` 表达——该 topic 是本表中唯一使用 retain 的，因为它承载的正是"设备最后已知状态"这一存档语义。
 
@@ -156,7 +162,7 @@ cns_server
 
 ### 5.2 设备来源请求
 
-设备来源只能按同校内部编号寻址，payload 不允许填写学校名或目标 `vendor_id`：
+设备来源只能按同校内部编号寻址，payload 不允许填写学校名或目标 `device_id`：
 
 ```json
 {
@@ -173,7 +179,7 @@ cns_server
 设备发布到：
 
 ```text
-{namespace}/sources/{本设备vendor_id}/config/request
+{namespace}/sources/{本设备device_id}/config/request
 ```
 
 ### 5.3 上位机或管控中心请求
@@ -193,13 +199,13 @@ cns_server
 }
 ```
 
-已知全局标识时也可按 `vendor_id` 寻址：
+已知全局标识时也可按 `device_id` 寻址：
 
 ```json
 {
   "request_id": "来源生成的唯一请求号",
   "target": {
-    "vendor_id": "DCDWCNS1ABCDEFGHIJKL"
+    "device_id": "DCDWCNS1ABCDEFGHIJKL"
   },
   "parameters": {
     "mqtt_reconnect_delay_max_s": 60
@@ -215,13 +221,13 @@ cns_server
 
 设备来源必须受到双重限制：
 
-1. RPi 端预留的请求发布接口只接受 `target_dcdw_label`，不提供 `school_name` 或目标 `vendor_id` 参数。
-2. `cns_server` 根据 source topic 中的设备 `vendor_id` 查询源设备所属学校，只在相同 `school_id` 内查找目标 `dcdw_label`。
+1. RPi 端预留的请求发布接口只接受 `target_dcdw_label`，不提供 `school_name` 或目标 `device_id` 参数。
+2. `cns_server` 根据 source topic 中的设备 `device_id` 查询源设备所属学校，只在相同 `school_id` 内查找目标 `dcdw_label`。
 
 服务器查询语义：
 
 ```sql
-SELECT vendor_id
+SELECT device_id
 FROM devices
 WHERE school_id = :source_school_id
   AND dcdw_label = :target_dcdw_label;
@@ -231,7 +237,7 @@ WHERE school_id = :source_school_id
 
 ### 6.2 上位机和管控中心
 
-上位机和管控中心按服务器登记的学校权限访问目标。即使请求直接使用目标 `vendor_id`，服务器仍需检查目标所属学校是否在该来源的权限范围内。
+上位机和管控中心按服务器登记的学校权限访问目标。即使请求直接使用目标 `device_id`，服务器仍需检查目标所属学校是否在该来源的权限范围内。
 
 来源类型属于服务器数据库元数据，不由每条命令 payload 声明，避免错误或伪造 `source_type`。
 
@@ -245,7 +251,7 @@ WHERE school_id = :source_school_id
 |---|---|
 | `source_id` | 全局唯一固定来源标识，主键 |
 | `source_kind` | device / host_app / control_center，仅服务器内部使用 |
-| `device_vendor_id` | 设备来源关联的 `vendor_id`，其他来源为空 |
+| `device_device_id` | 设备来源关联的 `device_id`，其他来源为空 |
 | `enabled` | 是否允许发送命令 |
 | `created_at` | 登记时间 |
 
@@ -265,7 +271,7 @@ WHERE school_id = :source_school_id
 | `command_id` | 服务器生成的唯一命令号，主键 |
 | `source_id` | 原始命令来源 |
 | `request_id` | 来源生成的请求号 |
-| `target_vendor_id` | 解析后的目标设备 |
+| `target_device_id` | 解析后的目标设备 |
 | `parameters` | 规范化参数 JSON |
 | `status` | pending / dispatched / applied / already_applied / rejected / timeout |
 | `error_code` | 失败原因 |
@@ -349,12 +355,12 @@ UNIQUE(source_id, request_id)
 目标设备订阅：
 
 ```text
-{namespace}/{本设备vendor_id}/config/set
+{namespace}/{本设备device_id}/config/set
 ```
 
 执行顺序：
 
-1. 从 MQTT topic 校验目标 `vendor_id` 属于本设备。
+1. 从 MQTT topic 校验目标 `device_id` 属于本设备。
 2. 解析 JSON，校验 `command_id` 和 `parameters`。
 3. 读取当前 `runtime.applied_command_ids`。
 4. 若命令已执行，返回 `already_applied`，不写配置、不退出。
@@ -531,10 +537,10 @@ bool PublishConfigRequest(
 接口固定发布到：
 
 ```text
-{namespace}/sources/{本设备vendor_id}/config/request
+{namespace}/sources/{本设备device_id}/config/request
 ```
 
-接口不接受 `source_id`，内部固定使用本设备 `vendor_id`；同时不提供目标 `school_name` 或 `vendor_id` 参数，从调用边界限制设备不能伪装其他来源，也只能按同校内部编号请求。服务器仍必须执行权威来源和同校校验。
+接口不接受 `source_id`，内部固定使用本设备 `device_id`；同时不提供目标 `school_name` 或 `device_id` 参数，从调用边界限制设备不能伪装其他来源，也只能按同校内部编号请求。服务器仍必须执行权威来源和同校校验。
 
 本轮只预留接口，不增加调用入口。
 
@@ -548,7 +554,7 @@ bool PublishConfigRequest(
   "command_id": "服务器命令号",
   "status": "applied",
   "target": {
-    "vendor_id": "目标设备vendor_id",
+    "device_id": "目标设备device_id",
     "school_name": "SEU",
     "dcdw_label": "DCDW-002"
   }

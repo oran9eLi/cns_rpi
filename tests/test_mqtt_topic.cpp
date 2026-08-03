@@ -8,6 +8,12 @@ TEST_CASE("按namespace/vendor_id/suffix构造设备topic") {
         "cns_rpi/ABC123/registration");
   CHECK(mqtt::BuildTelemetryTopic("cns_rpi", "ABC123", "telemetry") ==
         "cns_rpi/ABC123/telemetry");
+  CHECK(mqtt::BuildPx4RealtimeTopic("cns_rpi", "PX4U2-ABC123") ==
+        "cns_rpi/PX4U2-ABC123/px4/realtime/v1");
+  CHECK(mqtt::BuildPx4LatencyProbeTopic("cns_rpi", "PX4U2-ABC123") ==
+        "cns_rpi/PX4U2-ABC123/px4/latency/probe/v1");
+  CHECK(mqtt::BuildPx4LatencyAckTopic("cns_rpi", "PX4U2-ABC123") ==
+        "cns_rpi/PX4U2-ABC123/px4/latency/ack/v1");
 }
 
 TEST_CASE("topic构造函数只拼接不重复校验") {

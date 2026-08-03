@@ -5,8 +5,6 @@
 
 #include "protocol/extension_decoder.hpp"
 
-#include "protocol/identity.hpp"
-
 #include <algorithm>
 #include <array>
 #include <cstddef>
@@ -92,7 +90,6 @@ bool DecodeTunnel(const mavlink_tunnel_t& value, state::StateStore& store) {
 
 bool DecodeBasicId(const mavlink_open_drone_id_basic_id_t& value, state::StateStore& store) {
   store.UpdateOpenDroneIdBasicId(value);
-  store.UpdateVendorId(ExtractVendorId(value.uas_id));
   return true;
 }
 

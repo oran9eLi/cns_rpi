@@ -113,6 +113,28 @@ TEST_CASE("有界接收把串口挂断报告为读错误") {
   CHECK(disconnected.error() == uart::UartError::kReadError);
 }
 
+TEST_CASE("bounded receive drains an already assembled frame before polling") {
+  auto pty = OpenPtyPair();
+  auto link = uart::MavlinkLink::Open(pty.slave_path, 115200);
+  REQUIRE(link.has_value());
+  const auto frame = PackHeartbeatBytes();
+  std::vector<std::uint8_t> two_frames = frame;
+  two_frames.insert(two_frames.end(), frame.begin(), frame.end());
+  REQUIRE(::write(pty.master_fd, two_frames.data(), two_frames.size()) ==
+          static_cast<ssize_t>(two_frames.size()));
+
+  const auto first = link->ReceiveMessage(std::chrono::milliseconds(20));
+  REQUIRE(first.has_value());
+  REQUIRE(first->has_value());
+
+  const auto start = std::chrono::steady_clock::now();
+  const auto second = link->ReceiveMessage(std::chrono::milliseconds(100));
+  const auto elapsed = std::chrono::steady_clock::now() - start;
+  REQUIRE(second.has_value());
+  REQUIRE(second->has_value());
+  CHECK(elapsed < std::chrono::milliseconds(20));
+}
+
 }  // namespace
 
 TEST_CASE("串口设备只能被一个进程实例独占打开") {

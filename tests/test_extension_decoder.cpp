@@ -397,7 +397,7 @@ TEST_CASE("不认识的payload_type被安静忽略") {
   CHECK_FALSE(handled);
 }
 
-TEST_CASE("OPEN_DRONE_ID_BASIC_ID解码存储原始struct并提取vendor_id") {
+TEST_CASE("OPEN_DRONE_ID_BASIC_ID只存储原始Remote ID不决定主设备身份") {
   std::uint8_t uas_id[20] = {'D', 'C', 'D', 'W', 'C', 'N', 'S', '1', 'A', 'B',
                               'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M'};
   mavlink_message_t msg = PackBasicId(/*id_type=*/1, /*ua_type=*/2, uas_id);
@@ -410,11 +410,11 @@ TEST_CASE("OPEN_DRONE_ID_BASIC_ID解码存储原始struct并提取vendor_id") {
   REQUIRE(snapshot.open_drone_id_basic_id.has_value());
   CHECK(snapshot.open_drone_id_basic_id->id_type == 1);
   CHECK(snapshot.open_drone_id_basic_id->ua_type == 2);
-  REQUIRE(snapshot.vendor_id.has_value());
-  CHECK(*snapshot.vendor_id == "DCDWCNS1ABCDEFGHJKLM");
+  // 解码层只负责存原始帧；device_id 的校验与锁定由 main.cpp 的身份流程负责。
+  CHECK_FALSE(snapshot.device_id.has_value());
 }
 
-TEST_CASE("OPEN_DRONE_ID_BASIC_ID的uas_id中间有null时vendor_id按strnlen截断") {
+TEST_CASE("OPEN_DRONE_ID_BASIC_ID保留uas_id中的null终止内容") {
   std::uint8_t uas_id[20] = {'D', 'C', 'D', 'W', 'C', 'N', 'S', '1', 0, 0,
                               0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
   mavlink_message_t msg = PackBasicId(/*id_type=*/1, /*ua_type=*/0, uas_id);
@@ -424,8 +424,10 @@ TEST_CASE("OPEN_DRONE_ID_BASIC_ID的uas_id中间有null时vendor_id按strnlen截
 
   CHECK(handled);
   auto snapshot = store.Snapshot();
-  REQUIRE(snapshot.vendor_id.has_value());
-  CHECK(*snapshot.vendor_id == "DCDWCNS1");
+  REQUIRE(snapshot.open_drone_id_basic_id.has_value());
+  CHECK(snapshot.open_drone_id_basic_id->uas_id[7] == '1');
+  CHECK(snapshot.open_drone_id_basic_id->uas_id[8] == 0);
+  CHECK_FALSE(snapshot.device_id.has_value());
 }
 
 TEST_CASE("OPEN_DRONE_ID_LOCATION解码存储原始struct") {

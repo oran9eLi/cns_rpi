@@ -6,6 +6,7 @@
 #include "config/app_config.hpp"
 
 #include <fstream>
+#include <optional>
 #include <unordered_set>
 
 #include <nlohmann/json.hpp>
@@ -34,6 +35,13 @@ bool IsValidCommandId(const std::string& command_id) {
 
 bool IsValidLogLevel(const std::string& level) {
   return level == "debug" || level == "info" || level == "warn" || level == "error";
+}
+
+std::optional<device::DetectionMode> ParseDeviceMode(const std::string& mode) {
+  if (mode == "auto") return device::DetectionMode::kAuto;
+  if (mode == "cns_box") return device::DetectionMode::kCnsBox;
+  if (mode == "px4") return device::DetectionMode::kPx4;
+  return std::nullopt;
 }
 
 }  // namespace
@@ -71,6 +79,57 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
     const auto& serial = root.at("serial");
     cfg.serial.device = serial.at("device").get<std::string>();
     cfg.serial.baud = serial.at("baud").get<int>();
+
+    if (root.contains("device")) {
+      const auto parsed_mode =
+          ParseDeviceMode(root.at("device").at("mode").get<std::string>());
+      if (!parsed_mode) return std::unexpected(ConfigError::kInvalidValue);
+      cfg.device.mode = *parsed_mode;
+    }
+
+    if (root.contains("qgc_udp")) {
+      const auto& qgc_udp = root.at("qgc_udp");
+      if (qgc_udp.contains("enabled")) {
+        cfg.qgc_udp.enabled = qgc_udp.at("enabled").get<bool>();
+      }
+      if (qgc_udp.contains("mode") &&
+          qgc_udp.at("mode").get<std::string>() != "auto_discovery") {
+        return std::unexpected(ConfigError::kInvalidValue);
+      }
+      if (qgc_udp.contains("lan_interfaces")) {
+        cfg.qgc_udp.lan_interfaces =
+            qgc_udp.at("lan_interfaces").get<std::vector<std::string>>();
+      }
+      if (qgc_udp.contains("listen_port")) {
+        cfg.qgc_udp.listen_port = qgc_udp.at("listen_port").get<int>();
+      }
+      if (qgc_udp.contains("qgc_port")) {
+        cfg.qgc_udp.qgc_port = qgc_udp.at("qgc_port").get<int>();
+      }
+      if (qgc_udp.contains("discovery_interval_ms")) {
+        cfg.qgc_udp.discovery_interval = std::chrono::milliseconds(
+            qgc_udp.at("discovery_interval_ms").get<int>());
+      }
+      if (qgc_udp.contains("peer_timeout_ms")) {
+        cfg.qgc_udp.peer_timeout = std::chrono::milliseconds(
+            qgc_udp.at("peer_timeout_ms").get<int>());
+      }
+      if (qgc_udp.contains("allow_commands")) {
+        cfg.qgc_udp.allow_commands =
+            qgc_udp.at("allow_commands").get<bool>();
+      }
+    }
+
+    if (root.contains("px4_realtime")) {
+      const auto& px4_realtime = root.at("px4_realtime");
+      if (px4_realtime.contains("enabled")) {
+        cfg.px4_realtime.enabled = px4_realtime.at("enabled").get<bool>();
+      }
+      if (px4_realtime.contains("publish_interval_ms")) {
+        cfg.px4_realtime.publish_interval = std::chrono::milliseconds(
+            px4_realtime.at("publish_interval_ms").get<int>());
+      }
+    }
 
     const auto& mqtt = root.at("mqtt");
     const auto& connection = mqtt.at("connection");
@@ -157,6 +216,18 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
   const auto heartbeat_ms = cfg.runtime.heartbeat_interval.count();
   const auto cellular_heartbeat_ms = cfg.cellular.heartbeat_interval.count();
   const auto cellular_snapshot_max_age = cfg.cellular.status_snapshot_max_age.count();
+  const auto qgc_discovery_ms = cfg.qgc_udp.discovery_interval.count();
+  const auto qgc_peer_timeout_ms = cfg.qgc_udp.peer_timeout.count();
+  const auto px4_realtime_ms = cfg.px4_realtime.publish_interval.count();
+  std::unordered_set<std::string> qgc_interfaces;
+  bool valid_qgc_interfaces = !cfg.qgc_udp.lan_interfaces.empty();
+  for (const auto& interface_name : cfg.qgc_udp.lan_interfaces) {
+    if (interface_name.empty() || interface_name.size() > 15 ||
+        interface_name.find_first_of("/ \t\r\n") != std::string::npos ||
+        !qgc_interfaces.insert(interface_name).second) {
+      valid_qgc_interfaces = false;
+    }
+  }
   if (connection.host.empty() || connection.client_id_prefix.empty() || connection.port < 1 ||
       connection.port > 65535 || connection.keepalive_seconds <= 0 ||
       connection.reconnect.delay_seconds < 1 || connection.reconnect.delay_seconds > 3600 ||
@@ -171,6 +242,13 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
       cfg.cellular.status_snapshot_path.empty() ||
       !cfg.cellular.status_snapshot_path.is_absolute() ||
       cellular_snapshot_max_age < 10 || cellular_snapshot_max_age > 300 ||
+      !valid_qgc_interfaces || cfg.qgc_udp.listen_port < 1 ||
+      cfg.qgc_udp.listen_port > 65535 || cfg.qgc_udp.qgc_port < 1 ||
+      cfg.qgc_udp.qgc_port > 65535 || qgc_discovery_ms < 100 ||
+      qgc_discovery_ms > 60000 || qgc_peer_timeout_ms < 500 ||
+      qgc_peer_timeout_ms > 60000 ||
+      qgc_peer_timeout_ms < qgc_discovery_ms * 2 ||
+      px4_realtime_ms < 20 || px4_realtime_ms > 1000 ||
       !IsValidLogLevel(cfg.logging.level) || max_file_size_kb < 64 ||
       max_file_size_kb > 102400 ||
       !IsValidTopicSegment(topics.topic_namespace) ||

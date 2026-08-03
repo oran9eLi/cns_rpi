@@ -6,9 +6,11 @@
 #include "payload/json_serializer.hpp"
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <ctime>
 #include <numbers>
 #include <string>
 #include <string_view>
@@ -17,19 +19,31 @@ namespace payload {
 
 namespace {
 
-nlohmann::json BuildIdentity(const state::TelemetryState& state, const std::string& school_name) {
-  nlohmann::json identity;
-  if (state.vendor_id) {
-    identity["vendor_id"] = *state.vendor_id;
-  }
-  if (state.dcdw_label) {
-    identity["dcdw_label"] = *state.dcdw_label;
-  }
-  if (state.rpi_serial) {
-    identity["rpi_serial"] = *state.rpi_serial;
-  }
-  identity["school_name"] = school_name;
-  return identity;
+std::string CurrentTimestampUtc() {
+  const std::time_t now = std::time(nullptr);
+  std::tm utc{};
+  gmtime_r(&now, &utc);
+  std::array<char, 32> buffer{};
+  std::strftime(buffer.data(), buffer.size(), "%Y-%m-%dT%H:%M:%SZ", &utc);
+  return std::string{buffer.data()};
+}
+
+std::string CurrentTimestampUtcMillis() {
+  const auto now = std::chrono::system_clock::now();
+  const auto milliseconds =
+      std::chrono::duration_cast<std::chrono::milliseconds>(
+          now.time_since_epoch()) %
+      std::chrono::seconds(1);
+  const std::time_t time = std::chrono::system_clock::to_time_t(now);
+  std::tm utc{};
+  gmtime_r(&time, &utc);
+  std::array<char, 32> buffer{};
+  const auto date_length =
+      std::strftime(buffer.data(), buffer.size(), "%Y-%m-%dT%H:%M:%S", &utc);
+  std::snprintf(buffer.data() + date_length, buffer.size() - date_length,
+                ".%03lldZ",
+                static_cast<long long>(milliseconds.count()));
+  return std::string{buffer.data()};
 }
 
 constexpr double kRadToDeg = 180.0 / std::numbers::pi;
@@ -379,10 +393,11 @@ void AddDroneIdBasicId(nlohmann::json& drone_id, const state::TelemetryState& st
     return;
   }
   const auto& b = *state.open_drone_id_basic_id;
+  // 只保留标准属性：uas_id 就是顶层 device_id，完整身份在一条报文里只出现一次
+  // (设计文档 §5.5)。
   drone_id["basic_id"] = {
       {"id_type", b.id_type},
       {"ua_type", b.ua_type},
-      {"uas_id", ToTrimmedString(reinterpret_cast<const char*>(b.uas_id), sizeof(b.uas_id))},
   };
 }
 
@@ -453,8 +468,24 @@ void AddDroneIdSelfId(nlohmann::json& drone_id, const state::TelemetryState& sta
 }  // namespace
 
 nlohmann::json ToJson(const state::TelemetryState& state, const std::string& school_name) {
-  nlohmann::json out;
-  out["identity"] = BuildIdentity(state, school_name);
+  nlohmann::json out{
+      {"schema_version", 3},
+      {"sent_at", CurrentTimestampUtc()},
+  };
+  if (state.device_id) {
+    out["device_id"] = *state.device_id;
+  }
+  if (state.device_type) {
+    out["device_type"] = device::TypeName(*state.device_type);
+  }
+  // 校名和角色号是主控箱的展示属性，不是身份，平铺在顶层；产品与版本元数据
+  // 只走 retained registration，不在按节拍刷新的遥测里重复(设计文档 §5.5)。
+  if (!school_name.empty()) {
+    out["school_name"] = school_name;
+  }
+  if (state.dcdw_label) {
+    out["dcdw_label"] = *state.dcdw_label;
+  }
 
   nlohmann::json telemetry = nlohmann::json::object();
   AddHeartbeat(telemetry, state);
@@ -503,6 +534,29 @@ nlohmann::json ToJson(const state::TelemetryState& state, const std::string& sch
                       const cellular::StatusSnapshot& cellular_status) {
   auto out = ToJson(state, school_name);
   out["telemetry"]["cellular_5g"] = cellular::BuildPublicTelemetryJson(cellular_status);
+  return out;
+}
+
+nlohmann::json ToPx4RealtimeJson(const state::TelemetryState& state,
+                                 std::uint64_t sequence) {
+  nlohmann::json out{
+      {"schema_version", 1},
+      {"sequence", sequence},
+      {"sent_at", CurrentTimestampUtcMillis()},
+  };
+  if (state.device_id) {
+    out["device_id"] = *state.device_id;
+  }
+
+  nlohmann::json telemetry = nlohmann::json::object();
+  AddHeartbeat(telemetry, state);
+  AddAttitude(telemetry, state);
+  AddGps(telemetry, state);
+  AddGlobalPosition(telemetry, state);
+  AddSysStatus(telemetry, state);
+  AddBattery(telemetry, state);
+  AddPressure(telemetry, state);
+  out["telemetry"] = std::move(telemetry);
   return out;
 }
 

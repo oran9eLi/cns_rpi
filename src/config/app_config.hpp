@@ -18,6 +18,8 @@
 #include <string_view>
 #include <vector>
 
+#include "device/device_type.hpp"
+
 namespace config {
 
 /// 配置加载失败的原因。
@@ -36,11 +38,32 @@ struct SerialConfig {
   int baud = 0;        ///< 波特率
 };
 
+struct DeviceConfig {
+  device::DetectionMode mode{device::DetectionMode::kAuto};
+};
+
+/// PX4 专用的同一局域网 QGC 自动发现配置；配置段缺失时保持关闭以兼容旧设备。
+struct QgcUdpConfig {
+  bool enabled{false};
+  std::vector<std::string> lan_interfaces{"wlan0", "eth0"};
+  int listen_port{14540};
+  int qgc_port{14550};
+  std::chrono::milliseconds discovery_interval{1000};
+  std::chrono::milliseconds peer_timeout{5000};
+  bool allow_commands{true};
+};
+
+/// PX4 Web 控制台专用高频遥测；只对真实飞控生效，主控箱继续使用原遥测周期。
+struct Px4RealtimeConfig {
+  bool enabled{true};
+  std::chrono::milliseconds publish_interval{50};
+};
+
 struct MqttConnectionConfig {
   std::string host;
   int port = 0;
   int keepalive_seconds = 0;
-  /// config.json 的 client_id 是产品前缀，连接时追加 "-{vendor_id}" 保证唯一。
+  /// config.json 的 client_id 是产品前缀，连接时追加 "-{device_id}" 保证唯一。
   std::string client_id_prefix;
   struct ReconnectConfig {
     int delay_seconds = 0;
@@ -99,6 +122,9 @@ struct CellularConfig {
 
 struct AppConfig {
   SerialConfig serial;
+  DeviceConfig device;
+  QgcUdpConfig qgc_udp;
+  Px4RealtimeConfig px4_realtime;
   MqttConfig mqtt;
   LoggingConfig logging;
   IdentityConfig identity;

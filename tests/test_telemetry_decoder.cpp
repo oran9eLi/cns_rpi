@@ -227,3 +227,30 @@ TEST_CASE("SERVO_OUTPUT_RAW decodes first four PWM pulse widths") {
   CHECK(snapshot.motor_pulse->pwm_us[2] == 1500);
   CHECK(snapshot.motor_pulse->pwm_us[3] == 2000);
 }
+
+TEST_CASE("AUTOPILOT_VERSION stores PX4 hardware identity fields") {
+  std::uint8_t flight_custom_version[8] = {};
+  std::uint8_t middleware_custom_version[8] = {};
+  std::uint8_t os_custom_version[8] = {};
+  std::uint8_t uid2[18] = {};
+  uid2[0] = 0xAA;
+  mavlink_message_t message{};
+  mavlink_msg_autopilot_version_pack(
+      2, MAV_COMP_ID_AUTOPILOT1, &message, 0,
+      (1U << 24) | (17U << 16), 0, 0, 3,
+      flight_custom_version, middleware_custom_version, os_custom_version,
+      26, 7, 0x0123456789ABCDEFULL, uid2);
+  state::StateStore store;
+
+  CHECK(protocol::DecodeAndStore(message, store));
+  const auto snapshot = store.Snapshot();
+  // 只保留产品与版本元数据：uid/uid2 标识飞控硬件，不是受控设备身份，
+  // 解码后即被丢弃，state 里没有任何字段能再取到它们。
+  CHECK(snapshot.autopilot_version_received);
+  REQUIRE(snapshot.product.has_value());
+  CHECK(snapshot.product->manufacturer_code == "26");
+  CHECK(snapshot.product->model_code == "7");
+  REQUIRE(snapshot.version.has_value());
+  CHECK(snapshot.version->firmware == "1.17.0");
+  CHECK_FALSE(snapshot.device_id.has_value());
+}

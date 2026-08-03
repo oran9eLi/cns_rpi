@@ -36,6 +36,9 @@ std::expected<MavlinkLink, UartError> MavlinkLink::Open(const std::string& devic
 }
 
 std::expected<std::optional<mavlink_message_t>, UartError> MavlinkLink::ReceiveMessage() {
+  if (auto pending = assembler_.Feed(std::span<const std::uint8_t>{})) {
+    return pending;
+  }
   std::array<std::uint8_t, 256> buffer{};
   auto count = port_.Read(buffer);
   if (!count) {
@@ -46,6 +49,9 @@ std::expected<std::optional<mavlink_message_t>, UartError> MavlinkLink::ReceiveM
 
 std::expected<std::optional<mavlink_message_t>, UartError>
 MavlinkLink::ReceiveMessage(std::chrono::milliseconds max_wait) {
+  if (auto pending = assembler_.Feed(std::span<const std::uint8_t>{})) {
+    return pending;
+  }
   auto readable = port_.WaitReadable(max_wait);
   if (!readable) {
     return std::unexpected(readable.error());

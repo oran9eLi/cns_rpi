@@ -20,8 +20,18 @@
 #include <string>
 
 #include "common/mavlink.h"
+#include "device/device_type.hpp"
+#include "device/product_info.hpp"
 
 namespace state {
+
+/// UpdateDeviceId() 的结果：会话内首个通过校验的 device_id 被锁定，
+/// 之后同一 system 报不同身份不能静默切 topic(设计文档 §3.5)。
+enum class DeviceIdUpdate {
+  kAccepted,   ///< 首次锁定，身份就绪
+  kUnchanged,  ///< 与已锁定值相同，正常的周期重复上报
+  kConflict,   ///< 与已锁定值不同，调用方必须走会话清理并重新识别设备
+};
 
 /// 固件端模块总数（`Px4Lite_ModuleId_t`，见 V1设计文档.md §4.1），
 /// MODSTAT0 覆盖 0-7 号，MODSTAT1 覆盖 8-13 号。
@@ -121,6 +131,13 @@ struct MessageLog {
 
 /// 一份遥测快照：每个字段在对应消息从未被解码过之前是 std::nullopt。
 struct TelemetryState {
+  /// 当前物理链路已确认的设备类别和 MAVLink 端点。
+  std::optional<device::Type> device_type;
+  std::optional<std::uint8_t> device_system_id;
+  std::optional<std::uint8_t> device_component_id;
+  /// 服务器、MQTT 主题和 Web 端统一使用的受控设备主身份。
+  std::optional<std::string> device_id;
+
   std::optional<mavlink_heartbeat_t> heartbeat;
   std::optional<mavlink_gps_raw_int_t> gps_raw_int;
   std::optional<mavlink_attitude_t> attitude;
@@ -152,12 +169,15 @@ struct TelemetryState {
   std::optional<mavlink_open_drone_id_operator_id_t> open_drone_id_operator_id;
   std::optional<mavlink_open_drone_id_self_id_t> open_drone_id_self_id;
 
-  /// 从 OPEN_DRONE_ID_BASIC_ID.uas_id 提取的厂商唯一产品识别码，RPi 不校验/不重新计算。
-  std::optional<std::string> vendor_id;
   /// 从 MAVLink 帧头 sysid 格式化的 DCDW-XXX 角色号，帧头字段，不是 payload 字段。
   std::optional<std::string> dcdw_label;
-  /// RPi 本机硬件序列号(/proc/cpuinfo)，V1 过渡期权威键，跟 MAVLink 帧无关。
-  std::optional<std::string> rpi_serial;
+
+  /// 产品与版本元数据，不是身份：不进 topic、不做主键，只随注册幂等上报。
+  std::optional<device::ProductInfo> product;
+  std::optional<device::VersionInfo> version;
+  /// 是否已收到过 AUTOPILOT_VERSION。PX4 可能把 vendor_id/product_id/版本全报 0，
+  /// 那时 product/version 仍是 nullopt，只有这个标志能让主循环停止重复请求。
+  bool autopilot_version_received = false;
 };
 
 /**
@@ -168,6 +188,10 @@ struct TelemetryState {
  */
 class StateStore {
  public:
+  void UpdateControlledDevice(device::Type type, std::uint8_t system_id,
+                              std::uint8_t component_id);
+  /// 锁定会话内首个通过校验的 device_id；调用方必须处理 kConflict 分支。
+  [[nodiscard]] DeviceIdUpdate UpdateDeviceId(const std::string& value);
   void UpdateHeartbeat(const mavlink_heartbeat_t& value);
   void UpdateGpsRawInt(const mavlink_gps_raw_int_t& value);
   void UpdateAttitude(const mavlink_attitude_t& value);
@@ -206,9 +230,21 @@ class StateStore {
   void UpdateOpenDroneIdSystem(const mavlink_open_drone_id_system_t& value);
   void UpdateOpenDroneIdOperatorId(const mavlink_open_drone_id_operator_id_t& value);
   void UpdateOpenDroneIdSelfId(const mavlink_open_drone_id_self_id_t& value);
-  void UpdateVendorId(const std::string& value);
   void UpdateDcdwLabel(const std::string& value);
-  void UpdateRpiSerial(const std::string& value);
+  /// 直接写入产品信息(主控箱从 device_id 前缀推出，不经 AUTOPILOT_VERSION)。
+  void UpdateProduct(const device::ProductInfo& value);
+  /// 写入 AUTOPILOT_VERSION 提取出的产品与版本，并置位"已收到"标志。
+  void UpdateAutopilotVersionMetadata(
+      const std::optional<device::ProductInfo>& product,
+      const std::optional<device::VersionInfo>& version);
+
+  /**
+   * @brief 清除当前受控设备产生的全部状态。
+   *
+   * 串口断线、换设备或身份冲突后必须调用，避免把上一台设备的身份和遥测
+   * 上传给下一台。树莓派自身不再持有任何业务身份，因此不保留任何字段。
+   */
+  void ResetDeviceState();
 
   /// 加锁拷贝当前状态并返回，调用方拿到的是独立副本。
   TelemetryState Snapshot() const;

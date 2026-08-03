@@ -62,13 +62,13 @@ std::expected<nlohmann::json, CommandError> BuildConfigRequestPayload(
 
 bool PublishConfigRequest(mqtt::MqttClient& client,
                           const std::string& topic_namespace,
-                          const std::string& source_vendor_id,
+                          const std::string& source_device_id,
                           const std::string& request_id,
                           const std::string& target_dcdw_label,
                           const ConfigParameterPatch& parameters) {
   auto payload = BuildConfigRequestPayload(request_id, target_dcdw_label, parameters);
   if (!payload) return false;
-  return client.Publish(mqtt::BuildConfigRequestTopic(topic_namespace, source_vendor_id),
+  return client.Publish(mqtt::BuildConfigRequestTopic(topic_namespace, source_device_id),
                         payload->dump(), /*qos=*/2, /*retain=*/false);
 }
 

@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <vector>
 
 #include "config/app_config.hpp"
 
@@ -63,6 +64,152 @@ TEST_CASE("auto是合法串口配置值") {
 
   REQUIRE(result.has_value());
   CHECK(result->serial.device == "auto");
+}
+
+TEST_CASE("设备识别模式默认auto且允许显式选择主控箱或PX4") {
+  const auto default_result = config::LoadAppConfig(WriteTempConfig(ValidConfig()));
+  REQUIRE(default_result.has_value());
+  CHECK(default_result->device.mode == device::DetectionMode::kAuto);
+
+  for (const auto& [name, expected] : {
+           std::pair{"cns_box", device::DetectionMode::kCnsBox},
+           std::pair{"px4", device::DetectionMode::kPx4},
+       }) {
+    const auto configured = ReplaceOnce(
+        ValidConfig(), "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},",
+        "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},"
+        "\n    \"device\": {\"mode\": \"" +
+            std::string{name} + "\"},");
+    const auto result = config::LoadAppConfig(WriteTempConfig(configured));
+    REQUIRE(result.has_value());
+    CHECK(result->device.mode == expected);
+  }
+}
+
+TEST_CASE("设备识别模式拒绝未知值") {
+  const auto configured = ReplaceOnce(
+      ValidConfig(), "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},",
+      "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},"
+      "\n    \"device\": {\"mode\": \"other\"},");
+  const auto result = config::LoadAppConfig(WriteTempConfig(configured));
+  REQUIRE_FALSE(result.has_value());
+  CHECK(result.error() == config::ConfigError::kInvalidValue);
+}
+
+TEST_CASE("QGC UDP bridge is backward-compatible and defaults to disabled") {
+  const auto result = config::LoadAppConfig(WriteTempConfig(ValidConfig()));
+
+  REQUIRE(result.has_value());
+  CHECK_FALSE(result->qgc_udp.enabled);
+  CHECK(result->qgc_udp.lan_interfaces ==
+        std::vector<std::string>{"wlan0", "eth0"});
+  CHECK(result->qgc_udp.listen_port == 14540);
+  CHECK(result->qgc_udp.qgc_port == 14550);
+  CHECK(result->qgc_udp.discovery_interval ==
+        std::chrono::milliseconds(1000));
+  CHECK(result->qgc_udp.peer_timeout == std::chrono::milliseconds(5000));
+  CHECK(result->qgc_udp.allow_commands);
+}
+
+TEST_CASE("QGC UDP bridge configuration can be enabled explicitly") {
+  const auto configured = ReplaceOnce(
+      ValidConfig(), "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},",
+      "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},\n"
+      "    \"qgc_udp\": {"
+      "\"enabled\": true, \"mode\": \"auto_discovery\", "
+      "\"lan_interfaces\": [\"wlan0\"], \"listen_port\": 14540, "
+      "\"qgc_port\": 14550, \"discovery_interval_ms\": 500, "
+      "\"peer_timeout_ms\": 3000, \"allow_commands\": false},");
+  const auto result = config::LoadAppConfig(WriteTempConfig(configured));
+
+  REQUIRE(result.has_value());
+  CHECK(result->qgc_udp.enabled);
+  CHECK(result->qgc_udp.lan_interfaces ==
+        std::vector<std::string>{"wlan0"});
+  CHECK(result->qgc_udp.discovery_interval ==
+        std::chrono::milliseconds(500));
+  CHECK(result->qgc_udp.peer_timeout == std::chrono::milliseconds(3000));
+  CHECK_FALSE(result->qgc_udp.allow_commands);
+}
+
+TEST_CASE("PX4实时遥测默认开启且支持显式配置") {
+  const auto default_result =
+      config::LoadAppConfig(WriteTempConfig(ValidConfig()));
+  REQUIRE(default_result.has_value());
+  CHECK(default_result->px4_realtime.enabled);
+  CHECK(default_result->px4_realtime.publish_interval ==
+        std::chrono::milliseconds(50));
+
+  const auto configured = ReplaceOnce(
+      ValidConfig(),
+      "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},",
+      "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},\n"
+      "    \"px4_realtime\": {\"enabled\": false, "
+      "\"publish_interval_ms\": 100},");
+  const auto result = config::LoadAppConfig(WriteTempConfig(configured));
+  REQUIRE(result.has_value());
+  CHECK_FALSE(result->px4_realtime.enabled);
+  CHECK(result->px4_realtime.publish_interval ==
+        std::chrono::milliseconds(100));
+}
+
+TEST_CASE("PX4实时遥测周期必须在20到1000毫秒之间") {
+  for (const int interval : {19, 1001}) {
+    const auto configured = ReplaceOnce(
+        ValidConfig(),
+        "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},",
+        "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},\n"
+        "    \"px4_realtime\": {\"enabled\": true, "
+        "\"publish_interval_ms\": " +
+            std::to_string(interval) + "},");
+    const auto result = config::LoadAppConfig(WriteTempConfig(configured));
+    CHECK_FALSE(result.has_value());
+  }
+}
+
+TEST_CASE("QGC UDP bridge can be disabled with the short rollback form") {
+  const auto configured = ReplaceOnce(
+      ValidConfig(), "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},",
+      "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},\n"
+      "    \"qgc_udp\": {\"enabled\": false},");
+  const auto result = config::LoadAppConfig(WriteTempConfig(configured));
+
+  REQUIRE(result.has_value());
+  CHECK_FALSE(result->qgc_udp.enabled);
+  CHECK(result->qgc_udp.listen_port == 14540);
+}
+
+TEST_CASE("QGC UDP bridge rejects unsafe or inconsistent settings") {
+  for (const auto& qgc_config : {
+           "{\"enabled\":true,\"lan_interfaces\":[],\"listen_port\":14540,"
+           "\"qgc_port\":14550,\"discovery_interval_ms\":1000,"
+           "\"peer_timeout_ms\":5000,\"allow_commands\":true}",
+           "{\"enabled\":true,\"mode\":\"fixed\",\"lan_interfaces\":[\"wlan0\"],"
+           "\"listen_port\":14540,\"qgc_port\":14550,"
+           "\"discovery_interval_ms\":1000,\"peer_timeout_ms\":5000,"
+           "\"allow_commands\":true}",
+           "{\"enabled\":true,\"lan_interfaces\":[\"wlan0\",\"wlan0\"],"
+           "\"listen_port\":14540,\"qgc_port\":14550,"
+           "\"discovery_interval_ms\":1000,\"peer_timeout_ms\":5000,"
+           "\"allow_commands\":true}",
+           "{\"enabled\":true,\"lan_interfaces\":[\"wlan0\"],"
+           "\"listen_port\":0,\"qgc_port\":14550,"
+           "\"discovery_interval_ms\":1000,\"peer_timeout_ms\":5000,"
+           "\"allow_commands\":true}",
+           "{\"enabled\":true,\"lan_interfaces\":[\"wlan0\"],"
+           "\"listen_port\":14540,\"qgc_port\":14550,"
+           "\"discovery_interval_ms\":1000,\"peer_timeout_ms\":1500,"
+           "\"allow_commands\":true}",
+       }) {
+    const auto configured = ReplaceOnce(
+        ValidConfig(),
+        "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},",
+        "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},\n"
+        "    \"qgc_udp\": " +
+            std::string(qgc_config) + ",");
+    const auto result = config::LoadAppConfig(WriteTempConfig(configured));
+    CHECK_FALSE(result.has_value());
+  }
 }
 
 TEST_CASE("完整合法嵌套配置能正确解析") {
