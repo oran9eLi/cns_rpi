@@ -10,13 +10,19 @@
 
 #include <nlohmann/json.hpp>
 
-#include "protocol/px4_identity.hpp"
-
 namespace registration {
+
+namespace {
+
+/// 注册与常规遥测的协议版本。统一身份删除了字段并改变了 PX4 device_id 语义，
+/// 属于不兼容变更，从 2 升到 3(设计文档 §5.2)。
+constexpr int kSchemaVersion = 3;
+
+}  // namespace
 
 std::string BuildOnlinePayload(const OnlineRegistration& input) {
   nlohmann::json payload{
-      {"schema_version", 2},
+      {"schema_version", kSchemaVersion},
       {"device_id", input.device_id},
       {"device_type", std::string(device::TypeName(input.device_type))},
       {"status", "online"},
@@ -31,82 +37,55 @@ std::string BuildOnlinePayload(const OnlineRegistration& input) {
   }
   payload["capabilities"] = std::move(capabilities);
 
-  nlohmann::json identity = nlohmann::json::object();
-  if (input.vendor_id) {
-    identity["vendor_id"] = *input.vendor_id;
-  }
   if (input.school_name && !input.school_name->empty()) {
-    identity["school_name"] = *input.school_name;
+    payload["school_name"] = *input.school_name;
   }
   if (input.dcdw_label) {
-    identity["dcdw_label"] = *input.dcdw_label;
+    payload["dcdw_label"] = *input.dcdw_label;
   }
-  if (input.remote_id) {
-    identity["remote_id"] = *input.remote_id;
+  if (input.product) {
+    payload["product"] = {
+        {"manufacturer_code", input.product->manufacturer_code},
+        {"model_code", input.product->model_code},
+    };
   }
-  if (input.autopilot_version) {
-    const auto& version = *input.autopilot_version;
-    if (const auto uid2 = protocol::FormatPx4Uid2(version)) {
-      identity["uid2"] = *uid2;
+  if (input.version) {
+    nlohmann::json version = nlohmann::json::object();
+    if (input.version->hardware) {
+      version["hardware"] = *input.version->hardware;
     }
-    if (const auto uid = protocol::FormatPx4Uid(version)) {
-      identity["uid"] = *uid;
+    if (input.version->firmware) {
+      version["firmware"] = *input.version->firmware;
     }
-    identity["autopilot"] = "PX4";
-    identity["firmware_version"] =
-        std::to_string((version.flight_sw_version >> 24) & 0xFFU) + "." +
-        std::to_string((version.flight_sw_version >> 16) & 0xFFU) + "." +
-        std::to_string((version.flight_sw_version >> 8) & 0xFFU);
-    identity["hardware_vendor_id"] = version.vendor_id;
-    identity["hardware_product_id"] = version.product_id;
-    identity["board_version"] = version.board_version;
+    if (!version.empty()) {
+      payload["version"] = std::move(version);
+    }
   }
-  payload["identity"] = std::move(identity);
-
-  nlohmann::json endpoint = nlohmann::json::object();
-  if (input.system_id) {
-    endpoint["sysid"] = *input.system_id;
-  }
-  if (input.component_id) {
-    endpoint["compid"] = *input.component_id;
-  }
-  if (input.mavlink_version) {
-    endpoint["mavlink_version"] = *input.mavlink_version;
-  }
-  payload["endpoint"] = std::move(endpoint);
-
-  nlohmann::json gateway{
-      {"software_version", "cns_rpi-2.0.0"},
-      {"connection", "5g"},
-  };
-  if (input.gateway_id) {
-    gateway["gateway_id"] = *input.gateway_id;
-  }
-  payload["gateway"] = std::move(gateway);
   return payload.dump();
 }
 
 std::string BuildOfflinePayload(const std::string& device_id,
                                 device::Type device_type) {
+  // 只携带定位 retained 状态所必需的字段：不能用空值覆盖服务器已有元数据。
   return nlohmann::json{
-      {"schema_version", 2},
+      {"schema_version", kSchemaVersion},
       {"device_id", device_id},
       {"device_type", std::string(device::TypeName(device_type))},
       {"status", "offline"},
   }.dump();
 }
 
-std::string BuildClientId(const std::string& prefix, const std::string& vendor_id) {
-  return prefix + "-" + vendor_id;
+std::string BuildClientId(const std::string& prefix, const std::string& device_id) {
+  return prefix + "-" + device_id;
 }
 
-bool IsValidDeviceIdentity(const std::string& prefix, const std::string& vendor_id) {
+bool IsValidDeviceIdentity(const std::string& prefix, const std::string& device_id) {
   const auto safe = [](const std::string& value) {
     return !value.empty() && std::ranges::all_of(value, [](unsigned char ch) {
       return std::isalnum(ch) != 0 || ch == '-' || ch == '_' || ch == '.' || ch == ':';
     });
   };
-  return safe(prefix) && safe(vendor_id) && BuildClientId(prefix, vendor_id).size() <= 65535;
+  return safe(prefix) && safe(device_id) && BuildClientId(prefix, device_id).size() <= 65535;
 }
 
 }  // namespace registration

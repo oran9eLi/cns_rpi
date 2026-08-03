@@ -5,6 +5,8 @@
 
 #include "protocol/telemetry_decoder.hpp"
 
+#include "protocol/px4_identity.hpp"
+
 namespace protocol {
 
 bool DecodeAndStore(const mavlink_message_t& msg, state::StateStore& store) {
@@ -16,9 +18,12 @@ bool DecodeAndStore(const mavlink_message_t& msg, state::StateStore& store) {
       return true;
     }
     case MAVLINK_MSG_ID_AUTOPILOT_VERSION: {
+      // 只留产品与版本元数据：uid/uid2 标识飞控硬件，不是平台管理的受控设备，
+      // 按设计文档 §2.3 不进状态、不进 JSON，因此这里不存整个结构体。
       mavlink_autopilot_version_t decoded{};
       mavlink_msg_autopilot_version_decode(&msg, &decoded);
-      store.UpdateAutopilotVersion(decoded);
+      store.UpdateAutopilotVersionMetadata(ExtractPx4ProductInfo(decoded),
+                                           ExtractPx4VersionInfo(decoded));
       return true;
     }
     case MAVLINK_MSG_ID_GPS_RAW_INT: {

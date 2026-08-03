@@ -18,17 +18,18 @@ namespace mqtt {
 /**
  * @brief 拼设备注册 topic。
  * @param topic_namespace 来自 mqtt.topics.namespace。
- * @param vendor_id 厂商唯一产品识别码（docs/设备标识符.md 权威全局键，来自
- * state_store.vendor_id，调用方需保证已经有值才调用本函数）。
+ * @param device_id 受控设备主键，来自 OPEN_DRONE_ID_BASIC_ID.uas_id
+ * （主控箱和 PX4 同一来源，见 docs/2026-08-03-主控箱与PX4统一身份数据结构设计.md
+ * §2.1；调用方需保证已经有值才调用本函数）。
  * @param suffix 来自 mqtt.topics.registration.suffix。
- * @return "{namespace}/{vendor_id}/{suffix}"，不重复做配置校验。
+ * @return "{namespace}/{device_id}/{suffix}"，不重复做配置校验。
  */
 std::string BuildRegistrationTopic(const std::string& topic_namespace,
-                                   const std::string& vendor_id,
+                                   const std::string& device_id,
                                    const std::string& suffix);
 
 /// 拼遥测发布 topic，参数语义同 BuildRegistrationTopic，suffix 来自 telemetry 配置。
-std::string BuildTelemetryTopic(const std::string& topic_namespace, const std::string& vendor_id,
+std::string BuildTelemetryTopic(const std::string& topic_namespace, const std::string& device_id,
                                 const std::string& suffix);
 
 /// PX4 专用高频实时 topic；固定版本后缀避免被旧遥测订阅器和数据库消费。
@@ -45,22 +46,22 @@ std::string BuildPx4LatencyAckTopic(const std::string& topic_namespace,
 
 /// 拼服务器向设备下发配置命令的 topic。
 std::string BuildConfigSetTopic(const std::string& topic_namespace,
-                                const std::string& vendor_id, const std::string& suffix);
+                                const std::string& device_id, const std::string& suffix);
 
 /// 拼设备返回配置命令执行结果的 topic。
 std::string BuildConfigAckTopic(const std::string& topic_namespace,
-                                const std::string& vendor_id, const std::string& suffix);
+                                const std::string& device_id, const std::string& suffix);
 
 /// 拼服务器向设备下发飞行控制命令的 topic。
 std::string BuildControlSetTopic(const std::string& topic_namespace,
-                                 const std::string& vendor_id, const std::string& suffix);
+                                 const std::string& device_id, const std::string& suffix);
 
 /// 拼设备返回单片机真实执行结果的 topic。
 std::string BuildControlAckTopic(const std::string& topic_namespace,
-                                 const std::string& vendor_id, const std::string& suffix);
+                                 const std::string& device_id, const std::string& suffix);
 
 /// 拼本设备作为命令来源时向服务器提交请求的 topic。
 std::string BuildConfigRequestTopic(const std::string& topic_namespace,
-                                    const std::string& source_vendor_id);
+                                    const std::string& source_device_id);
 
 }  // namespace mqtt

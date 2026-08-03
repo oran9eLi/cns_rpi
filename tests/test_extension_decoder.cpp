@@ -410,7 +410,7 @@ TEST_CASE("OPEN_DRONE_ID_BASIC_ID只存储原始Remote ID不决定主设备身�
   REQUIRE(snapshot.open_drone_id_basic_id.has_value());
   CHECK(snapshot.open_drone_id_basic_id->id_type == 1);
   CHECK(snapshot.open_drone_id_basic_id->ua_type == 2);
-  CHECK_FALSE(snapshot.vendor_id.has_value());
+  // 解码层只负责存原始帧；device_id 的校验与锁定由 main.cpp 的身份流程负责。
   CHECK_FALSE(snapshot.device_id.has_value());
 }
 
@@ -427,7 +427,7 @@ TEST_CASE("OPEN_DRONE_ID_BASIC_ID保留uas_id中的null终止内容") {
   REQUIRE(snapshot.open_drone_id_basic_id.has_value());
   CHECK(snapshot.open_drone_id_basic_id->uas_id[7] == '1');
   CHECK(snapshot.open_drone_id_basic_id->uas_id[8] == 0);
-  CHECK_FALSE(snapshot.vendor_id.has_value());
+  CHECK_FALSE(snapshot.device_id.has_value());
 }
 
 TEST_CASE("OPEN_DRONE_ID_LOCATION解码存储原始struct") {

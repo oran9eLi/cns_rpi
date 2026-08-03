@@ -5,103 +5,129 @@
 
 #include "registration/registration_payload.hpp"
 
-TEST_CASE("online注册包含设备元数据") {
+TEST_CASE("主控箱online注册使用v3扁平结构") {
   registration::OnlineRegistration input{
-      .device_id = "DCDWCNS1ABCDEFGHIJKL",
+      .device_id = "DCDWCNS1S2MEAG1VTA0C",
       .device_type = device::Type::kCnsBox,
-      .vendor_id = "ABC123",
       .school_name = "NNUTC",
       .dcdw_label = "DCDW-001",
-      .remote_id = std::nullopt,
-      .gateway_id = "100000001234abcd",
-      .system_id = 1,
-      .component_id = 193,
-      .mavlink_version = 3,
-      .autopilot_version = std::nullopt,
+      .product = device::ProductInfo{.manufacturer_code = "DCDW",
+                                     .model_code = "CNS1"},
+      .version = std::nullopt,
   };
   const auto payload =
       nlohmann::json::parse(registration::BuildOnlinePayload(input));
-  CHECK(payload["schema_version"] == 2);
-  CHECK(payload["device_id"] == "DCDWCNS1ABCDEFGHIJKL");
+  CHECK(payload["schema_version"] == 3);
+  CHECK(payload["device_id"] == "DCDWCNS1S2MEAG1VTA0C");
   CHECK(payload["device_type"] == "cns_box");
   CHECK(payload["status"] == "online");
-  CHECK(payload["identity"]["vendor_id"] == "ABC123");
-  CHECK(payload["identity"]["school_name"] == "NNUTC");
-  CHECK(payload["identity"]["dcdw_label"] == "DCDW-001");
-  CHECK(payload["endpoint"]["sysid"] == 1);
-  CHECK(payload["endpoint"]["compid"] == 193);
-  CHECK(payload["gateway"]["gateway_id"] == "100000001234abcd");
+  CHECK(payload["school_name"] == "NNUTC");
+  CHECK(payload["dcdw_label"] == "DCDW-001");
+  CHECK(payload["product"]["manufacturer_code"] == "DCDW");
+  CHECK(payload["product"]["model_code"] == "CNS1");
   CHECK(payload["capabilities"] ==
         nlohmann::json{"telemetry", "remote_id", "runtime_config",
                        "box_private_control"});
+  CHECK_FALSE(payload.contains("version"));
 }
 
-TEST_CASE("角色号未就绪时online注册省略该字段") {
+TEST_CASE("online注册不再输出已删除的身份字段和树莓派信息") {
   registration::OnlineRegistration input{
-      .device_id = "DCDWCNS1ABCDEFGHIJKL",
+      .device_id = "DCDWCNS1S2MEAG1VTA0C",
       .device_type = device::Type::kCnsBox,
-      .vendor_id = "ABC123",
       .school_name = "NNUTC",
+      .dcdw_label = "DCDW-001",
+      .product = std::nullopt,
+      .version = std::nullopt,
+  };
+  const auto text = registration::BuildOnlinePayload(input);
+  const auto payload = nlohmann::json::parse(text);
+
+  for (const char* removed : {"identity", "endpoint", "gateway"}) {
+    CHECK_FALSE(payload.contains(removed));
+  }
+  // 这些键在任何嵌套层级都不应再出现；capabilities 里的 remote_id 是能力名
+  // 而不是字段键，所以按 JSON 键的写法匹配。
+  for (const char* removed : {"\"vendor_id\":", "\"remote_id\":", "\"uid\":",
+                              "\"uid2\":", "\"gateway_id\":", "\"rpi_serial\":",
+                              "\"sysid\":", "\"compid\":"}) {
+    CHECK(text.find(removed) == std::string::npos);
+  }
+  CHECK(payload["capabilities"].front() == "telemetry");
+}
+
+TEST_CASE("角色号和学校未就绪时online注册省略该字段") {
+  registration::OnlineRegistration input{
+      .device_id = "DCDWCNS1S2MEAG1VTA0C",
+      .device_type = device::Type::kCnsBox,
+      .school_name = std::nullopt,
       .dcdw_label = std::nullopt,
-      .remote_id = std::nullopt,
-      .gateway_id = std::nullopt,
-      .system_id = std::nullopt,
-      .component_id = std::nullopt,
-      .mavlink_version = std::nullopt,
-      .autopilot_version = std::nullopt,
+      .product = std::nullopt,
+      .version = std::nullopt,
   };
   const auto payload = nlohmann::json::parse(registration::BuildOnlinePayload(input));
-  CHECK_FALSE(payload["identity"].contains("dcdw_label"));
+  CHECK_FALSE(payload.contains("dcdw_label"));
+  CHECK_FALSE(payload.contains("school_name"));
+  CHECK_FALSE(payload.contains("product"));
   CHECK(payload["status"] == "online");
 }
 
 TEST_CASE("offline注册只携带主键和状态") {
   CHECK(nlohmann::json::parse(registration::BuildOfflinePayload(
-            "PX4U1-0123456789ABCDEF",
+            "PX4RID123456789ABCDE",
             device::Type::kFlightController)) == nlohmann::json{
-            {"schema_version", 2},
-            {"device_id", "PX4U1-0123456789ABCDEF"},
+            {"schema_version", 3},
+            {"device_id", "PX4RID123456789ABCDE"},
             {"device_type", "flight_controller"},
             {"status", "offline"},
         });
 }
 
-TEST_CASE("PX4在线注册携带硬件身份且不要求学校") {
-  mavlink_autopilot_version_t version{};
-  version.uid = 0x0123456789ABCDEFULL;
-  version.uid2[0] = 0xAA;
-  version.flight_sw_version = (1U << 24) | (17U << 16) | (3U << 8);
-  version.vendor_id = 26;
-  version.product_id = 7;
-
+TEST_CASE("PX4在线注册用Basic ID做主键,产品版本只是元数据") {
   registration::OnlineRegistration input{
-      .device_id =
-          "PX4U2-AA0000000000000000000000000000000000",
+      .device_id = "PX4RID123456789ABCDE",
       .device_type = device::Type::kFlightController,
-      .vendor_id = std::nullopt,
       .school_name = std::nullopt,
       .dcdw_label = std::nullopt,
-      .remote_id = "RID-001",
-      .gateway_id = std::nullopt,
-      .system_id = 1,
-      .component_id = 1,
-      .mavlink_version = 3,
-      .autopilot_version = version,
+      .product = device::ProductInfo{.manufacturer_code = "26",
+                                     .model_code = "7"},
+      .version = device::VersionInfo{.hardware = "42", .firmware = "1.17.3"},
   };
   const auto payload =
       nlohmann::json::parse(registration::BuildOnlinePayload(input));
+  CHECK(payload["device_id"] == "PX4RID123456789ABCDE");
   CHECK(payload["device_type"] == "flight_controller");
-  CHECK(payload["identity"]["uid2"] ==
-        "AA0000000000000000000000000000000000");
-  CHECK(payload["identity"]["uid"] == "0123456789ABCDEF");
-  CHECK(payload["identity"]["firmware_version"] == "1.17.3");
-  CHECK_FALSE(payload["identity"].contains("school_name"));
+  CHECK(payload["product"]["manufacturer_code"] == "26");
+  CHECK(payload["product"]["model_code"] == "7");
+  CHECK(payload["version"]["hardware"] == "42");
+  CHECK(payload["version"]["firmware"] == "1.17.3");
+  CHECK_FALSE(payload.contains("school_name"));
   CHECK(payload["capabilities"] ==
         nlohmann::json{"telemetry", "remote_id", "px4_official_control"});
 }
 
-TEST_CASE("Client ID由配置前缀和vendor_id组成") {
-  CHECK(registration::BuildClientId("cns-rpi", "ABC123") == "cns-rpi-ABC123");
+TEST_CASE("version两个字段各自可缺失,全缺失时整个对象不输出") {
+  registration::OnlineRegistration input{
+      .device_id = "PX4RID123456789ABCDE",
+      .device_type = device::Type::kFlightController,
+      .school_name = std::nullopt,
+      .dcdw_label = std::nullopt,
+      .product = std::nullopt,
+      .version = device::VersionInfo{.hardware = std::nullopt,
+                                     .firmware = "1.17.3"},
+  };
+  auto payload = nlohmann::json::parse(registration::BuildOnlinePayload(input));
+  CHECK(payload["version"]["firmware"] == "1.17.3");
+  CHECK_FALSE(payload["version"].contains("hardware"));
+
+  input.version = device::VersionInfo{};
+  payload = nlohmann::json::parse(registration::BuildOnlinePayload(input));
+  CHECK_FALSE(payload.contains("version"));
+}
+
+TEST_CASE("Client ID由配置前缀和device_id组成") {
+  CHECK(registration::BuildClientId("cns-rpi", "DCDWCNS1S2MEAG1VTA0C") ==
+        "cns-rpi-DCDWCNS1S2MEAG1VTA0C");
 }
 
 TEST_CASE("设备标识必须能安全用于topic和Client ID") {

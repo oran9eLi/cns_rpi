@@ -2,24 +2,29 @@
 
 /**
  * @file identity.hpp
- * @brief M3c 范围内跟 MAVLink 消息 payload 内容无关的身份数据处理：
- * DCDW 角色号格式化、RPi 硬件序列号读取、uas_id 字节数组转字符串。
+ * @brief 跟 MAVLink 消息 payload 内容无关的身份数据处理：DCDW 角色号格式化、
+ * uas_id 字节数组转字符串、uas_id 合法性校验。
  *
  * @details
  * `OPEN_DRONE_ID_*` 消息本身的解码在 extension_decoder.hpp/.cpp 里(跟
  * NAMED_VALUE_INT/TUNNEL 同一个文件，同一个 DecodeExtensionAndStore 函数)。
- * 这个文件只处理三件更底层的事：帧头 sysid 格式化(不是 payload 字段)、
- * 本机文件读取(跟 MAVLink 帧完全无关)、uas_id 字节数组转字符串(供
- * extension_decoder.cpp 调用，因为提取逻辑跟"身份"这个概念强相关)。
- * 依赖边界：只依赖标准库，不包含 state/、uart/ 等模块头文件。
+ * 这个文件只处理更底层的两件事：帧头 sysid 格式化(不是 payload 字段)、
+ * uas_id 字节数组的提取与校验(供 main.cpp 调用，因为它跟"身份"这个概念强相关)。
+ * 依赖边界：只依赖标准库和 device/product_info.hpp，不包含 state/、uart/ 等模块头文件。
  */
 
 #include <cstdint>
-#include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
+
+#include "device/product_info.hpp"
 
 namespace protocol {
+
+/// 主控箱厂商唯一产品识别码的固定前缀：厂商码 DCDW + 产品型号码 CNS1。
+constexpr std::string_view kCnsBoxManufacturerCode = "DCDW";
+constexpr std::string_view kCnsBoxModelCode = "CNS1";
 
 /**
  * @brief 从 MAVLink 帧头 sysid 格式化 DCDW 角色号，3 位数字补零。
@@ -31,32 +36,39 @@ namespace protocol {
 std::string FormatDcdwLabel(std::uint8_t sysid);
 
 /**
- * @brief 读取 RPi 本机硬件序列号(/proc/cpuinfo 的 Serial 行)。
- * @param path 【测试专用】仅供单元测试注入 fixture 文件(tests/test_identity.cpp)，
- * 真机代码(main.cpp)从不显式传参，永远用默认值读真实 /proc/cpuinfo。
- * M3c 真机验证通过后，评估是否删掉这个参数(连同依赖它的 fixture 测试一起去掉)
- * 或注释掉，不作为长期对外接口保留。
- * @return 找到 Serial 行则返回其值(去掉前后空白)；文件不存在或没有 Serial 行
- * 则返回 std::nullopt——V1 过渡期字段，读不到不是错误，只是没有这个信息。
- */
-std::optional<std::string> ReadRpiSerial(const std::filesystem::path& path = "/proc/cpuinfo");
-
-/**
- * @brief 从 uas_id(20 字节，未用部分填 null)提取厂商唯一产品识别码字符串。
+ * @brief 从 uas_id(20 字节，未用部分填 null)提取受控设备身份字符串。
  * @param uas_id 对应 mavlink_open_drone_id_basic_id_t::uas_id 的原始字段
  * (uint8_t[20]，C 数组，按引用传递保留长度信息，调用点直接传 value.uas_id)。
- * @return 用 strnlen 求实际长度后转成的字符串，不做格式校验(RPi 不校验身份数据，
- * 见 docs/设备标识符.md §2.3)。20 字节写满、无 null 终止符是合法输入，
- * 此时返回整 20 字节转成的字符串，不是错误。
+ * @return 用 strnlen 求实际长度后转成的字符串，本函数不做合法性判断——
+ * 校验交给 IsValidUasId()，这样调用点能把"取到了什么"写进日志。
+ * 20 字节写满、无 null 终止符是合法输入，此时返回整 20 字节转成的字符串。
  */
-std::string ExtractVendorId(const std::uint8_t (&uas_id)[20]);
+std::string ExtractUasId(const std::uint8_t (&uas_id)[20]);
 
 /**
- * @brief 校验主控箱固件提供的 20 字节厂商设备 ID。
+ * @brief 校验 uas_id 能否直接当作 device_id 用于 MQTT topic 与 Client ID。
  *
- * MQTT 主题只能使用 20 个 ASCII 字母或数字；空值、截断值和带分隔符的
- * Remote ID 均不能作为主控箱主身份。
+ * 见设计文档 §3.3：主控箱和 PX4 共用这一套校验，不区分设备类型。字符集限制在
+ * ASCII 字母数字加 `-_.:`，因此 MQTT 通配符 `+`/`#` 和层级分隔符 `/` 天然被拒。
+ * 长度上限 20 字节来自 MAVLink 字段宽度本身。
  */
-bool IsValidCnsBoxVendorId(const std::string& vendor_id);
+bool IsValidUasId(const std::string& uas_id);
+
+/**
+ * @brief 判断 device_id 是否带主控箱的 DCDWCNS1 产品前缀。
+ *
+ * 只用于尽早发现固件身份配置错误并告警，不参与 device_type 判断，
+ * 也不作为拒绝建立 MQTT 会话的理由(设计文档 §3.3)。
+ */
+bool HasCnsBoxProductPrefix(const std::string& device_id);
+
+/**
+ * @brief 从主控箱 device_id 的前 8 字节拆出产品信息。
+ * @return 前缀匹配时返回 {DCDW, CNS1}；不匹配返回 nullopt，不猜测、不补默认值。
+ * @details 依据设计文档 §4.2：主控箱 device_id 的结构是
+ * `厂商码(4) | 产品型号码(4) | 唯一序列(12)`，产品信息本来就编码在身份里，
+ * 不需要固件再单独发一条消息。
+ */
+std::optional<device::ProductInfo> CnsBoxProductFrom(const std::string& device_id);
 
 }  // namespace protocol

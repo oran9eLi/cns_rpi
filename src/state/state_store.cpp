@@ -16,20 +16,19 @@ void StateStore::UpdateControlledDevice(device::Type type,
   state_.device_component_id = component_id;
 }
 
-void StateStore::UpdateDeviceId(const std::string& value) {
+DeviceIdUpdate StateStore::UpdateDeviceId(const std::string& value) {
   std::lock_guard<std::mutex> lock(mutex_);
-  state_.device_id = value;
+  if (!state_.device_id.has_value()) {
+    state_.device_id = value;
+    return DeviceIdUpdate::kAccepted;
+  }
+  return *state_.device_id == value ? DeviceIdUpdate::kUnchanged
+                                    : DeviceIdUpdate::kConflict;
 }
 
 void StateStore::UpdateHeartbeat(const mavlink_heartbeat_t& value) {
   std::lock_guard<std::mutex> lock(mutex_);
   state_.heartbeat = value;
-}
-
-void StateStore::UpdateAutopilotVersion(
-    const mavlink_autopilot_version_t& value) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  state_.autopilot_version = value;
 }
 
 void StateStore::UpdateGpsRawInt(const mavlink_gps_raw_int_t& value) {
@@ -191,26 +190,34 @@ void StateStore::UpdateOpenDroneIdSelfId(const mavlink_open_drone_id_self_id_t& 
   state_.open_drone_id_self_id = value;
 }
 
-void StateStore::UpdateVendorId(const std::string& value) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  state_.vendor_id = value;
-}
-
 void StateStore::UpdateDcdwLabel(const std::string& value) {
   std::lock_guard<std::mutex> lock(mutex_);
   state_.dcdw_label = value;
 }
 
-void StateStore::UpdateRpiSerial(const std::string& value) {
+void StateStore::UpdateProduct(const device::ProductInfo& value) {
   std::lock_guard<std::mutex> lock(mutex_);
-  state_.rpi_serial = value;
+  state_.product = value;
+}
+
+void StateStore::UpdateAutopilotVersionMetadata(
+    const std::optional<device::ProductInfo>& product,
+    const std::optional<device::VersionInfo>& version) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  state_.autopilot_version_received = true;
+  // PX4 报不出来的字段保持原值：主控箱路径先写入的 product 不该被一条
+  // 全 0 的 AUTOPILOT_VERSION 抹掉(实际不会共存，但语义上不做破坏性覆盖)。
+  if (product) {
+    state_.product = *product;
+  }
+  if (version) {
+    state_.version = *version;
+  }
 }
 
 void StateStore::ResetDeviceState() {
   std::lock_guard<std::mutex> lock(mutex_);
-  const auto rpi_serial = state_.rpi_serial;
   state_ = TelemetryState{};
-  state_.rpi_serial = rpi_serial;
 }
 
 TelemetryState StateStore::Snapshot() const {

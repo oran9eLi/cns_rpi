@@ -9,10 +9,15 @@
 #include <cctype>
 #include <cstdio>
 #include <cstring>
-#include <fstream>
-#include <string_view>
 
 namespace protocol {
+
+namespace {
+
+/// uas_id 的字节宽度上限，来自 mavlink_open_drone_id_basic_id_t::uas_id。
+constexpr std::size_t kUasIdMaxLength = 20;
+
+}  // namespace
 
 std::string FormatDcdwLabel(std::uint8_t sysid) {
   char buf[16];
@@ -20,42 +25,32 @@ std::string FormatDcdwLabel(std::uint8_t sysid) {
   return std::string(buf);
 }
 
-std::optional<std::string> ReadRpiSerial(const std::filesystem::path& path) {
-  std::ifstream file(path);
-  if (!file.is_open()) {
+std::string ExtractUasId(const std::uint8_t (&uas_id)[20]) {
+  const char* data = reinterpret_cast<const char*>(uas_id);
+  return std::string(data, strnlen(data, kUasIdMaxLength));
+}
+
+bool IsValidUasId(const std::string& uas_id) {
+  return !uas_id.empty() && uas_id.size() <= kUasIdMaxLength &&
+         std::all_of(uas_id.begin(), uas_id.end(), [](unsigned char ch) {
+           return std::isalnum(ch) != 0 || ch == '-' || ch == '_' ||
+                  ch == '.' || ch == ':';
+         });
+}
+
+bool HasCnsBoxProductPrefix(const std::string& device_id) {
+  return device_id.starts_with(std::string(kCnsBoxManufacturerCode) +
+                               std::string(kCnsBoxModelCode));
+}
+
+std::optional<device::ProductInfo> CnsBoxProductFrom(const std::string& device_id) {
+  if (!HasCnsBoxProductPrefix(device_id)) {
     return std::nullopt;
   }
-  std::string line;
-  while (std::getline(file, line)) {
-    constexpr std::string_view kPrefix = "Serial";
-    if (line.compare(0, kPrefix.size(), kPrefix) != 0) {
-      continue;
-    }
-    const auto colon_pos = line.find(':');
-    if (colon_pos == std::string::npos) {
-      continue;
-    }
-    std::string value = line.substr(colon_pos + 1);
-    const auto first = value.find_first_not_of(" \t");
-    const auto last = value.find_last_not_of(" \t\r\n");
-    if (first == std::string::npos) {
-      return std::nullopt;
-    }
-    return value.substr(first, last - first + 1);
-  }
-  return std::nullopt;
-}
-
-std::string ExtractVendorId(const std::uint8_t (&uas_id)[20]) {
-  const char* data = reinterpret_cast<const char*>(uas_id);
-  return std::string(data, strnlen(data, 20));
-}
-
-bool IsValidCnsBoxVendorId(const std::string& vendor_id) {
-  return vendor_id.size() == 20 &&
-         std::all_of(vendor_id.begin(), vendor_id.end(), [](unsigned char ch) {
-           return std::isalnum(ch) != 0;
-         });
+  return device::ProductInfo{
+      .manufacturer_code = std::string(kCnsBoxManufacturerCode),
+      .model_code = std::string(kCnsBoxModelCode),
+  };
 }
 
 }  // namespace protocol

@@ -65,7 +65,7 @@ struct MqttConnectionConfig {
   std::string host;
   int port = 0;
   int keepalive_seconds = 0;
-  /// config.json 的 client_id 是产品前缀，连接时追加 "-{vendor_id}" 保证唯一。
+  /// config.json 的 client_id 是产品前缀，连接时追加 "-{device_id}" 保证唯一。
   std::string client_id_prefix;
   struct ReconnectConfig {
     int delay_seconds = 0;
