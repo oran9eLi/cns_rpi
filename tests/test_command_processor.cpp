@@ -7,8 +7,10 @@ namespace {
 nlohmann::json CurrentConfig(std::string applied_id = {}) {
   nlohmann::json ids = nlohmann::json::array();
   if (!applied_id.empty()) ids.push_back(applied_id);
-  return {{"runtime", {{"telemetry_publish_interval_ms", 1000},
-                       {"heartbeat_interval_ms", 1000},
+  return {{"telemetry_publish",
+           {{"snapshot", {{"enabled", true}, {"interval_ms", 1000}}},
+            {"realtime", {{"enabled", true}, {"interval_ms", 100}}}}},
+          {"runtime", {{"heartbeat_interval_ms", 1000},
                        {"applied_command_ids", ids}}},
           {"mqtt", {{"connection", {{"reconnect", {{"delay_s", 1},
                                                       {"delay_max_s", 30}}}}}}}};
