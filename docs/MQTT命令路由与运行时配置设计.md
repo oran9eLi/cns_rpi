@@ -137,10 +137,11 @@ cns_server
 | `{namespace}/sources/{source_id}/config/ack` | 服务器 → 来源 | 2 | false | 返回路由或执行结果 |
 | `{namespace}/{device_id}/config/set` | 服务器 → 目标设备 | 2 | false | 下发规范化配置命令 |
 | `{namespace}/{device_id}/config/ack` | 目标设备 → 服务器 | 2 | false | 返回目标设备执行结果 |
-| `{namespace}/{device_id}/telemetry` | 设备 → 服务器 | 0 | false | 1Hz 上报实时遥测 |
+| `{namespace}/{device_id}/telemetry/snapshot/v1` | 设备 → 服务器 | 0 | false | 默认 1Hz 上报完整快照，供数据库消费 |
+| `{namespace}/{device_id}/telemetry/realtime/v1` | 设备 → Web 实时服务 | 0 | false | 默认 10Hz 上报快变字段，按查看设备订阅 |
 | `{namespace}/{device_id}/registration` | 设备 → 服务器 | 2 | **true** | 设备发现与 online/offline 状态 |
 
-遥测使用 `retain=false`：它是按节拍刷新的实时值，retained 会让新订阅者把设备掉电前的最后一帧当成实时数据。设备在线与否由 `registration` 的 retained `online`/`offline` 表达——该 topic 是本表中唯一使用 retain 的，因为它承载的正是"设备最后已知状态"这一存档语义。
+两条遥测通道都使用 `retain=false`：设备在线与否由 `registration` 的 retained `online`/`offline` 表达。数据库只消费快照 Topic；Web 服务只订阅正在查看设备的实时 Topic，并且每设备只保留最新一帧。
 
 所有配置命令必须使用 `retain=false`，防止设备以后上线时执行陈旧命令。离线设备的待处理命令由服务器数据库维护，服务器在设备重新 online 后决定是否重发，不能依赖 retained 命令。
 
@@ -307,12 +308,15 @@ UNIQUE(source_id, request_id)
 
 ## 9. RPi 配置结构
 
-在现有 `config.json` 增加 `runtime` 节和 MQTT 重连节：
+`config.json` 使用对称的遥测发布通道、运行参数和 MQTT 重连配置：
 
 ```json
 {
+  "telemetry_publish": {
+    "snapshot": {"enabled": true, "interval_ms": 1000},
+    "realtime": {"enabled": true, "interval_ms": 100}
+  },
   "runtime": {
-    "telemetry_publish_interval_ms": 1000,
     "heartbeat_interval_ms": 1000,
     "applied_command_ids": []
   },
@@ -335,7 +339,8 @@ UNIQUE(source_id, request_id)
 
 | 字段 | 允许范围 | 说明 |
 |---|---:|---|
-| `runtime.telemetry_publish_interval_ms` | 100～60000 ms | 遥测上报间隔 |
+| `telemetry_publish.snapshot.interval_ms` | 100～60000 ms | 完整快照上报间隔；远程参数仍名为 `telemetry_publish_interval_ms` |
+| `telemetry_publish.realtime.interval_ms` | 50～1000 ms | 实时遥测上报间隔 |
 | `runtime.heartbeat_interval_ms` | 100～60000 ms | RPi 向 STM32 发送 HEARTBEAT 的间隔 |
 | `mqtt.connection.reconnect.delay_s` | 1～3600 s | MQTT 重连初始等待 |
 | `mqtt.connection.reconnect.delay_max_s` | 1～3600 s | MQTT 重连最大等待 |

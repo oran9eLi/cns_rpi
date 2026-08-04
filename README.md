@@ -6,7 +6,7 @@ CNS（通信/导航/监视）实训箱的树莓派端数据汇聚与回传节点
 
 ## 当前状态
 
-M1-M6 已完成：UART/MAVLink 双向收发、遥测与身份解码、JSON 序列化、MQTT 遥测与注册、运行时配置命令、飞控命令下行均已接入。STM32 串口支持按合法 MAVLink 帧自动发现，USB 设备号变化或运行中插拔后可自动恢复；树莓派 ARM64 已完成 27 项自动化测试，并完成串口拔插恢复和真实 `COMMAND_ACK` 联调。
+M1-M6 已完成：UART/MAVLink 双向收发、遥测与身份解码、JSON 序列化、MQTT 遥测与注册、运行时配置命令、飞控命令下行均已接入。STM32 串口支持按合法 MAVLink 帧自动发现，USB 设备号变化或运行中插拔后可自动恢复；主控箱和 PX4 共用 1 Hz 快照与默认 10 Hz 实时遥测通道。
 
 M7 产品化：独立有界日志、幂等部署脚本、journald 内存化（16 MiB 上限）、systemd watchdog（30s 超时 + 主循环喂狗）、OverlayFS 只读根文件系统与配置持久化闭环均已实施并实机验证。物理断电验收、正式物联卡与 MQTT TLS 仍未开始。完整状态见 `docs/V1设计文档.md` 第 10 节与 `docs/M7系统化部署设计.md`。
 
@@ -25,6 +25,16 @@ cd ~/cns_rpi
 cmake -B build -S . && cmake --build build
 ctest --test-dir build
 ```
+
+## 遥测通道
+
+- 完整快照：`{namespace}/{device_id}/telemetry/snapshot/v1`，默认 1000 ms；
+- 实时状态：`{namespace}/{device_id}/telemetry/realtime/v1`，默认 100 ms；
+- 两者均为 QoS 0、`retain=false`，发布失败时丢弃当前帧；
+- 数据库只消费快照，Web 服务按正在查看的设备订阅实时 Topic。
+
+详细协议和服务端升级顺序见 `docs/高低频遥测发布协议.md` 与
+`docs/服务端对接-高低频遥测Topic迁移.md`。
 
 跑完 `install_deps.sh` 之后，git 全局重写已经生效，仓库的 `origin` 也可以放心设回裸的 `https://github.com/...`（`git remote set-url origin https://github.com/oran9eLi/cns_rpi.git`），后续 `git pull`/`git clone` 写裸 URL 就行，不用再带镜像前缀。
 
