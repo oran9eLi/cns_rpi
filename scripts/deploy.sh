@@ -145,6 +145,10 @@ else
   exit 1
 fi
 
+echo "===== 迁移遥测发布配置 ====="
+python3 "${REPO_ROOT}/scripts/migrate_telemetry_config.py" "${CONFIG_PATH}"
+echo "  - 遥测发布配置已收敛为快照/实时通道"
+
 sudo systemctl enable cns-rpi.service
 if sudo systemctl is-active --quiet cns-rpi.service; then
   sudo systemctl restart cns-rpi.service
