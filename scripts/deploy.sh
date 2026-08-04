@@ -6,6 +6,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 HELPER_SOURCE="${SCRIPT_DIR}/cns-rpi-apply-config.py"
 HELPER_TARGET="/usr/local/libexec/cns-rpi-apply-config"
+TELEMETRY_MIGRATOR="${SCRIPT_DIR}/migrate_telemetry_config.py"
+DEPLOYED_CONFIG_MIGRATOR="${SCRIPT_DIR}/migrate_deployed_telemetry_config.sh"
 SERVICE_SOURCE="${REPO_ROOT}/systemd/cns-rpi.service"
 SERVICE_TARGET="/etc/systemd/system/cns-rpi.service"
 CELLULAR_SERVICE_SOURCE="${REPO_ROOT}/systemd/cellular-dialup.service"
@@ -20,6 +22,7 @@ CONFIG_MOUNT_SERVICE_SOURCE="${REPO_ROOT}/systemd/cns-rpi-config.service"
 CONFIG_MOUNT_SERVICE_TARGET="/etc/systemd/system/cns-rpi-config.service"
 CONFIG_DIR="/var/lib/cns-rpi"
 CONFIG_PATH="${CONFIG_DIR}/config.json"
+RUNTIME_DIR="/run/cns-rpi"
 LEGACY_CONFIG_PATH="${REPO_ROOT}/config/config.json"
 EXPECTED_REPO_ROOT="/home/dcdw/cns_rpi"
 
@@ -146,8 +149,11 @@ else
 fi
 
 echo "===== 迁移遥测发布配置 ====="
-python3 "${REPO_ROOT}/scripts/migrate_telemetry_config.py" "${CONFIG_PATH}"
-echo "  - 遥测发布配置已收敛为快照/实时通道"
+# 配置卷可能已由 cns-rpi-config.service 以只读方式挂载。候选必须先在
+# /run/cns-rpi 生成，再复用正式配置 helper 完成短暂 remount、原子替换和恢复只读。
+sudo install -d -o dcdw -g dcdw -m 0700 "${RUNTIME_DIR}"
+bash "${DEPLOYED_CONFIG_MIGRATOR}" "${TELEMETRY_MIGRATOR}" \
+  "${HELPER_TARGET}" "${CONFIG_PATH}" "${RUNTIME_DIR}"
 
 sudo systemctl enable cns-rpi.service
 if sudo systemctl is-active --quiet cns-rpi.service; then

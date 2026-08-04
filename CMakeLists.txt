@@ -201,6 +201,8 @@ add_test(NAME apply_config_helper
     COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_apply_config_helper.py)
 add_test(NAME migrate_telemetry_config
     COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_migrate_telemetry_config.py)
+add_test(NAME migrate_deployed_config
+    COMMAND ${PYTHON3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tests/test_migrate_deployed_config.py)
 add_test(NAME cellular_link_python
     COMMAND ${PYTHON3_EXECUTABLE} -m unittest -v tests.test_cellular_link)
 set_tests_properties(cellular_link_python PROPERTIES WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
