@@ -32,6 +32,7 @@ add_library(cns_rpi_core
     src/protocol/identity.cpp
     src/protocol/px4_identity.cpp
     src/payload/json_serializer.cpp
+    src/telemetry/publisher.cpp
     src/mqtt/topic.cpp
     src/registration/registration_payload.cpp
     src/registration/registration_state.cpp
@@ -121,6 +122,10 @@ add_test(NAME json_serializer COMMAND test_json_serializer)
 add_executable(test_mqtt_topic tests/test_mqtt_topic.cpp)
 target_link_libraries(test_mqtt_topic PRIVATE cns_rpi_core)
 add_test(NAME mqtt_topic COMMAND test_mqtt_topic)
+
+add_executable(test_telemetry_publisher tests/test_telemetry_publisher.cpp)
+target_link_libraries(test_telemetry_publisher PRIVATE cns_rpi_core)
+add_test(NAME telemetry_publisher COMMAND test_telemetry_publisher)
 
 add_executable(test_px4_latency tests/test_px4_latency.cpp)
 target_link_libraries(test_px4_latency PRIVATE cns_rpi_core)
