@@ -53,10 +53,14 @@ struct QgcUdpConfig {
   bool allow_commands{true};
 };
 
-/// PX4 Web 控制台专用高频遥测；只对真实飞控生效，主控箱继续使用原遥测周期。
-struct Px4RealtimeConfig {
+struct TelemetryChannelConfig {
   bool enabled{true};
-  std::chrono::milliseconds publish_interval{50};
+  std::chrono::milliseconds interval{0};
+};
+
+struct TelemetryPublishConfig {
+  TelemetryChannelConfig snapshot{true, std::chrono::milliseconds(1000)};
+  TelemetryChannelConfig realtime{true, std::chrono::milliseconds(100)};
 };
 
 struct MqttConnectionConfig {
@@ -84,7 +88,8 @@ struct MqttTopicConfig {
 struct MqttTopicsConfig {
   std::string topic_namespace;
   MqttTopicConfig registration;
-  MqttTopicConfig telemetry;
+  MqttTopicConfig telemetry_snapshot;
+  MqttTopicConfig telemetry_realtime;
   MqttTopicConfig config_set;
   MqttTopicConfig config_ack;
   MqttTopicConfig control_set{"control/set", 2};
@@ -108,7 +113,6 @@ struct IdentityConfig {
 };
 
 struct RuntimeConfig {
-  std::chrono::milliseconds telemetry_publish_interval{0};
   std::chrono::milliseconds heartbeat_interval{0};
   std::vector<std::string> applied_command_ids;
 };
@@ -124,7 +128,7 @@ struct AppConfig {
   SerialConfig serial;
   DeviceConfig device;
   QgcUdpConfig qgc_udp;
-  Px4RealtimeConfig px4_realtime;
+  TelemetryPublishConfig telemetry_publish;
   MqttConfig mqtt;
   LoggingConfig logging;
   IdentityConfig identity;

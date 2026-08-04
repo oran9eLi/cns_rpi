@@ -120,16 +120,15 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
       }
     }
 
-    if (root.contains("px4_realtime")) {
-      const auto& px4_realtime = root.at("px4_realtime");
-      if (px4_realtime.contains("enabled")) {
-        cfg.px4_realtime.enabled = px4_realtime.at("enabled").get<bool>();
-      }
-      if (px4_realtime.contains("publish_interval_ms")) {
-        cfg.px4_realtime.publish_interval = std::chrono::milliseconds(
-            px4_realtime.at("publish_interval_ms").get<int>());
-      }
-    }
+    const auto& telemetry_publish = root.at("telemetry_publish");
+    const auto& snapshot = telemetry_publish.at("snapshot");
+    cfg.telemetry_publish.snapshot.enabled = snapshot.at("enabled").get<bool>();
+    cfg.telemetry_publish.snapshot.interval =
+        std::chrono::milliseconds(snapshot.at("interval_ms").get<int>());
+    const auto& realtime = telemetry_publish.at("realtime");
+    cfg.telemetry_publish.realtime.enabled = realtime.at("enabled").get<bool>();
+    cfg.telemetry_publish.realtime.interval =
+        std::chrono::milliseconds(realtime.at("interval_ms").get<int>());
 
     const auto& mqtt = root.at("mqtt");
     const auto& connection = mqtt.at("connection");
@@ -150,9 +149,16 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
     const auto& registration = topics.at("registration");
     cfg.mqtt.topics.registration.suffix = registration.at("suffix").get<std::string>();
     cfg.mqtt.topics.registration.qos = registration.at("qos").get<int>();
-    const auto& telemetry = topics.at("telemetry");
-    cfg.mqtt.topics.telemetry.suffix = telemetry.at("suffix").get<std::string>();
-    cfg.mqtt.topics.telemetry.qos = telemetry.at("qos").get<int>();
+    const auto& telemetry_snapshot = topics.at("telemetry_snapshot");
+    cfg.mqtt.topics.telemetry_snapshot.suffix =
+        telemetry_snapshot.at("suffix").get<std::string>();
+    cfg.mqtt.topics.telemetry_snapshot.qos =
+        telemetry_snapshot.at("qos").get<int>();
+    const auto& telemetry_realtime = topics.at("telemetry_realtime");
+    cfg.mqtt.topics.telemetry_realtime.suffix =
+        telemetry_realtime.at("suffix").get<std::string>();
+    cfg.mqtt.topics.telemetry_realtime.qos =
+        telemetry_realtime.at("qos").get<int>();
     const auto& config_set = topics.at("config_set");
     cfg.mqtt.topics.config_set.suffix = config_set.at("suffix").get<std::string>();
     cfg.mqtt.topics.config_set.qos = config_set.at("qos").get<int>();
@@ -179,8 +185,6 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
     cfg.identity.school_name = identity.at("school_name").get<std::string>();
 
     const auto& runtime = root.at("runtime");
-    cfg.runtime.telemetry_publish_interval = std::chrono::milliseconds(
-        runtime.at("telemetry_publish_interval_ms").get<int>());
     cfg.runtime.heartbeat_interval =
         std::chrono::milliseconds(runtime.at("heartbeat_interval_ms").get<int>());
     cfg.runtime.applied_command_ids =
@@ -212,13 +216,15 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
 
   const auto& connection = cfg.mqtt.connection;
   const auto& topics = cfg.mqtt.topics;
-  const auto telemetry_ms = cfg.runtime.telemetry_publish_interval.count();
+  const auto telemetry_snapshot_ms =
+      cfg.telemetry_publish.snapshot.interval.count();
+  const auto telemetry_realtime_ms =
+      cfg.telemetry_publish.realtime.interval.count();
   const auto heartbeat_ms = cfg.runtime.heartbeat_interval.count();
   const auto cellular_heartbeat_ms = cfg.cellular.heartbeat_interval.count();
   const auto cellular_snapshot_max_age = cfg.cellular.status_snapshot_max_age.count();
   const auto qgc_discovery_ms = cfg.qgc_udp.discovery_interval.count();
   const auto qgc_peer_timeout_ms = cfg.qgc_udp.peer_timeout.count();
-  const auto px4_realtime_ms = cfg.px4_realtime.publish_interval.count();
   std::unordered_set<std::string> qgc_interfaces;
   bool valid_qgc_interfaces = !cfg.qgc_udp.lan_interfaces.empty();
   for (const auto& interface_name : cfg.qgc_udp.lan_interfaces) {
@@ -234,7 +240,9 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
       connection.reconnect.delay_max_seconds < 1 ||
       connection.reconnect.delay_max_seconds > 3600 ||
       connection.reconnect.delay_seconds > connection.reconnect.delay_max_seconds ||
-      telemetry_ms < 100 || telemetry_ms > 60000 || heartbeat_ms < 100 ||
+      telemetry_snapshot_ms < 100 || telemetry_snapshot_ms > 60000 ||
+      telemetry_realtime_ms < 50 || telemetry_realtime_ms > 1000 ||
+      heartbeat_ms < 100 ||
       heartbeat_ms > 60000 || cfg.runtime.applied_command_ids.size() > 32 ||
       cfg.cellular.interface_name.empty() ||
       cfg.cellular.interface_name.find_first_of("/ \t\r\n") != std::string::npos ||
@@ -248,13 +256,16 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
       qgc_discovery_ms > 60000 || qgc_peer_timeout_ms < 500 ||
       qgc_peer_timeout_ms > 60000 ||
       qgc_peer_timeout_ms < qgc_discovery_ms * 2 ||
-      px4_realtime_ms < 20 || px4_realtime_ms > 1000 ||
       !IsValidLogLevel(cfg.logging.level) || max_file_size_kb < 64 ||
       max_file_size_kb > 102400 ||
       !IsValidTopicSegment(topics.topic_namespace) ||
       !IsValidTopicSegment(topics.registration.suffix) ||
-      !IsValidTopicSegment(topics.telemetry.suffix) || !IsValidQos(topics.registration.qos) ||
-      !IsValidQos(topics.telemetry.qos) || !IsValidTopicPath(topics.config_set.suffix) ||
+      !IsValidTopicPath(topics.telemetry_snapshot.suffix) ||
+      !IsValidTopicPath(topics.telemetry_realtime.suffix) ||
+      topics.telemetry_snapshot.suffix == topics.telemetry_realtime.suffix ||
+      !IsValidQos(topics.registration.qos) ||
+      topics.telemetry_snapshot.qos != 0 || topics.telemetry_realtime.qos != 0 ||
+      !IsValidTopicPath(topics.config_set.suffix) ||
       !IsValidTopicPath(topics.config_ack.suffix) || topics.config_set.qos != 2 ||
       topics.config_ack.qos != 2 || !IsValidTopicPath(topics.control_set.suffix) ||
       !IsValidTopicPath(topics.control_ack.suffix) || topics.control_set.qos != 2 ||

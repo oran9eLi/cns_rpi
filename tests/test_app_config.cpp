@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "config/app_config.hpp"
@@ -29,15 +30,19 @@ std::string ValidConfig() {
       "topics": {
         "namespace": "cns_rpi",
         "registration": {"suffix": "registration", "qos": 2},
-        "telemetry": {"suffix": "telemetry", "qos": 0},
+        "telemetry_snapshot": {"suffix": "telemetry/snapshot/v1", "qos": 0},
+        "telemetry_realtime": {"suffix": "telemetry/realtime/v1", "qos": 0},
         "config_set": {"suffix": "config/set", "qos": 2},
         "config_ack": {"suffix": "config/ack", "qos": 2}
       }
     },
     "logging": {"level": "info", "file": "", "max_file_size_kb": 1024},
     "identity": {"school_name": "NNUTC"},
+    "telemetry_publish": {
+      "snapshot": {"enabled": true, "interval_ms": 1000},
+      "realtime": {"enabled": true, "interval_ms": 100}
+    },
     "runtime": {
-      "telemetry_publish_interval_ms": 1000,
       "heartbeat_interval_ms": 1000,
       "applied_command_ids": []
     }
@@ -132,41 +137,6 @@ TEST_CASE("QGC UDP bridge configuration can be enabled explicitly") {
   CHECK_FALSE(result->qgc_udp.allow_commands);
 }
 
-TEST_CASE("PX4实时遥测默认开启且支持显式配置") {
-  const auto default_result =
-      config::LoadAppConfig(WriteTempConfig(ValidConfig()));
-  REQUIRE(default_result.has_value());
-  CHECK(default_result->px4_realtime.enabled);
-  CHECK(default_result->px4_realtime.publish_interval ==
-        std::chrono::milliseconds(50));
-
-  const auto configured = ReplaceOnce(
-      ValidConfig(),
-      "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},",
-      "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},\n"
-      "    \"px4_realtime\": {\"enabled\": false, "
-      "\"publish_interval_ms\": 100},");
-  const auto result = config::LoadAppConfig(WriteTempConfig(configured));
-  REQUIRE(result.has_value());
-  CHECK_FALSE(result->px4_realtime.enabled);
-  CHECK(result->px4_realtime.publish_interval ==
-        std::chrono::milliseconds(100));
-}
-
-TEST_CASE("PX4实时遥测周期必须在20到1000毫秒之间") {
-  for (const int interval : {19, 1001}) {
-    const auto configured = ReplaceOnce(
-        ValidConfig(),
-        "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},",
-        "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},\n"
-        "    \"px4_realtime\": {\"enabled\": true, "
-        "\"publish_interval_ms\": " +
-            std::to_string(interval) + "},");
-    const auto result = config::LoadAppConfig(WriteTempConfig(configured));
-    CHECK_FALSE(result.has_value());
-  }
-}
-
 TEST_CASE("QGC UDP bridge can be disabled with the short rollback form") {
   const auto configured = ReplaceOnce(
       ValidConfig(), "\"serial\": {\"device\": \"/dev/ttyUSB0\", \"baud\": 115200},",
@@ -225,8 +195,12 @@ TEST_CASE("完整合法嵌套配置能正确解析") {
   CHECK(result->mqtt.topics.topic_namespace == "cns_rpi");
   CHECK(result->mqtt.topics.registration.suffix == "registration");
   CHECK(result->mqtt.topics.registration.qos == 2);
-  CHECK(result->mqtt.topics.telemetry.suffix == "telemetry");
-  CHECK(result->mqtt.topics.telemetry.qos == 0);
+  CHECK(result->mqtt.topics.telemetry_snapshot.suffix ==
+        "telemetry/snapshot/v1");
+  CHECK(result->mqtt.topics.telemetry_snapshot.qos == 0);
+  CHECK(result->mqtt.topics.telemetry_realtime.suffix ==
+        "telemetry/realtime/v1");
+  CHECK(result->mqtt.topics.telemetry_realtime.qos == 0);
   CHECK(result->mqtt.topics.config_set.suffix == "config/set");
   CHECK(result->mqtt.topics.config_set.qos == 2);
   CHECK(result->mqtt.topics.config_ack.suffix == "config/ack");
@@ -234,7 +208,12 @@ TEST_CASE("完整合法嵌套配置能正确解析") {
   CHECK(result->logging.level == "info");
   CHECK(result->logging.file.empty());
   CHECK(result->logging.max_file_size_bytes == 1024U * 1024U);
-  CHECK(result->runtime.telemetry_publish_interval == std::chrono::milliseconds(1000));
+  CHECK(result->telemetry_publish.snapshot.enabled);
+  CHECK(result->telemetry_publish.snapshot.interval ==
+        std::chrono::milliseconds(1000));
+  CHECK(result->telemetry_publish.realtime.enabled);
+  CHECK(result->telemetry_publish.realtime.interval ==
+        std::chrono::milliseconds(100));
   CHECK(result->runtime.heartbeat_interval == std::chrono::milliseconds(1000));
   CHECK(result->runtime.applied_command_ids.empty());
   CHECK(result->mqtt.connection.reconnect.delay_seconds == 1);
@@ -301,12 +280,24 @@ TEST_CASE("配置命令和ACK必须使用QoS2") {
 }
 
 TEST_CASE("运行参数范围或重连组合非法时返回kInvalidValue") {
-  SUBCASE("遥测间隔低于100毫秒") {
-    auto invalid = ReplaceOnce(ValidConfig(), "\"telemetry_publish_interval_ms\": 1000",
-                               "\"telemetry_publish_interval_ms\": 99");
-    auto result = config::LoadAppConfig(WriteTempConfig(invalid));
-    REQUIRE_FALSE(result.has_value());
-    CHECK(result.error() == config::ConfigError::kInvalidValue);
+  for (const auto& [name, original, replacement] : {
+           std::tuple{"快照周期低于100毫秒", "\"interval_ms\": 1000",
+                      "\"interval_ms\": 99"},
+           std::tuple{"快照周期高于60000毫秒", "\"interval_ms\": 1000",
+                      "\"interval_ms\": 60001"},
+           std::tuple{"实时周期低于50毫秒",
+                      "\"realtime\": {\"enabled\": true, \"interval_ms\": 100}",
+                      "\"realtime\": {\"enabled\": true, \"interval_ms\": 49}"},
+           std::tuple{"实时周期高于1000毫秒",
+                      "\"realtime\": {\"enabled\": true, \"interval_ms\": 100}",
+                      "\"realtime\": {\"enabled\": true, \"interval_ms\": 1001}"},
+       }) {
+    SUBCASE(name) {
+      auto result = config::LoadAppConfig(
+          WriteTempConfig(ReplaceOnce(ValidConfig(), original, replacement)));
+      REQUIRE_FALSE(result.has_value());
+      CHECK(result.error() == config::ConfigError::kInvalidValue);
+    }
   }
   SUBCASE("心跳间隔高于60000毫秒") {
     auto invalid = ReplaceOnce(ValidConfig(), "\"heartbeat_interval_ms\": 1000",
@@ -385,9 +376,18 @@ TEST_CASE("MQTT数值范围非法时返回kInvalidValue") {
     REQUIRE_FALSE(result.has_value());
     CHECK(result.error() == config::ConfigError::kInvalidValue);
   }
-  SUBCASE("telemetry QoS为负数") {
+  SUBCASE("快照QoS不为0") {
     auto result = config::LoadAppConfig(
-        WriteTempConfig(ReplaceOnce(ValidConfig(), "\"qos\": 0", "\"qos\": -1")));
+        WriteTempConfig(ReplaceOnce(ValidConfig(), "\"qos\": 0", "\"qos\": 1")));
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == config::ConfigError::kInvalidValue);
+  }
+  SUBCASE("实时QoS不为0") {
+    auto invalid = ReplaceOnce(
+        ValidConfig(),
+        "\"telemetry_realtime\": {\"suffix\": \"telemetry/realtime/v1\", \"qos\": 0}",
+        "\"telemetry_realtime\": {\"suffix\": \"telemetry/realtime/v1\", \"qos\": 1}");
+    auto result = config::LoadAppConfig(WriteTempConfig(invalid));
     REQUIRE_FALSE(result.has_value());
     CHECK(result.error() == config::ConfigError::kInvalidValue);
   }
@@ -406,9 +406,17 @@ TEST_CASE("MQTT topic段非法时返回kInvalidValue") {
     REQUIRE_FALSE(result.has_value());
     CHECK(result.error() == config::ConfigError::kInvalidValue);
   }
-  SUBCASE("suffix含单层通配符") {
+  SUBCASE("快照suffix为空") {
     auto result = config::LoadAppConfig(WriteTempConfig(
-        ReplaceOnce(ValidConfig(), "\"suffix\": \"telemetry\"", "\"suffix\": \"+\"")));
+        ReplaceOnce(ValidConfig(), "\"suffix\": \"telemetry/snapshot/v1\"",
+                    "\"suffix\": \"\"")));
+    REQUIRE_FALSE(result.has_value());
+    CHECK(result.error() == config::ConfigError::kInvalidValue);
+  }
+  SUBCASE("两个遥测suffix不能相同") {
+    auto result = config::LoadAppConfig(WriteTempConfig(ReplaceOnce(
+        ValidConfig(), "\"suffix\": \"telemetry/realtime/v1\"",
+        "\"suffix\": \"telemetry/snapshot/v1\"")));
     REQUIRE_FALSE(result.has_value());
     CHECK(result.error() == config::ConfigError::kInvalidValue);
   }

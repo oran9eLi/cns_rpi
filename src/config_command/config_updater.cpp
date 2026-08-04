@@ -49,15 +49,18 @@ std::expected<nlohmann::json, CommandError> BuildUpdatedConfig(
   try {
     nlohmann::json candidate = current;
     auto& runtime = candidate.at("runtime");
+    auto& telemetry_snapshot =
+        candidate.at("telemetry_publish").at("snapshot");
     auto& reconnect = candidate.at("mqtt").at("connection").at("reconnect");
     auto& applied_ids = runtime.at("applied_command_ids");
-    if (!runtime.is_object() || !reconnect.is_object() || !applied_ids.is_array()) {
+    if (!runtime.is_object() || !telemetry_snapshot.is_object() ||
+        !reconnect.is_object() || !applied_ids.is_array()) {
       return std::unexpected(InvalidCurrentConfig());
     }
 
     const auto& patch = command.parameters;
     if (patch.telemetry_publish_interval_ms) {
-      runtime["telemetry_publish_interval_ms"] = *patch.telemetry_publish_interval_ms;
+      telemetry_snapshot["interval_ms"] = *patch.telemetry_publish_interval_ms;
     }
     if (patch.heartbeat_interval_ms) {
       runtime["heartbeat_interval_ms"] = *patch.heartbeat_interval_ms;

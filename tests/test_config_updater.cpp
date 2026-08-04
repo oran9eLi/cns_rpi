@@ -10,8 +10,10 @@ namespace {
 nlohmann::json CurrentConfig() {
   return {
       {"serial", {{"device", "/dev/ttyUSB0"}, {"baud", 115200}}},
-      {"runtime", {{"telemetry_publish_interval_ms", 1000},
-                   {"heartbeat_interval_ms", 1000},
+      {"telemetry_publish",
+       {{"snapshot", {{"enabled", true}, {"interval_ms", 1000}}},
+        {"realtime", {{"enabled", true}, {"interval_ms", 100}}}}},
+      {"runtime", {{"heartbeat_interval_ms", 1000},
                    {"applied_command_ids", nlohmann::json::array()}}},
       {"mqtt", {{"connection", {{"reconnect", {{"delay_s", 1},
                                                   {"delay_max_s", 30}}}}}}},
@@ -30,7 +32,8 @@ TEST_CASE("部分更新保留全部非白名单字段并追加命令号") {
       .parameters = patch};
   auto result = config_command::BuildUpdatedConfig(current, command);
   REQUIRE(result.has_value());
-  CHECK((*result)["runtime"]["telemetry_publish_interval_ms"] == 2000);
+  CHECK((*result)["telemetry_publish"]["snapshot"]["interval_ms"] == 2000);
+  CHECK((*result)["telemetry_publish"]["realtime"]["interval_ms"] == 100);
   CHECK((*result)["runtime"]["heartbeat_interval_ms"] == 1000);
   CHECK((*result)["serial"] == current["serial"]);
   CHECK((*result)["cellular"] == current["cellular"]);
