@@ -32,10 +32,6 @@ std::string BuildRegistrationTopic(const std::string& topic_namespace,
 std::string BuildTelemetryTopic(const std::string& topic_namespace, const std::string& device_id,
                                 const std::string& suffix);
 
-/// PX4 专用高频实时 topic；固定版本后缀避免被旧遥测订阅器和数据库消费。
-std::string BuildPx4RealtimeTopic(const std::string& topic_namespace,
-                                  const std::string& device_id);
-
 /// 服务端向 PX4 树莓派发送真实 RTT 探测的 QoS 0 topic。
 std::string BuildPx4LatencyProbeTopic(const std::string& topic_namespace,
                                       const std::string& device_id);

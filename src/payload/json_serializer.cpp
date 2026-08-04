@@ -537,8 +537,8 @@ nlohmann::json ToJson(const state::TelemetryState& state, const std::string& sch
   return out;
 }
 
-nlohmann::json ToPx4RealtimeJson(const state::TelemetryState& state,
-                                 std::uint64_t sequence) {
+nlohmann::json ToRealtimeJson(const state::TelemetryState& state,
+                              std::uint64_t sequence) {
   nlohmann::json out{
       {"schema_version", 1},
       {"sequence", sequence},
@@ -556,6 +556,7 @@ nlohmann::json ToPx4RealtimeJson(const state::TelemetryState& state,
   AddSysStatus(telemetry, state);
   AddBattery(telemetry, state);
   AddPressure(telemetry, state);
+  AddMotor(telemetry, state);
   out["telemetry"] = std::move(telemetry);
   return out;
 }

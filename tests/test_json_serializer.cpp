@@ -100,35 +100,35 @@ TEST_CASE("顶层可选身份字段各自独立按需省略") {
   CHECK(json2["school_name"] == "NNUTC");
 }
 
-TEST_CASE("PX4高频帧只包含紧凑遥测和毫秒时间戳") {
+TEST_CASE("实时帧同时容纳主控箱电机与飞行动态字段") {
   state::TelemetryState state{};
-  state.device_id = "PX4RID123456789ABCDE";
+  state.device_id = "DCDWCNS1ABCDEFGHIJ";
+  state.motor_pwm = state::MotorPwm{{10, 20, 30, 40}, true, 2};
+  state.motor_pulse = state::MotorPulse{{1500, 1510, 1520, 1530}, 123456};
 
   mavlink_attitude_t attitude{};
   attitude.roll = 0.1F;
   attitude.pitch = -0.2F;
   state.attitude = attitude;
 
-  mavlink_sys_status_t system{};
-  system.voltage_battery = 16800;
-  system.current_battery = -1;
-  state.sys_status = system;
-
-  const auto json = payload::ToPx4RealtimeJson(state, 42);
+  const auto json = payload::ToRealtimeJson(state, 42);
 
   // 高频实时协议有独立版本号，不因本次字段整理自动升级(设计文档 §5.2)。
   CHECK(json["schema_version"] == 1);
-  CHECK(json["device_id"] == "PX4RID123456789ABCDE");
+  CHECK(json["device_id"] == "DCDWCNS1ABCDEFGHIJ");
   CHECK(json["sequence"] == 42);
   CHECK(json["sent_at"].get<std::string>().ends_with("Z"));
   CHECK(json["sent_at"].get<std::string>().find('.') != std::string::npos);
   REQUIRE(json.contains("telemetry"));
   CHECK(json["telemetry"].contains("attitude"));
-  CHECK(json["telemetry"].contains("sys_status"));
-  CHECK_FALSE(json.contains("identity"));
-  CHECK_FALSE(json.contains("gateway"));
+  CHECK(json["telemetry"]["motor"]["duty_percent"] ==
+        nlohmann::json::array({10, 20, 30, 40}));
+  CHECK(json["telemetry"]["motor"]["pwm_us"] ==
+        nlohmann::json::array({1500, 1510, 1520, 1530}));
   CHECK_FALSE(json.contains("logs"));
   CHECK_FALSE(json.contains("modules"));
+  CHECK_FALSE(json.contains("alarms"));
+  CHECK_FALSE(json.contains("drone_id"));
 }
 
 TEST_CASE("PX4遥测v3的device_id就是Basic ID,身份只出现一次") {

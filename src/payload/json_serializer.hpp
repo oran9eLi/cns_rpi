@@ -38,12 +38,12 @@ nlohmann::json ToJson(const state::TelemetryState& state, const std::string& sch
                       const cellular::StatusSnapshot& cellular_status);
 
 /**
- * @brief 生成不入库的 PX4 高频紧凑帧。
+ * @brief 生成不入库的通用实时紧凑帧。
  *
- * 只包含 Web 仪表盘需要的高频 MAVLink 数据，不读取 5G 状态文件、不携带日志和
- * 模块表，使用 QoS 0 发布。浏览器处理不过来时允许丢旧帧。
+ * 包含 Web 仪表盘需要的快变 MAVLink 数据和主控箱电机状态，不读取 5G 状态
+ * 文件、不携带日志和模块表，使用 QoS 0 发布。消费者处理不过来时允许丢旧帧。
  */
-nlohmann::json ToPx4RealtimeJson(const state::TelemetryState& state,
-                                 std::uint64_t sequence);
+nlohmann::json ToRealtimeJson(const state::TelemetryState& state,
+                              std::uint64_t sequence);
 
 }  // namespace payload
