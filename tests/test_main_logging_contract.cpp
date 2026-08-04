@@ -9,16 +9,6 @@
 
 namespace {
 
-std::size_t Count(std::string_view text, std::string_view needle) {
-  std::size_t count = 0;
-  for (std::size_t position = 0;
-       (position = text.find(needle, position)) != std::string_view::npos;
-       position += needle.size()) {
-    ++count;
-  }
-  return count;
-}
-
 std::string_view Between(std::string_view text, std::string_view begin,
                          std::string_view end) {
   const auto begin_position = text.find(begin);
@@ -58,19 +48,14 @@ TEST_CASE("主程序只编排Logger且不记录原始遥测JSON") {
   CHECK(logger_declaration < mqtt_declaration);
   CHECK(text.find("}, **logger);") != std::string::npos);
 
-  CHECK(Count(text, "payload::ToJson(") == 1);
-  CHECK(Count(text, ").dump();") == 1);
-  const auto telemetry_branch = Between(text, "const std::string json_str =",
-                                        "last_telemetry_publish = now;");
-  CHECK(telemetry_branch.find("Publish(telemetry_topic, json_str,") !=
-        std::string_view::npos);
-  // 遥测是按节拍刷新的实时值，retained 会让新订阅者把掉电前的陈旧快照当成实时数据；
-  // 设备在线与否由 registration topic 的 retained online/offline 表达。
-  CHECK(telemetry_branch.find("/*retain=*/false") != std::string_view::npos);
-  CHECK(telemetry_branch.find("/*retain=*/true") == std::string_view::npos);
-  CHECK(telemetry_branch.find("if (!mqtt_client->Publish(") != std::string_view::npos);
-  CHECK(telemetry_branch.find("Warn(\"MQTT发布失败，下个节拍重试\")") !=
-        std::string_view::npos);
+  CHECK(text.find("std::optional<telemetry::Publisher> telemetry_publisher") !=
+        std::string::npos);
+  CHECK(text.find("payload::ToRealtimeJson") != std::string::npos);
+  CHECK(text.find("telemetry_publisher->Tick") != std::string::npos);
+  CHECK(text.find("遥测快照通道") != std::string::npos);
+  CHECK(text.find("遥测实时通道") != std::string::npos);
+  CHECK(text.find("PX4实时遥测已启用") == std::string::npos);
+  CHECK(text.find("last_px4_realtime_publish") == std::string::npos);
 
   const auto configured_business_code = Between(
       text, "if (!logger) {", "return EXIT_SUCCESS;");
