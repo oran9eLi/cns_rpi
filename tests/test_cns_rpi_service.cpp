@@ -15,6 +15,7 @@ TEST_CASE("systemd服务启用正常退出重启") {
   CHECK(text.find("--config-helper=/usr/local/libexec/cns-rpi-apply-config") !=
         std::string::npos);
   CHECK(text.find("cellular-dialup.service") == std::string::npos);
+  CHECK(text.find("Requires=cns-rpi-config.service") == std::string::npos);
 }
 
 TEST_CASE("部署脚本安装生产helper和systemd服务") {
@@ -37,6 +38,11 @@ TEST_CASE("部署脚本安装生产helper和systemd服务") {
         std::string::npos);
   CHECK(text.find("systemctl restart cellular-dialup.service") != std::string::npos);
   CHECK(text.find("systemctl start cellular-dialup.service") != std::string::npos);
+  CHECK(text.find("MOUNT_HELPER_SOURCE=") == std::string::npos);
+  CHECK(text.find("CONFIG_MOUNT_SERVICE_SOURCE=") == std::string::npos);
+  REQUIRE(text.find("--check-config") != std::string::npos);
+  CHECK(text.find("--check-config") <
+        text.find("systemctl start cellular-dialup.service"));
 }
 
 TEST_CASE("5G拨号单元是读取持久配置的常驻服务") {
@@ -69,4 +75,6 @@ TEST_CASE("依赖安装脚本复用部署脚本") {
   const std::string text{std::istreambuf_iterator<char>(input),
                          std::istreambuf_iterator<char>()};
   CHECK(text.find("deploy.sh") != std::string::npos);
+  CHECK(text.find("libmosquitto-dev") != std::string::npos);
+  CHECK(text.find("pkg-config") != std::string::npos);
 }

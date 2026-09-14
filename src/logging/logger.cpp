@@ -255,7 +255,8 @@ Logger::AppendResult Logger::AppendOrCompact(std::string line) {
   if (!rolled_back && result.bytes_written > 0) {
     // 回滚失败时尽力封闭残留记录，避免后续降级日志被误认为同一行的一部分。
     const char newline = '\n';
-    (void)write(descriptor, &newline, 1);
+    // 此处已处于写入及回滚双重失败路径；补换行失败也保持非持久化结果。
+    [[maybe_unused]] const auto newline_result = write(descriptor, &newline, 1);
     (void)fsync(descriptor);
   }
   (void)close_operation(descriptor);

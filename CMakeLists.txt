@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(cns_rpi LANGUAGES CXX)
+project(cns_rpi VERSION 1.0.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -70,6 +70,11 @@ target_link_libraries(test_mqtt_client PRIVATE cns_rpi_mqtt)
 add_test(NAME mqtt_client COMMAND test_mqtt_client)
 
 add_executable(cns_rpi src/main.cpp)
+target_compile_definitions(cns_rpi PRIVATE CNS_RPI_VERSION="${PROJECT_VERSION}")
+add_test(NAME release_cli COMMAND ${PYTHON3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_release_cli.py $<TARGET_FILE:cns_rpi>)
+add_test(NAME release_deploy COMMAND ${PYTHON3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_release_deploy.py $<TARGET_FILE:cns_rpi>)
 target_link_libraries(cns_rpi PRIVATE cns_rpi_core cns_rpi_mqtt)
 
 add_executable(cns_control_test src/control_test/main.cpp)

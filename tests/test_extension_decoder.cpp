@@ -14,17 +14,28 @@ namespace {
 constexpr std::uint8_t kSystemId = 1;
 constexpr std::uint8_t kComponentId = 1;
 
+/** @brief 将测试字符串写入零填充的 MAVLink 定长字段，避免编码器读取越界。 */
+template <std::size_t Size>
+std::array<char, Size> FixedText(std::string_view text) {
+  std::array<char, Size> field{};
+  text.substr(0, Size).copy(field.data(), Size);
+  return field;
+}
+
 mavlink_message_t PackNamedValueInt(const char* name, std::int32_t value) {
   mavlink_message_t msg{};
-  mavlink_msg_named_value_int_pack(kSystemId, kComponentId, &msg, /*time_boot_ms=*/1000, name,
-                                    value);
+  const auto name_field = FixedText<MAVLINK_MSG_NAMED_VALUE_INT_FIELD_NAME_LEN>(name);
+  mavlink_msg_named_value_int_pack(kSystemId, kComponentId, &msg, /*time_boot_ms=*/1000,
+                                   name_field.data(), value);
   return msg;
 }
 
 mavlink_message_t PackNamedValueIntWithTime(const char* name, std::uint32_t time_boot_ms,
                                             std::int32_t value) {
   mavlink_message_t msg{};
-  mavlink_msg_named_value_int_pack(kSystemId, kComponentId, &msg, time_boot_ms, name, value);
+  const auto name_field = FixedText<MAVLINK_MSG_NAMED_VALUE_INT_FIELD_NAME_LEN>(name);
+  mavlink_msg_named_value_int_pack(kSystemId, kComponentId, &msg, time_boot_ms,
+                                   name_field.data(), value);
   return msg;
 }
 
@@ -74,18 +85,23 @@ mavlink_message_t PackSystem() {
 mavlink_message_t PackOperatorId(const char* operator_id) {
   mavlink_message_t msg{};
   std::uint8_t id_or_mac[20] = {};
+  const auto operator_id_field =
+      FixedText<MAVLINK_MSG_OPEN_DRONE_ID_OPERATOR_ID_FIELD_OPERATOR_ID_LEN>(operator_id);
   mavlink_msg_open_drone_id_operator_id_pack(kSystemId, kComponentId, &msg,
                                                /*target_system=*/0, /*target_component=*/0,
-                                               id_or_mac, /*operator_id_type=*/0, operator_id);
+                                               id_or_mac, /*operator_id_type=*/0,
+                                               operator_id_field.data());
   return msg;
 }
 
 mavlink_message_t PackSelfId(const char* description) {
   mavlink_message_t msg{};
   std::uint8_t id_or_mac[20] = {};
+  const auto description_field =
+      FixedText<MAVLINK_MSG_OPEN_DRONE_ID_SELF_ID_FIELD_DESCRIPTION_LEN>(description);
   mavlink_msg_open_drone_id_self_id_pack(kSystemId, kComponentId, &msg, /*target_system=*/0,
                                            /*target_component=*/0, id_or_mac,
-                                           /*description_type=*/0, description);
+                                           /*description_type=*/0, description_field.data());
   return msg;
 }
 }  // namespace
@@ -541,10 +557,8 @@ TEST_CASE("LORASTAT解码拆出丢包率/节点ID/在位标志/链路状态") {
 }
 
 TEST_CASE("RIDSTAT解码拆出位置广播成功计数/错误计数,time_boot_ms存入last_success_ms") {
-  mavlink_message_t msg{};
   constexpr std::int32_t kValue = static_cast<std::int32_t>(50u | (3u << 16));
-  mavlink_msg_named_value_int_pack(kSystemId, kComponentId, &msg, /*time_boot_ms=*/123456,
-                                    "RIDSTAT", kValue);
+  mavlink_message_t msg = PackNamedValueIntWithTime("RIDSTAT", 123456, kValue);
   state::StateStore store;
 
   bool handled = protocol::DecodeExtensionAndStore(msg, store);

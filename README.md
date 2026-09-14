@@ -1,62 +1,49 @@
 # CNS RPi
 
-CNS（通信/导航/监视）实训箱的树莓派端数据汇聚与回传节点。
+树莓派端 MAVLink 数据汇聚与 MQTT 转发程序。单台树莓派同一时间连接一台 CNS 主控箱或 PX4 飞控，负责身份获取、遥测解析与上报；主控箱下行命令经 MAVLink 转发并回传执行结果。固件、MQTT broker 和服务器数据库、路由程序不属于本仓库。
 
-本仓库负责双向数据链路：上行从 STM32 主控经 UART 收 MAVLink 遥测与身份数据，解析后重组为 JSON，通过 MQTT 发布给硬件部服务器；下行接收管控中心等来源下发的控制命令，转发编码为 MAVLink 命令帧发给 STM32 执行。STM32 固件、管理中心服务端不在本仓库范围内。
+## V1.0 发布范围
 
-## 当前状态
+保留当前主控箱与 PX4 的统一身份、已实现的 MAVLink 消息解析及高低频遥测发布。身份来自受控设备的 `OPEN_DRONE_ID_BASIC_ID.uas_id`，树莓派不提供设备业务身份。PX4 支持范围以现有解析实现为准，不代表全部消息或完整飞控控制支持；主控箱私有命令不适用于 PX4。
 
-M1-M6 已完成：UART/MAVLink 双向收发、遥测与身份解码、JSON 序列化、MQTT 遥测与注册、运行时配置命令、飞控命令下行均已接入。STM32 串口支持按合法 MAVLink 帧自动发现，USB 设备号变化或运行中插拔后可自动恢复；主控箱和 PX4 共用 1 Hz 快照与默认 10 Hz 实时遥测通道。
+部署使用普通可写根文件系统，现场配置保存在 `/var/lib/cns-rpi/config.json`。V1.0 不使用 OverlayFS 或独立配置卷，不新增 MQTT TLS。主程序和 5G 守护服务均由 systemd 开机自启动，保留自动恢复、有界日志与主程序 watchdog。
 
-M7 产品化：独立有界日志、幂等部署脚本、journald 内存化（16 MiB 上限）、systemd watchdog（30s 超时 + 主循环喂狗）、OverlayFS 只读根文件系统与配置持久化闭环均已实施并实机验证。物理断电验收、正式物联卡与 MQTT TLS 仍未开始。完整状态见 `docs/V1设计文档.md` 第 10 节与 `docs/M7系统化部署设计.md`。
+发布收尾状态见 [发布准备清单](docs/V1.0发布准备清单.md)，能力与验收边界见 [发布说明](docs/V1.0发布说明.md)。本轮新设备部署、重复部署和重启自启动仍待树莓派实机验收。
 
-## 部署
+## 新设备部署
 
-**新设备完整部署流程见 `docs/新设备部署手册.md`**，涵盖基础部署与只读根文件系统加固两个阶段。
-
-最小上手（仅编译验证，不含服务安装）：
+目标为 Raspberry Pi 5、Raspberry Pi OS 64-bit（trixie / Debian 13）、用户 `dcdw`，仓库路径固定为 `/home/dcdw/cns_rpi`。用户须具备 sudo 权限；未配置免密 sudo 时，交互执行脚本会请求密码。
 
 ```bash
-# 第一次 clone 时全局 git 镜像重写还没配置(那是 install_deps.sh 干的事，而脚本本身在仓库里)，
-# 所以必须显式带镜像前缀，不能用裸的 https://github.com/... （会因为 RPi 直连 GitHub 网络问题卡住）
-git clone https://ghfast.top/https://github.com/oran9eLi/cns_rpi.git ~/cns_rpi
-cd ~/cns_rpi
-./scripts/install_deps.sh   # 换清华TUNA apt源 + 装构建依赖 + 配置git全局镜像重写
-cmake -B build -S . && cmake --build build
-ctest --test-dir build
+git clone https://ghfast.top/https://github.com/oran9eLi/cns_rpi.git /home/dcdw/cns_rpi
+cd /home/dcdw/cns_rpi
+cp config/config.example.json config/config.json
+nano config/config.json
+./scripts/install_deps.sh
+```
+
+先确认现场 MQTT 地址、APN、串口自动发现和上报周期，再执行脚本。`install_deps.sh` 安装依赖并调用 `deploy.sh` 构建、初始化配置、安装 helper 和两个常驻服务。已有现场配置会保留，不用仓库样例覆盖。完整步骤与旧只读设备迁移边界见 [新设备部署手册](docs/新设备部署手册.md)。
+
+```bash
+systemctl status cns-rpi.service cellular-dialup.service --no-pager
+journalctl -u cns-rpi.service -u cellular-dialup.service -n 100 --no-pager
 ```
 
 ## 遥测通道
 
-- 完整快照：`{namespace}/{device_id}/telemetry/snapshot/v1`，默认 1000 ms；
-- 实时状态：`{namespace}/{device_id}/telemetry/realtime/v1`，默认 100 ms；
-- 两者均为 QoS 0、`retain=false`，发布失败时丢弃当前帧；
-- 数据库只消费快照，Web 服务按正在查看的设备订阅实时 Topic。
+| 通道 | Topic | 默认周期 | 用途 |
+|---|---|---|---|
+| 完整快照 | `{namespace}/{device_id}/telemetry/snapshot/v1` | 1000 ms | 数据库维护完整状态 |
+| 实时状态 | `{namespace}/{device_id}/telemetry/realtime/v1` | 100 ms | 查看当前设备的动态数据 |
 
-详细协议和服务端升级顺序见 `docs/高低频遥测发布协议.md` 与
-`docs/服务端对接-高低频遥测Topic迁移.md`。
+两个通道均为 QoS 0、`retain=false`，失败帧直接丢弃。快照包含实时通道的核心动态数据。服务端须先支持新 Topic，再更新设备。详细契约见 [高低频遥测发布协议](docs/高低频遥测发布协议.md) 和 [服务端迁移说明](docs/服务端对接-高低频遥测Topic迁移.md)。
 
-跑完 `install_deps.sh` 之后，git 全局重写已经生效，仓库的 `origin` 也可以放心设回裸的 `https://github.com/...`（`git remote set-url origin https://github.com/oran9eLi/cns_rpi.git`），后续 `git pull`/`git clone` 写裸 URL 就行，不用再带镜像前缀。
+## 开发与维护
 
-⚠️ 启用 OverlayFS 之后，根文件系统上的一切写入（含 `git pull` 与 `deploy.sh`）都只落在内存里、重启即蒸发，而过程看起来完全成功。维护必须按手册 B5 节的流程走；`deploy.sh` 已内置检测并会拒绝运行。
+项目使用 C++23/CMake，在树莓派 ARM64 上原生构建。开发机修改后推送，树莓派拉取并执行 `./scripts/deploy.sh`；新增依赖时重新执行 `./scripts/install_deps.sh`。脚本会配置 TUNA apt 源及 GitHub 镜像重写；镜像不可用时按部署手册处理。
 
-## 目标平台
+- [V1 设计文档](docs/V1设计文档.md)：架构、协议与身份策略。
+- [协作规则](docs/协作规则.md)：分支、中文提交说明、注释和验证要求。
+- [M7 系统化部署设计](docs/M7系统化部署设计.md)：服务、配置、日志和部署边界。
 
-- 硬件：Raspberry Pi 5
-- 系统：Raspberry Pi OS 64-bit（trixie / Debian 13），ARM64
-- 语言：C++23，CMake 原生编译（不做交叉编译）
-
-## 开发入口
-
-| 文档 | 用途 |
-|---|---|
-| `docs/V1设计文档.md` | V1 架构、协议对接范围、身份策略、技术选型、里程碑计划 |
-| `docs/协作规则.md` | 分支策略、提交信息规范、注释规范、变更记录、构建验证要求 |
-
-新增功能前先看设计文档确认范围，提交代码前按协作规则里的构建验证要求自测。
-
-## 开发方式
-
-代码在开发机上写，push 到仓库，树莓派 `git pull` 后本地编译运行。树莓派不作为主开发机。
-
-**网络说明**：RPi 直连 GitHub 不稳定（实测 ping 丢包 66%、curl 连接超时），`install_deps.sh` 会给 RPi 配一条全局 git 配置，把所有 `https://github.com/` 的访问透明重写到镜像代理 `ghfast.top`（`git config --global url."https://ghfast.top/https://github.com/".insteadOf "https://github.com/"`）。这是单点依赖——如果这个镜像站失效，RPi 上的 `git pull`/`clone` 会报错，取消这条重写：`git config --global --unset url."https://ghfast.top/https://github.com/".insteadOf`。
+新确认的设计和选型须同步文档。真实配置与构建产物不提交到仓库。

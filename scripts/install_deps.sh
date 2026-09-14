@@ -6,6 +6,25 @@
 # 幂等：重复执行不会破坏已有配置，也不会重复堆积备份文件（内容不变就跳过）。
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ "$(id -un)" != "dcdw" ] || [ "$(cd "${SCRIPT_DIR}/.." && pwd)" != /home/dcdw/cns_rpi ]; then
+  echo "错误：请由 dcdw 用户在 /home/dcdw/cns_rpi 执行安装。" >&2
+  exit 1
+fi
+if [ ! -f /var/lib/cns-rpi/config.json ] && [ ! -f "${SCRIPT_DIR}/../config/config.json" ]; then
+  echo "错误：请先复制 config/config.example.json 为 config/config.json 并填写现场参数。" >&2
+  exit 1
+fi
+if [ "$(findmnt -n -o FSTYPE /)" = overlay ] || mountpoint -q /var/lib/cns-rpi || [ -f /etc/systemd/system/cns-rpi-config.service ]; then
+  echo "错误：请先迁移旧只读根或配置卷，参见 docs/新设备部署手册.md。" >&2
+  exit 1
+fi
+if sudo -n true 2>/dev/null; then
+  echo "sudo 免密授权可用"
+else
+  sudo -v
+fi
+
 TOTAL_STEPS=5
 TIMESTAMP="$(date +%Y%m%d%H%M%S)"
 
@@ -40,7 +59,7 @@ scripts/install_deps.sh — RPi 环境准备
 
 操作项：
   [1] 切换 apt 源 -> 清华 TUNA 镜像站（原因：国内直连官方源慢/不可达）
-  [2] 安装构建依赖 -> build-essential cmake git nlohmann-json3-dev doctest-dev python3-serial
+  [2] 安装构建与运行依赖 -> C++ 工具链、Mosquitto 开发库、Python 串口与网络工具
       （nlohmann-json3-dev 是配置文件解析用的头文件库；doctest-dev 是单元测试框架，只在开发机/CI需要，
       不影响 systemd 部署的运行时依赖；python3-serial 是 scripts/cellular_dialup.py 拨号脚本
       运行时依赖，真机部署必须装）
@@ -49,8 +68,8 @@ scripts/install_deps.sh — RPi 环境准备
   [4] 打印版本信息，确认安装结果
   [5] 调用 deploy.sh 构建程序、安装配置 helper 和 systemd 服务并启动主程序
 
-影响范围：仅修改 apt 源配置和 git 全局配置，不涉及本仓库以外的其他文件；
-第 [5] 步会在本仓库根目录下创建/更新 build/ 目录，并安装、启动 cns-rpi.service。
+影响范围：apt 源、系统软件包、git 全局配置、仓库 build 目录、现场配置目录、
+配置 helper、journald/zram 配置及两个常驻 systemd 服务。
 BANNER
 
 step 1 "切换 apt 源为清华 TUNA 镜像（原因：国内直连官方源慢/不稳定）"
@@ -83,7 +102,9 @@ fi
 
 step 2 "安装构建依赖：build-essential cmake git（先 apt update 刷新索引）"
 sudo apt update
-sudo apt install -y build-essential cmake git nlohmann-json3-dev doctest-dev python3-serial
+sudo apt install -y build-essential cmake git pkg-config libmosquitto-dev \
+  nlohmann-json3-dev doctest-dev python3 python3-serial iproute2 iputils-ping \
+  util-linux udev sudo
 
 step 3 "配置 git 全局镜像重写（原因：RPi 直连 GitHub 网络不通/不稳定）"
 git config --global url."https://ghfast.top/https://github.com/".insteadOf "https://github.com/"

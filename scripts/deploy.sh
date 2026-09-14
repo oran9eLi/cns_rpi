@@ -1,61 +1,36 @@
 #!/usr/bin/env bash
-# 构建并幂等安装 cns_rpi 主程序的配置 helper 与 systemd 服务。
+# V1.0：构建、迁移现场配置，幂等安装并启动两个常驻服务。
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-HELPER_SOURCE="${SCRIPT_DIR}/cns-rpi-apply-config.py"
-HELPER_TARGET="/usr/local/libexec/cns-rpi-apply-config"
-TELEMETRY_MIGRATOR="${SCRIPT_DIR}/migrate_telemetry_config.py"
-DEPLOYED_CONFIG_MIGRATOR="${SCRIPT_DIR}/migrate_deployed_telemetry_config.sh"
-SERVICE_SOURCE="${REPO_ROOT}/systemd/cns-rpi.service"
-SERVICE_TARGET="/etc/systemd/system/cns-rpi.service"
-CELLULAR_SERVICE_SOURCE="${REPO_ROOT}/systemd/cellular-dialup.service"
-CELLULAR_SERVICE_TARGET="/etc/systemd/system/cellular-dialup.service"
-JOURNALD_CONF_SOURCE="${REPO_ROOT}/systemd/journald-cns-rpi.conf"
-JOURNALD_CONF_TARGET="/etc/systemd/journald.conf.d/90-cns-rpi.conf"
-SWAP_CONF_SOURCE="${REPO_ROOT}/systemd/swap-cns-rpi.conf"
-SWAP_CONF_TARGET="/etc/rpi/swap.conf.d/50-cns-rpi.conf"
-MOUNT_HELPER_SOURCE="${SCRIPT_DIR}/cns-rpi-mount-config.sh"
-MOUNT_HELPER_TARGET="/usr/local/libexec/cns-rpi-mount-config"
-CONFIG_MOUNT_SERVICE_SOURCE="${REPO_ROOT}/systemd/cns-rpi-config.service"
-CONFIG_MOUNT_SERVICE_TARGET="/etc/systemd/system/cns-rpi-config.service"
+EXPECTED_REPO_ROOT="/home/dcdw/cns_rpi"
 CONFIG_DIR="/var/lib/cns-rpi"
 CONFIG_PATH="${CONFIG_DIR}/config.json"
-RUNTIME_DIR="/run/cns-rpi"
 LEGACY_CONFIG_PATH="${REPO_ROOT}/config/config.json"
-EXPECTED_REPO_ROOT="/home/dcdw/cns_rpi"
+RUNTIME_DIR="/run/cns-rpi"
+HELPER_TARGET="/usr/local/libexec/cns-rpi-apply-config"
 
-echo "===== 检查根文件系统是否可持久写入 ====="
-# OverlayFS 生效时根文件系统的写入全部落在内存上层，重启即蒸发：本脚本安装的
-# systemd unit、helper 以及 git pull 下来的代码都会消失，而部署过程看起来完全
-# 成功——直到下一次重启才暴露。这里直接拒绝运行，不给出"看似成功"的结果。
-#
-# 该问题曾在 2026-07-20 真实发生过：overlay 生效状态下完成的部署在重启后全部
-# 回退，详见 docs/OverlayFS只读根文件系统设计.md。
-if [ "$(findmnt -n -o FSTYPE / 2>/dev/null)" = "overlay" ]; then
-  cat >&2 <<'GUARD'
-错误：检测到 OverlayFS 已启用，根文件系统不可持久写入，拒绝部署。
-
-维护流程（每步之间需要重启）：
-  1. sudo raspi-config nonint disable_overlayfs && sudo reboot
-  2. 重启后重新执行 ./scripts/deploy.sh
-  3. sudo raspi-config nonint enable_overlayfs && sudo reboot
-
-不要在 overlay 生效时用 overlayroot-chroot 绕过本检查执行完整部署：
-构建产物、服务状态和挂载关系都不在 chroot 视图内，结果不可靠。
-GUARD
+echo "===== 检查部署前置条件 ====="
+if [ "$(findmnt -n -o FSTYPE /)" = "overlay" ]; then
+  echo "错误：V1.0 不支持 OverlayFS。请备份现场配置、停用 OverlayFS 并重启后部署。" >&2
   exit 1
 fi
-echo "  - 根文件系统可持久写入"
-
-echo "===== 验证 sudo 权限 ====="
+# 不自动卸载旧卷，避免读取挂载点下被遮蔽的旧配置。
+if mountpoint -q "${CONFIG_DIR}" || [ -f /etc/systemd/system/cns-rpi-config.service ]; then
+  echo "错误：检测到旧配置卷或挂载服务。请备份并迁移为普通配置目录，参见 docs/新设备部署手册.md。" >&2
+  exit 1
+fi
 if [ "$(id -u)" -eq 0 ]; then
   echo "错误：请使用 dcdw 普通用户执行本脚本，不要执行 sudo ./scripts/deploy.sh。" >&2
   exit 1
 fi
 if [ "$(id -un)" != "dcdw" ] || [ "${REPO_ROOT}" != "${EXPECTED_REPO_ROOT}" ]; then
   echo "错误：生产部署只能由 dcdw 在 ${EXPECTED_REPO_ROOT} 中执行。" >&2
+  exit 1
+fi
+if [ ! -f "${CONFIG_PATH}" ] && [ ! -f "${LEGACY_CONFIG_PATH}" ]; then
+  echo "错误：请先根据 config/config.example.json 创建 config/config.json。" >&2
   exit 1
 fi
 if sudo -n true 2>/dev/null; then
@@ -65,102 +40,75 @@ else
 fi
 
 echo "===== 构建 cns_rpi ====="
-cmake -S "${REPO_ROOT}" -B "${REPO_ROOT}/build"
-cmake --build "${REPO_ROOT}/build"
+cmake -S "${REPO_ROOT}" -B "${REPO_ROOT}/build" -DCMAKE_BUILD_TYPE=Release
+cmake --build "${REPO_ROOT}/build" -j2
 
 install_if_changed() {
-  local source="$1"
-  local target="$2"
-  local mode="$3"
-  sudo install -D -o root -g root -m "${mode}" "${source}" "${target}"
-  echo "  - 已收敛 ${target} 的内容、所有者和权限"
+  sudo install -D -o root -g root -m "$3" "$1" "$2"
+  echo "  - 已收敛 $2 的内容、所有者和权限"
 }
 
-echo "===== 安装配置 helper 和 systemd 服务 ====="
-install_if_changed "${HELPER_SOURCE}" "${HELPER_TARGET}" 0755
-install_if_changed "${MOUNT_HELPER_SOURCE}" "${MOUNT_HELPER_TARGET}" 0755
-install_if_changed "${SERVICE_SOURCE}" "${SERVICE_TARGET}" 0644
-install_if_changed "${CONFIG_MOUNT_SERVICE_SOURCE}" "${CONFIG_MOUNT_SERVICE_TARGET}" 0644
-install_if_changed "${CELLULAR_SERVICE_SOURCE}" "${CELLULAR_SERVICE_TARGET}" 0644
-
-echo "===== 安装 swap 机制配置 ====="
-# 只在内容变化时重新生成单元：daemon-reload 会重跑所有 generator，没必要每次部署都做。
-if sudo cmp -s "${SWAP_CONF_SOURCE}" "${SWAP_CONF_TARGET}" 2>/dev/null; then
-  echo "  - ${SWAP_CONF_TARGET} 已是最新"
+echo "===== 准备并校验现场配置 ====="
+# 先在临时副本迁移并进行完整参数校验，错误配置不得写入持久路径。
+PREFLIGHT_CONFIG="$(mktemp)"
+trap 'rm -f -- "${PREFLIGHT_CONFIG}"' EXIT
+if [ -f "${CONFIG_PATH}" ]; then
+  cp -- "${CONFIG_PATH}" "${PREFLIGHT_CONFIG}"
 else
-  install_if_changed "${SWAP_CONF_SOURCE}" "${SWAP_CONF_TARGET}" 0644
-  echo "  - swap 机制已设为纯 zram，重启后生效"
+  cp -- "${LEGACY_CONFIG_PATH}" "${PREFLIGHT_CONFIG}"
+fi
+python3 "${SCRIPT_DIR}/migrate_telemetry_config.py" "${PREFLIGHT_CONFIG}"
+"${REPO_ROOT}/build/cns_rpi" --check-config "${PREFLIGHT_CONFIG}"
+python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); from cellular_dialup import load_cellular_config; load_cellular_config(sys.argv[2])' \
+  "${SCRIPT_DIR}" "${PREFLIGHT_CONFIG}"
+sudo install -d -o dcdw -g dcdw -m 0755 "${CONFIG_DIR}"
+sudo install -d -o dcdw -g dcdw -m 0700 "${RUNTIME_DIR}"
+install_if_changed "${SCRIPT_DIR}/cns-rpi-apply-config.py" "${HELPER_TARGET}" 0755
+if [ ! -f "${CONFIG_PATH}" ]; then
+  sudo install -o dcdw -g dcdw -m 0600 "${PREFLIGHT_CONFIG}" "${CONFIG_PATH}"
+  INITIAL_CONFIG=1
+else
+  INITIAL_CONFIG=0
+  echo "  - 保留现场配置：${CONFIG_PATH}"
+fi
+bash "${SCRIPT_DIR}/migrate_deployed_telemetry_config.sh" \
+  "${SCRIPT_DIR}/migrate_telemetry_config.py" "${HELPER_TARGET}" \
+  "${CONFIG_PATH}" "${RUNTIME_DIR}"
+"${REPO_ROOT}/build/cns_rpi" --check-config "${CONFIG_PATH}"
+"${REPO_ROOT}/build/cns_rpi" --version
+if [ "${INITIAL_CONFIG}" -eq 1 ]; then
+  mv -- "${LEGACY_CONFIG_PATH}" "${LEGACY_CONFIG_PATH}.migrated"
 fi
 
-echo "===== 安装 journald 内存化配置 ====="
-# 只在内容真正变化时重启 journald：重启会切断 journalctl -f 之类的现场排查，
-# 每次部署都无条件重启没有必要。
-if sudo cmp -s "${JOURNALD_CONF_SOURCE}" "${JOURNALD_CONF_TARGET}"; then
-  echo "  - ${JOURNALD_CONF_TARGET} 已是最新，跳过重启 journald"
-else
-  install_if_changed "${JOURNALD_CONF_SOURCE}" "${JOURNALD_CONF_TARGET}" 0644
+echo "===== 安装配置 helper 和 systemd 服务 ====="
+install_if_changed "${REPO_ROOT}/systemd/cns-rpi.service" /etc/systemd/system/cns-rpi.service 0644
+install_if_changed "${REPO_ROOT}/systemd/cellular-dialup.service" /etc/systemd/system/cellular-dialup.service 0644
+
+SWAP_TARGET=/etc/rpi/swap.conf.d/50-cns-rpi.conf
+if ! sudo cmp -s "${REPO_ROOT}/systemd/swap-cns-rpi.conf" "${SWAP_TARGET}"; then
+  install_if_changed "${REPO_ROOT}/systemd/swap-cns-rpi.conf" "${SWAP_TARGET}" 0644
+  echo "  - 纯 zram swap 配置将在重启后生效"
+fi
+JOURNAL_TARGET=/etc/systemd/journald.conf.d/90-cns-rpi.conf
+if ! sudo cmp -s "${REPO_ROOT}/systemd/journald-cns-rpi.conf" "${JOURNAL_TARGET}"; then
+  install_if_changed "${REPO_ROOT}/systemd/journald-cns-rpi.conf" "${JOURNAL_TARGET}" 0644
   sudo systemctl restart systemd-journald
-  echo "  - 已重启 systemd-journald 使日志容量上限生效"
 fi
 
 echo "===== 加载并启用 systemd 服务 ====="
 sudo systemctl daemon-reload
-sudo systemctl enable cellular-dialup.service
-if sudo systemctl is-active --quiet cellular-dialup.service; then
-  sudo systemctl restart cellular-dialup.service
-else
-  sudo systemctl start cellular-dialup.service
-fi
-# 配置卷存在时才启用挂载服务：尚未建立持久化卷的设备（开发机、迁移过渡期）
-# 直接用普通目录，不应因为多了这个单元而起不来。
-if [ -f /boot/firmware/cns-config.img ]; then
-  sudo systemctl enable cns-rpi-config.service
-  sudo systemctl start cns-rpi-config.service
-  echo "  - 配置持久化卷已挂载"
-else
-  echo "  - 未发现 /boot/firmware/cns-config.img，配置目录按普通目录使用"
-fi
-
-# 配置检查必须放在挂载之后：卷挂上前 ${CONFIG_DIR} 是空的，
-# 提前检查会误判为"缺少配置"并把仓库里的旧配置迁进去，
-# 随后又被挂载遮蔽，留下两份互相矛盾的配置。
-echo "===== 检查现场配置 ====="
-# 只在目录不存在时创建：卷挂上后 ${CONFIG_DIR} 是只读挂载点，
-# 对它执行 install -d 会因无法改属主/权限而失败，配合 set -e 会让
-# 部署静默中止在这一步——服务不会用新 unit 重启，但前面的输出全是成功的。
-if [ ! -d "${CONFIG_DIR}" ]; then
-  sudo install -d -o dcdw -g dcdw -m 0755 "${CONFIG_DIR}"
-fi
-if [ -f "${CONFIG_PATH}" ]; then
-  echo "  - 现场配置就位：${CONFIG_PATH}"
-  if [ -f "${LEGACY_CONFIG_PATH}" ]; then
-    echo "  - 警告：旧位置仍存在 ${LEGACY_CONFIG_PATH}，实际生效的是 ${CONFIG_PATH}" >&2
-  fi
-elif [ -f "${LEGACY_CONFIG_PATH}" ]; then
-  echo "  - 检测到旧位置配置，迁移到 ${CONFIG_PATH}"
-  sudo install -o dcdw -g dcdw -m 0600 "${LEGACY_CONFIG_PATH}" "${CONFIG_PATH}"
-  # 旧文件改名保留而不删除：迁移出问题时还能回退，且避免两处配置并存造成困惑。
-  mv "${LEGACY_CONFIG_PATH}" "${LEGACY_CONFIG_PATH}.migrated"
-  echo "  - 旧配置已保留为 ${LEGACY_CONFIG_PATH}.migrated"
-else
-  echo "错误：缺少现场配置 ${CONFIG_PATH}" >&2
-  echo "请先根据 ${REPO_ROOT}/config/config.example.json 创建，脚本不会自动生成。" >&2
-  exit 1
-fi
-
-echo "===== 迁移遥测发布配置 ====="
-# 配置卷可能已由 cns-rpi-config.service 以只读方式挂载。候选必须先在
-# /run/cns-rpi 生成，再复用正式配置 helper 完成短暂 remount、原子替换和恢复只读。
-sudo install -d -o dcdw -g dcdw -m 0700 "${RUNTIME_DIR}"
-bash "${DEPLOYED_CONFIG_MIGRATOR}" "${TELEMETRY_MIGRATOR}" \
-  "${HELPER_TARGET}" "${CONFIG_PATH}" "${RUNTIME_DIR}"
-
 sudo systemctl enable cns-rpi.service
+sudo systemctl enable cellular-dialup.service
+# 两项服务互不依赖；5G 无卡不阻止主程序通过其他网络运行。
 if sudo systemctl is-active --quiet cns-rpi.service; then
   sudo systemctl restart cns-rpi.service
 else
   sudo systemctl start cns-rpi.service
 fi
-
+if sudo systemctl is-active --quiet cellular-dialup.service; then
+  sudo systemctl restart cellular-dialup.service
+else
+  sudo systemctl start cellular-dialup.service
+fi
 sudo systemctl --no-pager --full status cns-rpi.service
 echo "===== cns_rpi 部署完成 ====="

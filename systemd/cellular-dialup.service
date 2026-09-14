@@ -6,6 +6,7 @@ Before=network.target
 [Service]
 Type=simple
 User=dcdw
+SupplementaryGroups=dialout
 RuntimeDirectory=cns-rpi
 RuntimeDirectoryMode=0700
 RuntimeDirectoryPreserve=yes

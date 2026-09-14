@@ -95,6 +95,10 @@ registration::OnlineRegistration MakeOnlineRegistration(
 }  // namespace
 
 int main(int argc, char** argv) {
+  if (argc == 2 && std::string_view(argv[1]) == "--version") {
+    std::cout << "cns_rpi " << CNS_RPI_VERSION << '\n';
+    return EXIT_SUCCESS;
+  }
   std::signal(SIGINT, HandleExitSignal);
   std::signal(SIGTERM, HandleExitSignal);
 
@@ -102,10 +106,13 @@ int main(int argc, char** argv) {
   // 不确定，任何相对路径默认值都会在服务环境下静默指向错误的文件。
   std::string config_path;
   bool config_path_seen = false;
+  bool check_config = false;
   std::vector<std::string_view> writer_arguments;
   for (int i = 1; i < argc; ++i) {
     const std::string_view argument = argv[i];
-    if (argument.starts_with("--config-")) {
+    if (argument == "--check-config") {
+      check_config = true;
+    } else if (argument.starts_with("--config-")) {
       writer_arguments.push_back(argument);
     } else if (!config_path_seen) {
       config_path = argument;
@@ -117,7 +124,8 @@ int main(int argc, char** argv) {
   }
   if (!config_path_seen) {
     std::cerr << "用法: cns_rpi <配置文件绝对路径> [--config-writer=...] "
-                 "[--config-helper=...]\n";
+                 "[--config-helper=...] [--check-config]\n"
+                 "版本查询: cns_rpi --version\n";
     return EXIT_FAILURE;
   }
   if (!std::filesystem::path(config_path).is_absolute()) {
@@ -142,6 +150,11 @@ int main(int argc, char** argv) {
     std::cerr << "初始化日志失败: " << level.error() << '\n';
     return EXIT_FAILURE;
   }
+  // 部署预检只校验配置，不打开串口、日志文件或建立 MQTT 连接。
+  if (check_config) {
+    std::cout << "配置校验通过\n";
+    return EXIT_SUCCESS;
+  }
   auto logger = logging::Logger::Create(
       {.minimum_level = *level,
        .file = app_config->logging.file,
@@ -152,6 +165,7 @@ int main(int argc, char** argv) {
     return EXIT_FAILURE;
   }
 
+  (*logger)->Info("程序版本：" CNS_RPI_VERSION);
   (*logger)->Info(config::BuildStartupSummary(*app_config));
 
   state::StateStore state_store;

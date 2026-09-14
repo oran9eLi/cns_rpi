@@ -193,8 +193,9 @@ TEST_CASE("不认识的消息类型被安静忽略，不影响其他已有字段
   protocol::DecodeAndStore(heartbeat_msg, store);
 
   mavlink_message_t statustext_msg{};
+  const char text[MAVLINK_MSG_STATUSTEXT_FIELD_TEXT_LEN] = "test";
   mavlink_msg_statustext_pack(kSystemId, kComponentId, &statustext_msg, /*severity=*/6,
-                              "test", /*id=*/0, /*chunk_seq=*/0);
+                              text, /*id=*/0, /*chunk_seq=*/0);
 
   bool handled = protocol::DecodeAndStore(statustext_msg, store);
 
