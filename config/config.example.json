@@ -55,6 +55,10 @@
         "suffix": "telemetry/realtime/v1",
         "qos": 0
       },
+      "runtime_status": {
+        "suffix": "runtime/status/v1",
+        "qos": 1
+      },
       "config_set": {
         "suffix": "config/set",
         "qos": 2
@@ -79,7 +83,8 @@
     "max_file_size_kb": 1024
   },
   "identity": {
-    "school_name": "SEU"
+    "school_name": "SEU",
+    "binding_file": "/var/lib/cns-rpi/device_binding.json"
   },
   "runtime": {
     "heartbeat_interval_ms": 1000,

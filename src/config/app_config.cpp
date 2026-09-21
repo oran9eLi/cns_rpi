@@ -159,6 +159,13 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
         telemetry_realtime.at("suffix").get<std::string>();
     cfg.mqtt.topics.telemetry_realtime.qos =
         telemetry_realtime.at("qos").get<int>();
+    if (topics.contains("runtime_status")) {
+      const auto& runtime_status = topics.at("runtime_status");
+      cfg.mqtt.topics.runtime_status.suffix =
+          runtime_status.at("suffix").get<std::string>();
+      cfg.mqtt.topics.runtime_status.qos =
+          runtime_status.at("qos").get<int>();
+    }
     const auto& config_set = topics.at("config_set");
     cfg.mqtt.topics.config_set.suffix = config_set.at("suffix").get<std::string>();
     cfg.mqtt.topics.config_set.qos = config_set.at("qos").get<int>();
@@ -183,6 +190,10 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
 
     const auto& identity = root.at("identity");
     cfg.identity.school_name = identity.at("school_name").get<std::string>();
+    if (identity.contains("binding_file")) {
+      cfg.identity.binding_file =
+          identity.at("binding_file").get<std::string>();
+    }
 
     const auto& runtime = root.at("runtime");
     cfg.runtime.heartbeat_interval =
@@ -263,6 +274,8 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
       !IsValidTopicPath(topics.telemetry_snapshot.suffix) ||
       !IsValidTopicPath(topics.telemetry_realtime.suffix) ||
       topics.telemetry_snapshot.suffix == topics.telemetry_realtime.suffix ||
+      topics.runtime_status.suffix != "runtime/status/v1" ||
+      topics.runtime_status.qos != 1 ||
       !IsValidQos(topics.registration.qos) ||
       topics.telemetry_snapshot.qos != 0 || topics.telemetry_realtime.qos != 0 ||
       !IsValidTopicPath(topics.config_set.suffix) ||
@@ -270,6 +283,11 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
       topics.config_ack.qos != 2 || !IsValidTopicPath(topics.control_set.suffix) ||
       !IsValidTopicPath(topics.control_ack.suffix) || topics.control_set.qos != 2 ||
       topics.control_ack.qos != 2) {
+    return std::unexpected(ConfigError::kInvalidValue);
+  }
+
+  if (cfg.identity.binding_file.empty() ||
+      !cfg.identity.binding_file.is_absolute()) {
     return std::unexpected(ConfigError::kInvalidValue);
   }
 

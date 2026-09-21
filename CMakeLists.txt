@@ -31,6 +31,7 @@ add_library(cns_rpi_core
     src/protocol/extension_decoder.cpp
     src/protocol/identity.cpp
     src/protocol/px4_identity.cpp
+    src/device/device_binding_store.cpp
     src/payload/json_serializer.cpp
     src/telemetry/publisher.cpp
     src/mqtt/topic.cpp
@@ -120,6 +121,10 @@ add_test(NAME extension_decoder COMMAND test_extension_decoder)
 add_executable(test_identity tests/test_identity.cpp)
 target_link_libraries(test_identity PRIVATE cns_rpi_core)
 add_test(NAME identity COMMAND test_identity)
+
+add_executable(test_device_binding_store tests/test_device_binding_store.cpp)
+target_link_libraries(test_device_binding_store PRIVATE cns_rpi_core)
+add_test(NAME device_binding_store COMMAND test_device_binding_store)
 
 add_executable(test_json_serializer tests/test_json_serializer.cpp)
 target_link_libraries(test_json_serializer PRIVATE cns_rpi_core)

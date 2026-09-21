@@ -32,6 +32,7 @@ std::string ValidConfig() {
         "registration": {"suffix": "registration", "qos": 2},
         "telemetry_snapshot": {"suffix": "telemetry/snapshot/v1", "qos": 0},
         "telemetry_realtime": {"suffix": "telemetry/realtime/v1", "qos": 0},
+        "runtime_status": {"suffix": "runtime/status/v1", "qos": 1},
         "config_set": {"suffix": "config/set", "qos": 2},
         "config_ack": {"suffix": "config/ack", "qos": 2}
       }
@@ -201,6 +202,8 @@ TEST_CASE("完整合法嵌套配置能正确解析") {
   CHECK(result->mqtt.topics.telemetry_realtime.suffix ==
         "telemetry/realtime/v1");
   CHECK(result->mqtt.topics.telemetry_realtime.qos == 0);
+  CHECK(result->mqtt.topics.runtime_status.suffix == "runtime/status/v1");
+  CHECK(result->mqtt.topics.runtime_status.qos == 1);
   CHECK(result->mqtt.topics.config_set.suffix == "config/set");
   CHECK(result->mqtt.topics.config_set.qos == 2);
   CHECK(result->mqtt.topics.config_ack.suffix == "config/ack");
@@ -216,12 +219,42 @@ TEST_CASE("完整合法嵌套配置能正确解析") {
         std::chrono::milliseconds(100));
   CHECK(result->runtime.heartbeat_interval == std::chrono::milliseconds(1000));
   CHECK(result->runtime.applied_command_ids.empty());
+  CHECK(result->identity.binding_file ==
+        "/var/lib/cns-rpi/device_binding.json");
   CHECK(result->mqtt.connection.reconnect.delay_seconds == 1);
   CHECK(result->mqtt.connection.reconnect.delay_max_seconds == 30);
   CHECK(result->cellular.interface_name == "usb0");
   CHECK(result->cellular.heartbeat_interval == std::chrono::milliseconds(1000));
   CHECK(result->cellular.status_snapshot_path == "/run/cns-rpi/cellular_status.json");
   CHECK(result->cellular.status_snapshot_max_age == std::chrono::seconds(30));
+}
+
+TEST_CASE("身份绑定文件路径可配置且必须为绝对路径") {
+  const auto configured = ReplaceOnce(
+      ValidConfig(), "\"identity\": {\"school_name\": \"NNUTC\"}",
+      "\"identity\": {\"school_name\": \"NNUTC\", "
+      "\"binding_file\": \"/tmp/cns-binding.json\"}");
+  const auto result = config::LoadAppConfig(WriteTempConfig(configured));
+  REQUIRE(result.has_value());
+  CHECK(result->identity.binding_file == "/tmp/cns-binding.json");
+
+  const auto relative = ReplaceOnce(
+      configured, "\"binding_file\": \"/tmp/cns-binding.json\"",
+      "\"binding_file\": \"binding.json\"");
+  CHECK_FALSE(config::LoadAppConfig(WriteTempConfig(relative)).has_value());
+}
+
+TEST_CASE("运行三态Topic配置必须与冻结契约一致") {
+  for (const auto& replacement : {
+           "\"runtime_status\": {\"suffix\": \"other/status\", \"qos\": 1}",
+           "\"runtime_status\": {\"suffix\": \"runtime/status/v1\", \"qos\": 0}",
+       }) {
+    const auto invalid = ReplaceOnce(
+        ValidConfig(),
+        "\"runtime_status\": {\"suffix\": \"runtime/status/v1\", \"qos\": 1}",
+        replacement);
+    CHECK_FALSE(config::LoadAppConfig(WriteTempConfig(invalid)).has_value());
+  }
 }
 
 TEST_CASE("5G状态快照配置可覆盖默认值") {

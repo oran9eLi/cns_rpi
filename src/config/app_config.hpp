@@ -90,6 +90,7 @@ struct MqttTopicsConfig {
   MqttTopicConfig registration;
   MqttTopicConfig telemetry_snapshot;
   MqttTopicConfig telemetry_realtime;
+  MqttTopicConfig runtime_status{"runtime/status/v1", 1};
   MqttTopicConfig config_set;
   MqttTopicConfig config_ack;
   MqttTopicConfig control_set{"control/set", 2};
@@ -110,6 +111,7 @@ struct LoggingConfig {
 
 struct IdentityConfig {
   std::string school_name;
+  std::filesystem::path binding_file{"/var/lib/cns-rpi/device_binding.json"};
 };
 
 struct RuntimeConfig {
