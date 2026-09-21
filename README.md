@@ -43,6 +43,8 @@ journalctl -u cns-rpi.service -u cellular-dialup.service -n 100 --no-pager
 项目使用 C++23/CMake，在树莓派 ARM64 上原生构建。开发机修改后推送，树莓派拉取并执行 `./scripts/deploy.sh`；新增依赖时重新执行 `./scripts/install_deps.sh`。脚本会配置 TUNA apt 源及 GitHub 镜像重写；镜像不可用时按部署手册处理。
 
 - [V1 设计文档](docs/V1设计文档.md)：架构、协议与身份策略。
+- [V1.0 树莓派端后续任务清单](docs/CNS_V1.0_树莓派端后续任务清单.md)：对照单机教学闭环梳理必须完成及可延后事项。
+- 后续架构目标是由 mavlink-router 独占串口，业务解析与经服务器 5760 入口的远程 MAVLink 透传分路；远程透传前按服务器注册协议握手。该架构尚未实施。
 - [协作规则](docs/协作规则.md)：分支、中文提交说明、注释和验证要求。
 - [M7 系统化部署设计](docs/M7系统化部署设计.md)：服务、配置、日志和部署边界。
 
