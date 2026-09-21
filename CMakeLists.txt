@@ -70,6 +70,7 @@ target_link_libraries(cns_rpi_config_request PUBLIC cns_rpi_core cns_rpi_mqtt)
 
 add_executable(test_mqtt_client tests/test_mqtt_client.cpp)
 target_link_libraries(test_mqtt_client PRIVATE cns_rpi_mqtt)
+target_compile_definitions(test_mqtt_client PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
 add_test(NAME mqtt_client COMMAND test_mqtt_client)
 
 add_executable(cns_rpi src/main.cpp)

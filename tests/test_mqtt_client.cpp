@@ -4,6 +4,9 @@
 #include <chrono>
 #include <condition_variable>
 #include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <mutex>
 #include <sstream>
 #include <streambuf>
@@ -73,6 +76,21 @@ TEST_CASE("入站队列先进先出且容量固定为64") {
     CHECK(message->payload == std::to_string(i));
   }
   CHECK_FALSE(queue.TryPop().has_value());
+}
+
+TEST_CASE("MQTT遗嘱在发起Broker连接前完成配置") {
+  const auto source_path =
+      std::filesystem::path(SOURCE_DIR) / "src/mqtt/mqtt_client.cpp";
+  std::ifstream input(source_path);
+  REQUIRE(input.is_open());
+  const std::string source{std::istreambuf_iterator<char>(input),
+                           std::istreambuf_iterator<char>()};
+
+  const auto will_position = source.find("mosquitto_will_set(");
+  const auto connect_position = source.find("mosquitto_connect_async(");
+  REQUIRE(will_position != std::string::npos);
+  REQUIRE(connect_position != std::string::npos);
+  CHECK(will_position < connect_position);
 }
 
 TEST_CASE("非法Will topic导致客户端创建失败") {

@@ -104,3 +104,30 @@ TEST_CASE("主程序在收到命令与应答时记录日志") {
   // 应答处理结果必须被取用（用于区分最终/进行中/未匹配），不能再退回 (void) 丢弃。
   CHECK(ack_branch.find("(void)control_transaction.HandleMavlinkAck") == std::string_view::npos);
 }
+
+TEST_CASE("主程序使用运行三态遗嘱并以非阻塞方式事件发布") {
+  const auto main_path = std::filesystem::path(SOURCE_DIR) / "src/main.cpp";
+  std::ifstream input(main_path);
+  REQUIRE(input.is_open());
+  const std::string text{std::istreambuf_iterator<char>(input),
+                         std::istreambuf_iterator<char>()};
+
+  CHECK(text.find("BuildLastWillPublication(") != std::string::npos);
+  CHECK(text.find("topics.runtime_status.suffix") != std::string::npos);
+  CHECK(text.find("runtime_status::PublicationState") != std::string::npos);
+  CHECK(text.find("runtime_publication_state.ShouldPublish(") !=
+        std::string::npos);
+
+  const auto publish_branch = Between(
+      text, "// 运行三态发布开始", "// 运行三态发布结束");
+  CHECK(publish_branch.find("mqtt_client->Publish(") !=
+        std::string_view::npos);
+  CHECK(publish_branch.find("PublishAndWait") == std::string_view::npos);
+  CHECK(publish_branch.find("return ") == std::string_view::npos);
+  CHECK(publish_branch.find("break;") == std::string_view::npos);
+  CHECK(publish_branch.find("close_mqtt_session") == std::string_view::npos);
+  CHECK(publish_branch.find("publication->payload);") ==
+        std::string_view::npos);
+  CHECK(text.find("MQTT运行三态发布失败，连接恢复后重试") !=
+        std::string::npos);
+}

@@ -97,6 +97,35 @@ registration::OnlineRegistration MakeOnlineRegistration(
   };
 }
 
+std::string RuntimeStatusSummary(const runtime_status::Snapshot& snapshot) {
+  const auto business = [&] {
+    switch (snapshot.business_status) {
+      case runtime_status::BusinessStatus::kOnline:
+        return "在线";
+      case runtime_status::BusinessStatus::kOffline:
+        return "离线";
+      case runtime_status::BusinessStatus::kUnknown:
+        return "未知";
+    }
+    return "未知";
+  }();
+  const auto identity = [&] {
+    switch (snapshot.identity_status) {
+      case runtime_status::IdentityStatus::kVerified:
+        return "已核验";
+      case runtime_status::IdentityStatus::kCached:
+        return "已缓存";
+      case runtime_status::IdentityStatus::kConflict:
+        return "冲突";
+      case runtime_status::IdentityStatus::kUnbound:
+        return "未绑定";
+    }
+    return "未绑定";
+  }();
+  return "控制链=在线，业务=" + std::string(business) +
+         "，身份=" + identity;
+}
+
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -194,9 +223,13 @@ int main(int argc, char** argv) {
   auto last_cellular_heartbeat = started_at;
   std::optional<mqtt::MqttClient> mqtt_client;
   registration::RegistrationState registration_state;
+  runtime_status::PublicationState runtime_publication_state;
+  bool runtime_publish_failure_logged = false;
   std::optional<device::Binding> active_mqtt_binding;
   std::string registration_topic;
   std::string offline_payload;
+  std::string runtime_status_topic;
+  std::string runtime_offline_payload;
   std::string telemetry_snapshot_topic;
   std::string telemetry_realtime_topic;
   std::optional<telemetry::Publisher> telemetry_publisher;
@@ -265,17 +298,27 @@ int main(int argc, char** argv) {
 
   auto close_mqtt_session = [&](bool publish_offline) {
     fail_pending_control();
-    if (publish_offline && mqtt_client && mqtt_client->IsConnected() &&
-        !registration_topic.empty() && !offline_payload.empty()) {
-      (void)mqtt_client->PublishAndWait(
-          registration_topic, offline_payload,
-          app_config->mqtt.topics.registration.qos, /*retain=*/true,
-          std::chrono::seconds(2));
+    if (publish_offline && mqtt_client && mqtt_client->IsConnected()) {
+      if (!runtime_status_topic.empty() && !runtime_offline_payload.empty()) {
+        (void)mqtt_client->PublishAndWait(
+            runtime_status_topic, runtime_offline_payload, /*qos=*/1,
+            /*retain=*/true, std::chrono::seconds(2));
+      }
+      if (!registration_topic.empty() && !offline_payload.empty()) {
+        (void)mqtt_client->PublishAndWait(
+            registration_topic, offline_payload,
+            app_config->mqtt.topics.registration.qos, /*retain=*/true,
+            std::chrono::seconds(2));
+      }
     }
     mqtt_client.reset();
     registration_state = registration::RegistrationState{};
+    runtime_publication_state = runtime_status::PublicationState{};
+    runtime_publish_failure_logged = false;
     active_mqtt_binding.reset();
     registration_topic.clear();
+    runtime_status_topic.clear();
+    runtime_offline_payload.clear();
     telemetry_snapshot_topic.clear();
     telemetry_realtime_topic.clear();
     telemetry_publisher.reset();
@@ -734,35 +777,60 @@ int main(int argc, char** argv) {
               topics.control_ack.suffix);
           offline_payload = registration::BuildOfflinePayload(
               candidate_binding->device_id, candidate_binding->device_type);
-          mqtt_client = mqtt::MqttClient::Open({
-            .broker_host = app_config->mqtt.connection.host,
-            .broker_port = app_config->mqtt.connection.port,
-            .client_id = registration::BuildClientId(
-                app_config->mqtt.connection.client_id_prefix,
-                candidate_binding->device_id),
-            .username = app_config->mqtt.auth.username,
-            .password = app_config->mqtt.auth.password,
-            .keepalive_seconds = app_config->mqtt.connection.keepalive_seconds,
-            .reconnect_delay_seconds = app_config->mqtt.connection.reconnect.delay_seconds,
-            .reconnect_delay_max_seconds =
-                app_config->mqtt.connection.reconnect.delay_max_seconds,
-            .will = {
-                .topic = registration_topic,
-                .payload = offline_payload,
-                .qos = topics.registration.qos,
-                .retain = true,
-            },
-            .subscriptions = [&]() {
-              std::vector<std::pair<std::string, int>> subscriptions{
-                  {config_set_topic, topics.config_set.qos},
-                  {control_set_topic, topics.control_set.qos}};
-              if (candidate_binding->device_type ==
-                  device::Type::kFlightController) {
-                subscriptions.emplace_back(px4_latency_probe_topic, 0);
-              }
-              return subscriptions;
-            }(),
-          }, **logger);
+          mqtt::WillOptions mqtt_will{
+              .topic = registration_topic,
+              .payload = offline_payload,
+              .qos = topics.registration.qos,
+              .retain = true,
+          };
+          bool mqtt_will_ready = true;
+          if (candidate_binding->device_type == device::Type::kCnsBox) {
+            const auto runtime_will =
+                runtime_status::BuildLastWillPublication(
+                    topics.topic_namespace, topics.runtime_status.suffix,
+                    candidate_binding->device_id,
+                    device_session.HasPersistedBinding());
+            if (!runtime_will) {
+              (*logger)->Warn("生成MQTT运行三态遗嘱失败: " +
+                              runtime_will.error());
+              mqtt_will_ready = false;
+            } else {
+              runtime_status_topic = runtime_will->topic;
+              runtime_offline_payload = runtime_will->payload;
+              mqtt_will = {
+                  .topic = runtime_will->topic,
+                  .payload = runtime_will->payload,
+                  .qos = runtime_will->qos,
+                  .retain = runtime_will->retain,
+              };
+            }
+          }
+          if (mqtt_will_ready) {
+            mqtt_client = mqtt::MqttClient::Open({
+              .broker_host = app_config->mqtt.connection.host,
+              .broker_port = app_config->mqtt.connection.port,
+              .client_id = registration::BuildClientId(
+                  app_config->mqtt.connection.client_id_prefix,
+                  candidate_binding->device_id),
+              .username = app_config->mqtt.auth.username,
+              .password = app_config->mqtt.auth.password,
+              .keepalive_seconds = app_config->mqtt.connection.keepalive_seconds,
+              .reconnect_delay_seconds = app_config->mqtt.connection.reconnect.delay_seconds,
+              .reconnect_delay_max_seconds =
+                  app_config->mqtt.connection.reconnect.delay_max_seconds,
+              .will = std::move(mqtt_will),
+              .subscriptions = [&]() {
+                std::vector<std::pair<std::string, int>> subscriptions{
+                    {config_set_topic, topics.config_set.qos},
+                    {control_set_topic, topics.control_set.qos}};
+                if (candidate_binding->device_type ==
+                    device::Type::kFlightController) {
+                  subscriptions.emplace_back(px4_latency_probe_topic, 0);
+                }
+                return subscriptions;
+              }(),
+            }, **logger);
+          }
           if (mqtt_client) {
             active_mqtt_binding = *candidate_binding;
             telemetry_publisher.emplace(
@@ -834,6 +902,34 @@ int main(int argc, char** argv) {
         }
       }
     }
+
+    // 运行三态发布开始：只在状态变化或连接上升沿发送，失败不改变其他业务流程。
+    if (mqtt_client && active_mqtt_binding &&
+        active_mqtt_binding->device_type == device::Type::kCnsBox) {
+      const auto runtime_snapshot = device_session.CurrentOnlineStatus();
+      if (runtime_snapshot && runtime_publication_state.ShouldPublish(
+                                  mqtt_client->IsConnected(),
+                                  *runtime_snapshot)) {
+        const auto publication = runtime_status::BuildPublication(
+            app_config->mqtt.topics.topic_namespace,
+            app_config->mqtt.topics.runtime_status.suffix, *runtime_snapshot);
+        if (publication && mqtt_client->Publish(
+                               publication->topic, publication->payload,
+                               publication->qos, publication->retain)) {
+          runtime_publication_state.MarkPublished(*runtime_snapshot);
+          if (runtime_publish_failure_logged) {
+            (*logger)->Info("MQTT运行三态发布已恢复");
+          }
+          runtime_publish_failure_logged = false;
+          (*logger)->Info("运行三态已发布: " +
+                          RuntimeStatusSummary(*runtime_snapshot));
+        } else if (!runtime_publish_failure_logged) {
+          (*logger)->Warn("MQTT运行三态发布失败，连接恢复后重试");
+          runtime_publish_failure_logged = true;
+        }
+      }
+    }
+    // 运行三态发布结束。
 
     if (mqtt_client && active_mqtt_binding) {
       if (auto message = mqtt_client->TryPopMessage()) {
@@ -1038,12 +1134,19 @@ int main(int argc, char** argv) {
     }
   }
 
-  if (!restart_requested && mqtt_client && mqtt_client->IsConnected() &&
-      !registration_topic.empty()) {
-    if (!mqtt_client->PublishAndWait(registration_topic, offline_payload,
-                                     app_config->mqtt.topics.registration.qos,
-                                     /*retain=*/true, std::chrono::seconds(2))) {
-      (*logger)->Warn("MQTT离线状态发布超时");
+  if (mqtt_client && mqtt_client->IsConnected()) {
+    if (!runtime_status_topic.empty() && !runtime_offline_payload.empty() &&
+        !mqtt_client->PublishAndWait(
+            runtime_status_topic, runtime_offline_payload, /*qos=*/1,
+            /*retain=*/true, std::chrono::seconds(2))) {
+      (*logger)->Warn("MQTT运行三态离线状态发布超时");
+    }
+    if (!registration_topic.empty() && !offline_payload.empty() &&
+        !mqtt_client->PublishAndWait(
+            registration_topic, offline_payload,
+            app_config->mqtt.topics.registration.qos, /*retain=*/true,
+            std::chrono::seconds(2))) {
+      (*logger)->Warn("MQTT注册离线状态发布超时");
     }
   }
   return EXIT_SUCCESS;
