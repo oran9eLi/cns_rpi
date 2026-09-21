@@ -135,6 +135,13 @@ void Tracker::ObserveIdentity(const std::string& current_device_id) {
   }
 }
 
+void Tracker::ConfirmPersistedIdentity(const std::string& persisted_device_id) {
+  persisted_device_id_ = persisted_device_id;
+  identity_status_ = persisted_device_id == device_id_
+                         ? IdentityStatus::kVerified
+                         : IdentityStatus::kConflict;
+}
+
 void Tracker::Tick(Clock::time_point now) {
   const auto reference = last_business_frame_.value_or(started_at_);
   if (now - reference >= kBusinessSilenceTimeout) {

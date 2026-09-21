@@ -158,6 +158,19 @@ TEST_CASE("身份一致、未复核、冲突和无绑定产生四种身份状态
         runtime_status::IdentityStatus::kUnbound);
 }
 
+TEST_CASE("未绑定身份持久化后可转为已验证") {
+  runtime_status::Tracker tracker("DCDWCNS1GHC0G6LF8MY6", std::nullopt,
+                                  kStartedAt);
+  tracker.ObserveIdentity("DCDWCNS1GHC0G6LF8MY6");
+  REQUIRE(tracker.CurrentOnlineSnapshot().identity_status ==
+          runtime_status::IdentityStatus::kUnbound);
+
+  tracker.ConfirmPersistedIdentity("DCDWCNS1GHC0G6LF8MY6");
+
+  CHECK(tracker.CurrentOnlineSnapshot().identity_status ==
+        runtime_status::IdentityStatus::kVerified);
+}
+
 TEST_CASE("状态未变化时不周期发布而重连必须重新发布") {
   runtime_status::PublicationState state;
   const auto snapshot = VerifiedOnline();

@@ -98,7 +98,7 @@ TEST_CASE("主程序在收到命令与应答时记录日志") {
   CHECK(text.find("收到飞控命令: command_id=") != std::string::npos);
   // 收到当前受控设备的 COMMAND_ACK 应答，且日志取自事务处理结果而非丢弃。
   const auto ack_branch = Between(text, "IsExpectedCommandAck(",
-                                  "if (!protocol::DecodeAndStore");
+                                  "const bool decoded_standard");
   CHECK(ack_branch.find("收到设备应答") != std::string_view::npos);
   CHECK(ack_branch.find("control_command::ResultCode(ack.result)") != std::string_view::npos);
   // 应答处理结果必须被取用（用于区分最终/进行中/未匹配），不能再退回 (void) 丢弃。

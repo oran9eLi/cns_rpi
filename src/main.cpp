@@ -38,6 +38,7 @@
 #include "control_command/control_command.hpp"
 #include "control_command/control_endpoint.hpp"
 #include "control_command/control_transaction.hpp"
+#include "device/device_binding_store.hpp"
 #include "latency/px4_latency.hpp"
 #include "logging/logger.hpp"
 #include "mqtt/mqtt_client.hpp"
@@ -51,6 +52,7 @@
 #include "protocol/telemetry_decoder.hpp"
 #include "registration/registration_payload.hpp"
 #include "registration/registration_state.hpp"
+#include "runtime_status/device_session.hpp"
 #include "state/state_store.hpp"
 #include "telemetry/publisher.hpp"
 #include "uart/mavlink_port_discovery.hpp"
@@ -81,14 +83,17 @@ mavlink_message_t BuildHeartbeat(std::uint8_t system_id) {
 }
 
 registration::OnlineRegistration MakeOnlineRegistration(
-    const state::TelemetryState& snapshot, const std::string& school_name) {
+    const device::Binding& binding, const state::TelemetryState& snapshot,
+    const std::string& school_name) {
+  const bool metadata_matches =
+      snapshot.device_id && *snapshot.device_id == binding.device_id;
   return {
-      .device_id = *snapshot.device_id,
-      .device_type = *snapshot.device_type,
+      .device_id = binding.device_id,
+      .device_type = binding.device_type,
       .school_name = school_name,
-      .dcdw_label = snapshot.dcdw_label,
-      .product = snapshot.product,
-      .version = snapshot.version,
+      .dcdw_label = metadata_matches ? snapshot.dcdw_label : std::nullopt,
+      .product = metadata_matches ? snapshot.product : std::nullopt,
+      .version = metadata_matches ? snapshot.version : std::nullopt,
   };
 }
 
@@ -168,12 +173,28 @@ int main(int argc, char** argv) {
   (*logger)->Info("程序版本：" CNS_RPI_VERSION);
   (*logger)->Info(config::BuildStartupSummary(*app_config));
 
+  std::optional<device::Binding> persisted_binding;
+  const auto loaded_binding =
+      device::LoadBinding(app_config->identity.binding_file);
+  if (!loaded_binding) {
+    (*logger)->Warn("加载设备身份绑定失败，将等待真实身份重新建绑: " +
+                    loaded_binding.error());
+  } else if (*loaded_binding) {
+    persisted_binding = **loaded_binding;
+    (*logger)->Info("已加载设备身份绑定: device_id=" +
+                    persisted_binding->device_id);
+  } else {
+    (*logger)->Info("尚无设备身份绑定，将等待真实F407身份");
+  }
+
   state::StateStore state_store;
-  auto last_heartbeat = std::chrono::steady_clock::now();
-  auto last_cellular_heartbeat = std::chrono::steady_clock::now();
+  const auto started_at = std::chrono::steady_clock::now();
+  runtime_status::DeviceSession device_session(persisted_binding, started_at);
+  auto last_heartbeat = started_at;
+  auto last_cellular_heartbeat = started_at;
   std::optional<mqtt::MqttClient> mqtt_client;
   registration::RegistrationState registration_state;
-  std::optional<std::string> active_device_id;
+  std::optional<device::Binding> active_mqtt_binding;
   std::string registration_topic;
   std::string offline_payload;
   std::string telemetry_snapshot_topic;
@@ -198,6 +219,7 @@ int main(int argc, char** argv) {
   // 共用一个限频器会让其中一种被另一种饿死(设计文档 §3.4)。
   uart::DiscoveryLogLimiter identity_wait_log_limiter(kIdentityWarningInterval);
   uart::DiscoveryLogLimiter uas_id_invalid_log_limiter(kIdentityWarningInterval);
+  uart::DiscoveryLogLimiter binding_error_log_limiter(kIdentityWarningInterval);
   uart::MavlinkSilenceWatchdog silence_watchdog(kMavlinkSilenceTimeout);
   // systemd watchdog 只证明主循环还在转，不反映业务健康：串口断开和 MQTT 断连
   // 各有自己的恢复逻辑（且已验证能自愈），不应升级成整个进程重启。
@@ -223,7 +245,7 @@ int main(int argc, char** argv) {
   unsigned px4_basic_id_requests_sent = 0;
   auto next_qgc_start_attempt = std::chrono::steady_clock::now();
 
-  auto close_mqtt_session = [&](bool publish_offline) {
+  auto fail_pending_control = [&] {
     if (control_transaction.HasPending()) {
       (void)control_transaction.HandleLocalFailure(
           {.code = "device_link_unavailable",
@@ -239,6 +261,10 @@ int main(int argc, char** argv) {
         }
       }
     }
+  };
+
+  auto close_mqtt_session = [&](bool publish_offline) {
+    fail_pending_control();
     if (publish_offline && mqtt_client && mqtt_client->IsConnected() &&
         !registration_topic.empty() && !offline_payload.empty()) {
       (void)mqtt_client->PublishAndWait(
@@ -248,7 +274,7 @@ int main(int argc, char** argv) {
     }
     mqtt_client.reset();
     registration_state = registration::RegistrationState{};
-    active_device_id.reset();
+    active_mqtt_binding.reset();
     registration_topic.clear();
     telemetry_snapshot_topic.clear();
     telemetry_realtime_topic.clear();
@@ -265,7 +291,14 @@ int main(int argc, char** argv) {
   };
 
   auto mark_link_disconnected = [&] {
-    close_mqtt_session(/*publish_offline=*/true);
+    fail_pending_control();
+    device_session.SetLinkAvailable(false);
+    // 主控箱的 MQTT 控制入口绑定于持久化身份，不随瞬时串口故障销毁；PX4
+    // 尚无绑定缓存，暂时保留原有会话关闭行为。
+    if (!active_mqtt_binding ||
+        active_mqtt_binding->device_type != device::Type::kCnsBox) {
+      close_mqtt_session(/*publish_offline=*/true);
+    }
     (*logger)->Error("受控设备串口断开: " + active_serial_device);
     link.reset();
     qgc_udp_bridge.reset();
@@ -314,6 +347,7 @@ int main(int argc, char** argv) {
           controlled_device->type, controlled_device->endpoint.system_id,
           controlled_device->endpoint.component_id);
       if (controlled_device->type == device::Type::kCnsBox) {
+        device_session.SetLinkAvailable(true);
         state_store.UpdateDcdwLabel(
             protocol::FormatDcdwLabel(controlled_device->endpoint.system_id));
       }
@@ -380,8 +414,22 @@ int main(int argc, char** argv) {
       (*logger)->Info("收到设备应答: mavlink_command=" + std::to_string(ack.command) +
                       " 结果=" + control_command::ResultCode(ack.result) + " (" + match + ")");
     }
-    if (!protocol::DecodeAndStore(message, state_store)) {
-      (void)protocol::DecodeExtensionAndStore(message, state_store);
+    const bool decoded_standard =
+        protocol::DecodeAndStore(message, state_store);
+    const bool decoded_extension =
+        decoded_standard
+            ? false
+            : protocol::DecodeExtensionAndStore(message, state_store);
+    const bool is_identity_or_metadata =
+        message.msgid == MAVLINK_MSG_ID_AUTOPILOT_VERSION ||
+        message.msgid == MAVLINK_MSG_ID_OPEN_DRONE_ID_BASIC_ID ||
+        message.msgid == MAVLINK_MSG_ID_OPEN_DRONE_ID_LOCATION ||
+        message.msgid == MAVLINK_MSG_ID_OPEN_DRONE_ID_SYSTEM ||
+        message.msgid == MAVLINK_MSG_ID_OPEN_DRONE_ID_OPERATOR_ID ||
+        message.msgid == MAVLINK_MSG_ID_OPEN_DRONE_ID_SELF_ID;
+    if (controlled_device->type == device::Type::kCnsBox &&
+        (decoded_standard || decoded_extension) && !is_identity_or_metadata) {
+      device_session.ObserveBusinessFrame(now);
     }
 
     // 主控箱和 PX4 统一从 Basic ID 取身份：uas_id 就是 device_id，不再按设备
@@ -398,6 +446,46 @@ int main(int argc, char** argv) {
                         uas_id + "\"");
       }
       return;
+    }
+    if (controlled_device->type == device::Type::kCnsBox) {
+      const device::Binding current_binding{
+          .device_id = uas_id,
+          .device_type = device::Type::kCnsBox,
+      };
+      auto observation = device_session.ObserveIdentity(current_binding);
+      if (observation == runtime_status::IdentityObservation::kUnbound) {
+        const auto persisted = device::BindOrVerify(
+            app_config->identity.binding_file, current_binding);
+        if (!persisted) {
+          if (binding_error_log_limiter.ShouldLog(now)) {
+            (*logger)->Warn("持久化设备身份绑定失败，身份保持未绑定: " +
+                            persisted.error());
+          }
+        } else if (*persisted == device::BindOutcome::kConflict) {
+          if (binding_error_log_limiter.ShouldLog(now)) {
+            (*logger)->Error(
+                "设备身份绑定文件已被其他身份占用，拒绝自动改绑: device_id=" +
+                uas_id);
+          }
+        } else {
+          device_session.ConfirmPersistedBinding();
+          observation = runtime_status::IdentityObservation::kVerified;
+          (*logger)->Info("设备身份绑定已持久化: device_id=" + uas_id);
+        }
+      }
+
+      if (observation == runtime_status::IdentityObservation::kConflict) {
+        (*logger)->Error(
+            "F407身份与持久化绑定冲突，保持原Topic并阻断遥测和控制: 新device_id=" +
+            uas_id);
+        state_store.ResetDeviceState();
+        state_store.UpdateControlledDevice(
+            controlled_device->type, controlled_device->endpoint.system_id,
+            controlled_device->endpoint.component_id);
+        state_store.UpdateDcdwLabel(
+            protocol::FormatDcdwLabel(controlled_device->endpoint.system_id));
+        return;
+      }
     }
     switch (state_store.UpdateDeviceId(uas_id)) {
       case state::DeviceIdUpdate::kUnchanged:
@@ -591,55 +679,67 @@ int main(int argc, char** argv) {
       }
     }
 
+    device_session.Tick(now);
     auto mqtt_snapshot = state_store.Snapshot();
-    if (mqtt_client && active_device_id && mqtt_snapshot.device_id &&
-        *mqtt_snapshot.device_id != *active_device_id) {
+    if (mqtt_client && active_mqtt_binding &&
+        active_mqtt_binding->device_type == device::Type::kFlightController &&
+        mqtt_snapshot.device_id &&
+        *mqtt_snapshot.device_id != active_mqtt_binding->device_id) {
       close_mqtt_session(/*publish_offline=*/true);
     }
 
     if (!mqtt_client) {
       auto snapshot = mqtt_snapshot;
-      if (snapshot.device_id && snapshot.device_type) {
+      std::optional<device::Binding> candidate_binding;
+      if (const auto* binding = device_session.ActiveBinding()) {
+        candidate_binding = *binding;
+      } else if (snapshot.device_id && snapshot.device_type) {
+        candidate_binding = device::Binding{
+            .device_id = *snapshot.device_id,
+            .device_type = *snapshot.device_type,
+        };
+      }
+      if (candidate_binding) {
         if (!registration::IsValidDeviceIdentity(
                 app_config->mqtt.connection.client_id_prefix,
-                *snapshot.device_id)) {
+                candidate_binding->device_id)) {
           (*logger)->Warn(
               "device_id或MQTT Client ID前缀含非法字符，暂不连接MQTT");
         } else {
           const auto& topics = app_config->mqtt.topics;
           registration_topic = mqtt::BuildRegistrationTopic(
-              topics.topic_namespace, *snapshot.device_id,
+              topics.topic_namespace, candidate_binding->device_id,
               topics.registration.suffix);
           telemetry_snapshot_topic = mqtt::BuildTelemetryTopic(
-              topics.topic_namespace, *snapshot.device_id,
+              topics.topic_namespace, candidate_binding->device_id,
               topics.telemetry_snapshot.suffix);
           telemetry_realtime_topic = mqtt::BuildTelemetryTopic(
-              topics.topic_namespace, *snapshot.device_id,
+              topics.topic_namespace, candidate_binding->device_id,
               topics.telemetry_realtime.suffix);
           px4_latency_probe_topic = mqtt::BuildPx4LatencyProbeTopic(
-              topics.topic_namespace, *snapshot.device_id);
+              topics.topic_namespace, candidate_binding->device_id);
           px4_latency_ack_topic = mqtt::BuildPx4LatencyAckTopic(
-              topics.topic_namespace, *snapshot.device_id);
+              topics.topic_namespace, candidate_binding->device_id);
           config_set_topic = mqtt::BuildConfigSetTopic(
-              topics.topic_namespace, *snapshot.device_id,
+              topics.topic_namespace, candidate_binding->device_id,
               topics.config_set.suffix);
           config_ack_topic = mqtt::BuildConfigAckTopic(
-              topics.topic_namespace, *snapshot.device_id,
+              topics.topic_namespace, candidate_binding->device_id,
               topics.config_ack.suffix);
           control_set_topic = mqtt::BuildControlSetTopic(
-              topics.topic_namespace, *snapshot.device_id,
+              topics.topic_namespace, candidate_binding->device_id,
               topics.control_set.suffix);
           control_ack_topic = mqtt::BuildControlAckTopic(
-              topics.topic_namespace, *snapshot.device_id,
+              topics.topic_namespace, candidate_binding->device_id,
               topics.control_ack.suffix);
           offline_payload = registration::BuildOfflinePayload(
-              *snapshot.device_id, *snapshot.device_type);
+              candidate_binding->device_id, candidate_binding->device_type);
           mqtt_client = mqtt::MqttClient::Open({
             .broker_host = app_config->mqtt.connection.host,
             .broker_port = app_config->mqtt.connection.port,
             .client_id = registration::BuildClientId(
                 app_config->mqtt.connection.client_id_prefix,
-                *snapshot.device_id),
+                candidate_binding->device_id),
             .username = app_config->mqtt.auth.username,
             .password = app_config->mqtt.auth.password,
             .keepalive_seconds = app_config->mqtt.connection.keepalive_seconds,
@@ -656,15 +756,15 @@ int main(int argc, char** argv) {
               std::vector<std::pair<std::string, int>> subscriptions{
                   {config_set_topic, topics.config_set.qos},
                   {control_set_topic, topics.control_set.qos}};
-              if (snapshot.device_type &&
-                  *snapshot.device_type == device::Type::kFlightController) {
+              if (candidate_binding->device_type ==
+                  device::Type::kFlightController) {
                 subscriptions.emplace_back(px4_latency_probe_topic, 0);
               }
               return subscriptions;
             }(),
           }, **logger);
           if (mqtt_client) {
-            active_device_id = *snapshot.device_id;
+            active_mqtt_binding = *candidate_binding;
             telemetry_publisher.emplace(
                 std::vector<telemetry::ChannelDefinition>{
                     {{"遥测快照通道", telemetry_snapshot_topic,
@@ -717,33 +817,32 @@ int main(int argc, char** argv) {
       }
     }
 
-    if (mqtt_client && active_device_id && mqtt_snapshot.device_id &&
-        *active_device_id == *mqtt_snapshot.device_id) {
+    if (mqtt_client && active_mqtt_binding) {
       auto snapshot = state_store.Snapshot();
-      if (snapshot.device_id && snapshot.device_type) {
-        const auto online_payload = registration::BuildOnlinePayload(
-            MakeOnlineRegistration(snapshot,
-                                   app_config->identity.school_name));
-        if (registration_state.ShouldPublish(mqtt_client->IsConnected(), online_payload)) {
-          const auto& registration_config = app_config->mqtt.topics.registration;
-          if (mqtt_client->Publish(registration_topic, online_payload, registration_config.qos,
-                                   /*retain=*/true)) {
-            registration_state.MarkPublished(online_payload);
-          } else {
-            (*logger)->Warn("MQTT注册发布失败，下一轮重试");
-          }
+      const auto online_payload = registration::BuildOnlinePayload(
+          MakeOnlineRegistration(*active_mqtt_binding, snapshot,
+                                 app_config->identity.school_name));
+      if (registration_state.ShouldPublish(mqtt_client->IsConnected(),
+                                           online_payload)) {
+        const auto& registration_config = app_config->mqtt.topics.registration;
+        if (mqtt_client->Publish(registration_topic, online_payload,
+                                 registration_config.qos,
+                                 /*retain=*/true)) {
+          registration_state.MarkPublished(online_payload);
+        } else {
+          (*logger)->Warn("MQTT注册发布失败，下一轮重试");
         }
       }
     }
 
-    if (mqtt_client && active_device_id && mqtt_snapshot.device_id &&
-        *active_device_id == *mqtt_snapshot.device_id) {
+    if (mqtt_client && active_mqtt_binding) {
       if (auto message = mqtt_client->TryPopMessage()) {
         if (message->topic == px4_latency_probe_topic &&
             controlled_device &&
             controlled_device->type == device::Type::kFlightController) {
           const auto probe =
-              latency::ParsePx4LatencyProbe(message->payload, *active_device_id);
+              latency::ParsePx4LatencyProbe(message->payload,
+                                            active_mqtt_binding->device_id);
           if (!probe) {
             (*logger)->Warn("丢弃非法PX4链路探测: " + probe.error());
           } else if (!mqtt_client->Publish(
@@ -805,13 +904,43 @@ int main(int argc, char** argv) {
             (void)mqtt_client->Publish(control_ack_topic, ack.dump(),
                                        app_config->mqtt.topics.control_ack.qos,
                                        /*retain=*/false);
-          } else if (!controlled_device ||
-                     controlled_device->type != device::Type::kCnsBox) {
+          } else if (active_mqtt_binding->device_type !=
+                     device::Type::kCnsBox) {
             const auto ack = control_command::BuildRejectedAck(
                 command->command_id, command->command,
                 {.code = "unsupported_device_type",
                  .message =
                      "当前命令属于主控箱私有协议，不能发送给 PX4 飞控"});
+            (void)mqtt_client->Publish(
+                control_ack_topic, ack.dump(),
+                app_config->mqtt.topics.control_ack.qos, /*retain=*/false);
+          } else if (!link || !controlled_device) {
+            const auto ack = control_command::BuildRejectedAck(
+                command->command_id, command->command,
+                {.code = "device_link_unavailable",
+                 .message = "受控设备串口链路不可用"});
+            (void)mqtt_client->Publish(
+                control_ack_topic, ack.dump(),
+                app_config->mqtt.topics.control_ack.qos, /*retain=*/false);
+          } else if (controlled_device->type != device::Type::kCnsBox) {
+            const auto ack = control_command::BuildRejectedAck(
+                command->command_id, command->command,
+                {.code = "device_identity_conflict",
+                 .message = "当前串口设备与持久化主控箱绑定不一致"});
+            (void)mqtt_client->Publish(
+                control_ack_topic, ack.dump(),
+                app_config->mqtt.topics.control_ack.qos, /*retain=*/false);
+          } else if (!device_session.CanSendDeviceCommands()) {
+            const auto status = device_session.CurrentOnlineStatus();
+            const bool conflict =
+                status && status->identity_status ==
+                              runtime_status::IdentityStatus::kConflict;
+            const auto ack = control_command::BuildRejectedAck(
+                command->command_id, command->command,
+                {.code = conflict ? "device_identity_conflict"
+                                  : "device_identity_unverified",
+                 .message = conflict ? "F407身份与持久化绑定冲突"
+                                     : "F407身份尚未与持久化绑定完成核验"});
             (void)mqtt_client->Publish(
                 control_ack_topic, ack.dump(),
                 app_config->mqtt.topics.control_ack.qos, /*retain=*/false);
@@ -823,10 +952,6 @@ int main(int argc, char** argv) {
               (void)mqtt_client->Publish(control_ack_topic, submission.ack->dump(),
                                          app_config->mqtt.topics.control_ack.qos,
                                          /*retain=*/false);
-            } else if (submission.should_send_to_mcu && !link) {
-              (void)control_transaction.HandleLocalFailure(
-                  {.code = "device_link_unavailable",
-                   .message = "受控设备串口链路不可用"});
             } else if (submission.should_send_to_mcu && !rpi_system_id) {
               (void)control_transaction.HandleLocalFailure(
                   {.code = "device_identity_unknown",
@@ -877,9 +1002,14 @@ int main(int argc, char** argv) {
       break;
     }
 
-    if (mqtt_client && telemetry_publisher && active_device_id &&
-        mqtt_snapshot.device_id &&
-        *active_device_id == *mqtt_snapshot.device_id &&
+    const bool telemetry_identity_matches =
+        active_mqtt_binding && mqtt_snapshot.device_id &&
+        active_mqtt_binding->device_id == *mqtt_snapshot.device_id;
+    const bool telemetry_allowed =
+        telemetry_identity_matches && active_mqtt_binding &&
+        (active_mqtt_binding->device_type != device::Type::kCnsBox ||
+         device_session.CanPublishTelemetry());
+    if (mqtt_client && telemetry_publisher && telemetry_allowed &&
         mqtt_client->IsConnected()) {
       const auto attempts = telemetry_publisher->Tick(
           now, [&] { return state_store.Snapshot(); },

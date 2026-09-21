@@ -75,6 +75,9 @@ class Tracker {
   /// 记录从真实 OPEN_DRONE_ID_BASIC_ID 提取并校验通过的当前身份。
   void ObserveIdentity(const std::string& current_device_id);
 
+  /// 首次绑定原子落盘成功后，立即把本次真实身份标记为已验证。
+  void ConfirmPersistedIdentity(const std::string& persisted_device_id);
+
   /// 推进固定 10 秒静默判定；调用频率不会改变状态语义。
   void Tick(Clock::time_point now);
 
