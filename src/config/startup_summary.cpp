@@ -18,7 +18,10 @@ std::string BuildStartupSummary(const AppConfig& config) {
       << "，MQTT重连初始等待="
       << config.mqtt.connection.reconnect.delay_seconds
       << "秒，MQTT重连最大等待="
-      << config.mqtt.connection.reconnect.delay_max_seconds << "秒";
+      << config.mqtt.connection.reconnect.delay_max_seconds
+      << "秒，运行三态Topic=" << config.mqtt.topics.topic_namespace
+      << "/{device_id}/" << config.mqtt.topics.runtime_status.suffix
+      << "，设备绑定文件=" << config.identity.binding_file.string();
   return out.str();
 }
 

@@ -22,7 +22,7 @@ nano config/config.json
 ./scripts/install_deps.sh
 ```
 
-先确认现场 MQTT 地址、APN、串口自动发现和上报周期，再执行脚本。`install_deps.sh` 安装依赖并调用 `deploy.sh` 构建、初始化配置、安装 helper 和两个常驻服务。已有现场配置会保留，不用仓库样例覆盖。完整步骤与旧只读设备迁移边界见 [新设备部署手册](docs/新设备部署手册.md)。
+先确认现场 MQTT 地址、APN、串口自动发现、上报周期及 `identity.binding_file`，再执行脚本。`install_deps.sh` 安装依赖并调用 `deploy.sh` 构建、初始化配置、安装 helper 和两个常驻服务。已有现场配置会保留，不用仓库样例覆盖。完整步骤与旧只读设备迁移边界见 [新设备部署手册](docs/新设备部署手册.md)。
 
 ```bash
 systemctl status cns-rpi.service cellular-dialup.service --no-pager
@@ -38,6 +38,12 @@ journalctl -u cns-rpi.service -u cellular-dialup.service -n 100 --no-pager
 
 两个通道均为 QoS 0、`retain=false`，失败帧直接丢弃。快照包含实时通道的核心动态数据。服务端须先支持新 Topic，再更新设备。详细契约见 [高低频遥测发布协议](docs/高低频遥测发布协议.md) 和 [服务端迁移说明](docs/服务端对接-高低频遥测Topic迁移.md)。
 
+## 主控箱运行三态
+
+主控箱在 `{namespace}/{device_id}/runtime/status/v1` 以 QoS 1、`retain=true` 发布 Pi 控制链、F407 业务链和身份核验三态。状态只在内容变化时发布；每次 MQTT 连接或重连后强制重发当前值，不增加周期心跳。F407 连续 10 秒没有有效业务帧只会令业务状态离线，不会关闭 MQTT 控制入口。
+
+Pi 将首次真实核验的 F407 身份保存到 `identity.binding_file`。重启或串口暂时失联时可用缓存身份恢复 MQTT；身份重新出现后必须一致才允许遥测和主控箱命令，冲突不会自动改绑。异常断线由 runtime Last Will 发布 `offline|unknown|cached`，从未成功持久化绑定时为 `offline|unknown|unbound`。registration 与运行三态相互独立。协议、维护边界和验收命令见 [设备运行三态发布与验收](docs/设备运行三态发布与验收.md)。
+
 ## 开发与维护
 
 项目使用 C++23/CMake，在树莓派 ARM64 上原生构建。开发机修改后推送，树莓派拉取并执行 `./scripts/deploy.sh`；新增依赖时重新执行 `./scripts/install_deps.sh`。脚本会配置 TUNA apt 源及 GitHub 镜像重写；镜像不可用时按部署手册处理。
@@ -47,5 +53,6 @@ journalctl -u cns-rpi.service -u cellular-dialup.service -n 100 --no-pager
 - 后续架构目标是由 mavlink-router 独占串口，业务解析与经服务器 5760 入口的远程 MAVLink 透传分路；远程透传前按服务器注册协议握手。该架构尚未实施。
 - [协作规则](docs/协作规则.md)：分支、中文提交说明、注释和验证要求。
 - [M7 系统化部署设计](docs/M7系统化部署设计.md)：服务、配置、日志和部署边界。
+- [设备运行三态发布与验收](docs/设备运行三态发布与验收.md)：运行三态、身份绑定、部署回滚和跨端验收证据。
 
 新确认的设计和选型须同步文档。真实配置与构建产物不提交到仓库。
