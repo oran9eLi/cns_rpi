@@ -27,6 +27,12 @@ std::string BuildTelemetryTopic(const std::string& topic_namespace, const std::s
   return BuildDeviceTopic(topic_namespace, device_id, suffix);
 }
 
+std::string BuildRuntimeStatusTopic(const std::string& topic_namespace,
+                                    const std::string& device_id,
+                                    const std::string& suffix) {
+  return BuildDeviceTopic(topic_namespace, device_id, suffix);
+}
+
 std::string BuildPx4LatencyProbeTopic(const std::string& topic_namespace,
                                       const std::string& device_id) {
   return BuildDeviceTopic(topic_namespace, device_id, "px4/latency/probe/v1");

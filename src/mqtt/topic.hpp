@@ -32,6 +32,11 @@ std::string BuildRegistrationTopic(const std::string& topic_namespace,
 std::string BuildTelemetryTopic(const std::string& topic_namespace, const std::string& device_id,
                                 const std::string& suffix);
 
+/// 拼主控箱运行三态 topic，suffix 固定来自已校验的 runtime status 配置。
+std::string BuildRuntimeStatusTopic(const std::string& topic_namespace,
+                                    const std::string& device_id,
+                                    const std::string& suffix);
+
 /// 服务端向 PX4 树莓派发送真实 RTT 探测的 QoS 0 topic。
 std::string BuildPx4LatencyProbeTopic(const std::string& topic_namespace,
                                       const std::string& device_id);
