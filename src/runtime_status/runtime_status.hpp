@@ -11,6 +11,7 @@
  */
 
 #include <chrono>
+#include <cstdint>
 #include <expected>
 #include <optional>
 #include <string>
@@ -58,6 +59,10 @@ std::expected<Publication, std::string> BuildLastWillPublication(
     const std::string& topic_namespace, const std::string& topic_suffix,
     const std::string& device_id, bool has_persisted_binding);
 
+/// 已建立连接的遗嘱绑定事实与当前持久化事实不同时，必须重建 MQTT 客户端。
+bool LastWillNeedsRefresh(std::optional<bool> configured_has_binding,
+                          bool current_has_binding);
+
 /**
  * @brief 跟踪一台主控箱本次进程内的业务和身份事实。
  * @details 控制链状态由发布时的 MQTT 连接事实决定，因此普通快照恒为 online；
@@ -78,6 +83,9 @@ class Tracker {
   /// 首次绑定原子落盘成功后，立即把本次真实身份标记为已验证。
   void ConfirmPersistedIdentity(const std::string& persisted_device_id);
 
+  /// 当前串口会话失效后撤销实时核验结论，仅保留缓存或未绑定事实。
+  void InvalidateCurrentIdentity();
+
   /// 推进固定 10 秒静默判定；调用频率不会改变状态语义。
   void Tick(Clock::time_point now);
 
@@ -95,11 +103,12 @@ class Tracker {
 /// 只在内容变化或 MQTT 连接上升沿请求发布；失败时调用方不得 MarkPublished。
 class PublicationState {
  public:
-  bool ShouldPublish(bool mqtt_connected, const Snapshot& current);
+  bool ShouldPublish(bool mqtt_connected, std::uint64_t connection_generation,
+                     const Snapshot& current);
   void MarkPublished(const Snapshot& snapshot);
 
  private:
-  bool was_connected_{false};
+  std::uint64_t observed_connection_generation_{0};
   bool connection_requires_publish_{false};
   std::optional<Snapshot> last_published_;
 };

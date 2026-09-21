@@ -117,6 +117,12 @@ TEST_CASE("主程序使用运行三态遗嘱并以非阻塞方式事件发布") 
   CHECK(text.find("runtime_status::PublicationState") != std::string::npos);
   CHECK(text.find("runtime_publication_state.ShouldPublish(") !=
         std::string::npos);
+  CHECK(text.find("mqtt_client->ConnectionGeneration()") !=
+        std::string::npos);
+  CHECK(text.find("mqtt_will_has_persisted_binding") !=
+        std::string::npos);
+  CHECK(text.find("CanAcceptTelemetryMessage(") !=
+        std::string::npos);
 
   const auto publish_branch = Between(
       text, "// 运行三态发布开始", "// 运行三态发布结束");

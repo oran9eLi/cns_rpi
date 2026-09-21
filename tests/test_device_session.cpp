@@ -53,11 +53,45 @@ TEST_CASE("首次身份持久化成功后转为已验证") {
   REQUIRE(session.ObserveIdentity(CachedBinding()) ==
           runtime_status::IdentityObservation::kUnbound);
 
-  session.ConfirmPersistedBinding();
+  CHECK(session.ConfirmPersistedBinding(CachedBinding()));
 
   CHECK(session.HasPersistedBinding());
   CHECK(session.CurrentOnlineStatus()->identity_status ==
         runtime_status::IdentityStatus::kVerified);
+}
+
+TEST_CASE("断链重连后必须重新核验Basic ID才能恢复控制") {
+  runtime_status::DeviceSession session(CachedBinding(), kStartedAt);
+  session.SetLinkAvailable(true);
+  REQUIRE(session.ObserveIdentity(CachedBinding()) ==
+          runtime_status::IdentityObservation::kVerified);
+  REQUIRE(session.CanSendDeviceCommands());
+
+  session.SetLinkAvailable(false);
+  session.SetLinkAvailable(true);
+
+  CHECK_FALSE(session.CurrentLinkIdentityVerified());
+  CHECK_FALSE(session.CanSendDeviceCommands());
+  CHECK(session.ObserveIdentity(CachedBinding()) ==
+        runtime_status::IdentityObservation::kVerified);
+  CHECK(session.CurrentLinkIdentityVerified());
+  CHECK(session.CanSendDeviceCommands());
+}
+
+TEST_CASE("未绑定候选身份变化时拒绝持久化到另一身份") {
+  runtime_status::DeviceSession session(std::nullopt, kStartedAt);
+  auto changed = CachedBinding();
+  changed.device_id = "DCDWCNS1OTHERDEVICE";
+  REQUIRE(session.ObserveIdentity(CachedBinding()) ==
+          runtime_status::IdentityObservation::kUnbound);
+
+  CHECK(session.ObserveIdentity(changed) ==
+        runtime_status::IdentityObservation::kUnboundMismatch);
+  REQUIRE(session.ActiveBinding() != nullptr);
+  CHECK(*session.ActiveBinding() == CachedBinding());
+  CHECK_FALSE(session.ConfirmPersistedBinding(changed));
+  CHECK_FALSE(session.HasPersistedBinding());
+  CHECK_FALSE(session.CanSendDeviceCommands());
 }
 
 TEST_CASE("串口断开只撤销设备动作和遥测资格不删除绑定") {
@@ -76,7 +110,7 @@ TEST_CASE("串口断开只撤销设备动作和遥测资格不删除绑定") {
   CHECK_FALSE(session.CanSendDeviceCommands());
   CHECK_FALSE(session.CanPublishTelemetry());
   CHECK(session.CurrentOnlineStatus()->identity_status ==
-        runtime_status::IdentityStatus::kVerified);
+        runtime_status::IdentityStatus::kCached);
 }
 
 TEST_CASE("冲突身份不切换绑定并阻断动作和遥测") {
@@ -94,6 +128,19 @@ TEST_CASE("冲突身份不切换绑定并阻断动作和遥测") {
         runtime_status::IdentityStatus::kConflict);
   CHECK_FALSE(session.CanSendDeviceCommands());
   CHECK_FALSE(session.CanPublishTelemetry());
+  CHECK_FALSE(session.CanAcceptTelemetryMessage(/*is_basic_id=*/false));
+  CHECK(session.CanAcceptTelemetryMessage(/*is_basic_id=*/true));
+}
+
+TEST_CASE("身份复核前普通业务帧不能进入共享遥测缓存") {
+  runtime_status::DeviceSession session(CachedBinding(), kStartedAt);
+  session.SetLinkAvailable(true);
+
+  CHECK_FALSE(session.CanAcceptTelemetryMessage(/*is_basic_id=*/false));
+  CHECK(session.CanAcceptTelemetryMessage(/*is_basic_id=*/true));
+  REQUIRE(session.ObserveIdentity(CachedBinding()) ==
+          runtime_status::IdentityObservation::kVerified);
+  CHECK(session.CanAcceptTelemetryMessage(/*is_basic_id=*/false));
 }
 
 TEST_CASE("业务静默满十秒只改变业务状态且MQTT身份仍保留") {

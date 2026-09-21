@@ -175,18 +175,45 @@ TEST_CASE("状态未变化时不周期发布而重连必须重新发布") {
   runtime_status::PublicationState state;
   const auto snapshot = VerifiedOnline();
 
-  CHECK_FALSE(state.ShouldPublish(/*mqtt_connected=*/false, snapshot));
-  CHECK(state.ShouldPublish(/*mqtt_connected=*/true, snapshot));
+  CHECK_FALSE(state.ShouldPublish(/*mqtt_connected=*/false,
+                                  /*connection_generation=*/0, snapshot));
+  CHECK(state.ShouldPublish(/*mqtt_connected=*/true,
+                            /*connection_generation=*/1, snapshot));
   state.MarkPublished(snapshot);
-  CHECK_FALSE(state.ShouldPublish(/*mqtt_connected=*/true, snapshot));
-  CHECK_FALSE(state.ShouldPublish(/*mqtt_connected=*/false, snapshot));
-  CHECK(state.ShouldPublish(/*mqtt_connected=*/true, snapshot));
+  CHECK_FALSE(state.ShouldPublish(/*mqtt_connected=*/true,
+                                  /*connection_generation=*/1, snapshot));
+  CHECK_FALSE(state.ShouldPublish(/*mqtt_connected=*/false,
+                                  /*connection_generation=*/1, snapshot));
+  CHECK(state.ShouldPublish(/*mqtt_connected=*/true,
+                            /*connection_generation=*/2, snapshot));
+}
+
+TEST_CASE("主循环漏采断线瞬间时仍按连接代次识别重连") {
+  runtime_status::PublicationState state;
+  const auto snapshot = VerifiedOnline();
+  REQUIRE(state.ShouldPublish(/*mqtt_connected=*/true,
+                              /*connection_generation=*/1, snapshot));
+  state.MarkPublished(snapshot);
+
+  CHECK(state.ShouldPublish(/*mqtt_connected=*/true,
+                            /*connection_generation=*/3, snapshot));
 }
 
 TEST_CASE("发布失败时保持待发布状态") {
   runtime_status::PublicationState state;
   const auto snapshot = VerifiedOnline();
 
-  CHECK(state.ShouldPublish(/*mqtt_connected=*/true, snapshot));
-  CHECK(state.ShouldPublish(/*mqtt_connected=*/true, snapshot));
+  CHECK(state.ShouldPublish(/*mqtt_connected=*/true,
+                            /*connection_generation=*/1, snapshot));
+  CHECK(state.ShouldPublish(/*mqtt_connected=*/true,
+                            /*connection_generation=*/1, snapshot));
+}
+
+TEST_CASE("持久化事实变化时要求重建MQTT遗嘱") {
+  CHECK_FALSE(runtime_status::LastWillNeedsRefresh(std::nullopt,
+                                                   /*has_binding=*/true));
+  CHECK_FALSE(runtime_status::LastWillNeedsRefresh(
+      std::optional<bool>{true}, /*has_binding=*/true));
+  CHECK(runtime_status::LastWillNeedsRefresh(
+      std::optional<bool>{false}, /*has_binding=*/true));
 }

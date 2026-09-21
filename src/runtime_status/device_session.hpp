@@ -20,6 +20,7 @@ enum class IdentityObservation {
   kVerified,  ///< 当前真实身份与持久化绑定一致。
   kConflict,  ///< 当前真实身份与持久化绑定冲突。
   kUnbound,   ///< 已取得真实身份，但尚无合法持久化绑定。
+  kUnboundMismatch,  ///< 未绑定候选锁定后又观察到另一身份，拒绝换候选。
 };
 
 class DeviceSession {
@@ -37,14 +38,17 @@ class DeviceSession {
    */
   IdentityObservation ObserveIdentity(const device::Binding& current);
 
-  /// BindOrVerify 成功后确认当前活动身份已经持久化。
-  void ConfirmPersistedBinding();
+  /// BindOrVerify 成功后核对落盘身份并确认；不一致时拒绝确认。
+  bool ConfirmPersistedBinding(const device::Binding& persisted_binding);
 
   void SetLinkAvailable(bool available);
+  bool CurrentLinkIdentityVerified() const;
   void ObserveBusinessFrame(Clock::time_point now);
   void Tick(Clock::time_point now);
 
   std::optional<Snapshot> CurrentOnlineStatus() const;
+  /// Basic ID 始终允许用于核验；普通遥测只允许进入当前已核验链路的共享缓存。
+  bool CanAcceptTelemetryMessage(bool is_basic_id) const;
   bool CanSendDeviceCommands() const;
   bool CanPublishTelemetry() const;
 
@@ -53,6 +57,8 @@ class DeviceSession {
   std::optional<device::Binding> active_binding_;
   bool has_persisted_binding_{false};
   bool link_available_{false};
+  bool current_link_identity_verified_{false};
+  std::optional<device::Binding> current_identity_;
   std::optional<Tracker> tracker_;
 };
 

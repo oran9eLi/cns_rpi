@@ -21,6 +21,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <deque>
 #include <memory>
 #include <mutex>
@@ -120,6 +121,9 @@ class MqttClient {
 
   /// 读取当前连接状态（由 on_connect/on_disconnect 回调维护，不主动问库）。
   bool IsConnected() const;
+
+  /// 每次成功建立或重建 Broker 连接时递增，主线程即使漏采断线瞬间也能识别重连。
+  std::uint64_t ConnectionGeneration() const;
 
   /// 主线程非阻塞读取一条由 MQTT 回调复制入队的消息。
   std::optional<IncomingMessage> TryPopMessage();

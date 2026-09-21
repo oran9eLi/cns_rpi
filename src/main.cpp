@@ -225,6 +225,7 @@ int main(int argc, char** argv) {
   registration::RegistrationState registration_state;
   runtime_status::PublicationState runtime_publication_state;
   bool runtime_publish_failure_logged = false;
+  std::optional<bool> mqtt_will_has_persisted_binding;
   std::optional<device::Binding> active_mqtt_binding;
   std::string registration_topic;
   std::string offline_payload;
@@ -315,6 +316,7 @@ int main(int argc, char** argv) {
     registration_state = registration::RegistrationState{};
     runtime_publication_state = runtime_status::PublicationState{};
     runtime_publish_failure_logged = false;
+    mqtt_will_has_persisted_binding.reset();
     active_mqtt_binding.reset();
     registration_topic.clear();
     runtime_status_topic.clear();
@@ -457,12 +459,17 @@ int main(int argc, char** argv) {
       (*logger)->Info("收到设备应答: mavlink_command=" + std::to_string(ack.command) +
                       " 结果=" + control_command::ResultCode(ack.result) + " (" + match + ")");
     }
+    const bool is_cns_basic_id =
+        controlled_device->type == device::Type::kCnsBox &&
+        message.msgid == MAVLINK_MSG_ID_OPEN_DRONE_ID_BASIC_ID;
+    const bool may_update_telemetry =
+        controlled_device->type != device::Type::kCnsBox ||
+        device_session.CanAcceptTelemetryMessage(is_cns_basic_id);
     const bool decoded_standard =
-        protocol::DecodeAndStore(message, state_store);
+        may_update_telemetry && protocol::DecodeAndStore(message, state_store);
     const bool decoded_extension =
-        decoded_standard
-            ? false
-            : protocol::DecodeExtensionAndStore(message, state_store);
+        may_update_telemetry && !decoded_standard &&
+        protocol::DecodeExtensionAndStore(message, state_store);
     const bool is_identity_or_metadata =
         message.msgid == MAVLINK_MSG_ID_AUTOPILOT_VERSION ||
         message.msgid == MAVLINK_MSG_ID_OPEN_DRONE_ID_BASIC_ID ||
@@ -496,6 +503,19 @@ int main(int argc, char** argv) {
           .device_type = device::Type::kCnsBox,
       };
       auto observation = device_session.ObserveIdentity(current_binding);
+      if (observation ==
+          runtime_status::IdentityObservation::kUnboundMismatch) {
+        (*logger)->Error(
+            "F407未绑定候选身份发生变化，保持首次候选并拒绝建绑: 新device_id=" +
+            uas_id);
+        state_store.ResetDeviceState();
+        state_store.UpdateControlledDevice(
+            controlled_device->type, controlled_device->endpoint.system_id,
+            controlled_device->endpoint.component_id);
+        state_store.UpdateDcdwLabel(
+            protocol::FormatDcdwLabel(controlled_device->endpoint.system_id));
+        return;
+      }
       if (observation == runtime_status::IdentityObservation::kUnbound) {
         const auto persisted = device::BindOrVerify(
             app_config->identity.binding_file, current_binding);
@@ -511,9 +531,12 @@ int main(int argc, char** argv) {
                 uas_id);
           }
         } else {
-          device_session.ConfirmPersistedBinding();
-          observation = runtime_status::IdentityObservation::kVerified;
-          (*logger)->Info("设备身份绑定已持久化: device_id=" + uas_id);
+          if (device_session.ConfirmPersistedBinding(current_binding)) {
+            observation = runtime_status::IdentityObservation::kVerified;
+            (*logger)->Info("设备身份绑定已持久化: device_id=" + uas_id);
+          } else if (binding_error_log_limiter.ShouldLog(now)) {
+            (*logger)->Error("设备身份绑定落盘结果与当前身份不一致，拒绝确认");
+          }
         }
       }
 
@@ -731,6 +754,28 @@ int main(int argc, char** argv) {
       close_mqtt_session(/*publish_offline=*/true);
     }
 
+    if (mqtt_client && active_mqtt_binding &&
+        active_mqtt_binding->device_type == device::Type::kCnsBox &&
+        runtime_status::LastWillNeedsRefresh(
+            mqtt_will_has_persisted_binding,
+            device_session.HasPersistedBinding())) {
+      const auto refreshed_will = runtime_status::BuildLastWillPublication(
+          app_config->mqtt.topics.topic_namespace,
+          app_config->mqtt.topics.runtime_status.suffix,
+          active_mqtt_binding->device_id,
+          device_session.HasPersistedBinding());
+      if (refreshed_will) {
+        runtime_status_topic = refreshed_will->topic;
+        runtime_offline_payload = refreshed_will->payload;
+        (*logger)->Info(
+            "设备绑定持久化状态已变化，重建MQTT连接以更新运行三态遗嘱");
+        close_mqtt_session(/*publish_offline=*/true);
+      } else {
+        (*logger)->Warn("更新MQTT运行三态遗嘱失败: " +
+                        refreshed_will.error());
+      }
+    }
+
     if (!mqtt_client) {
       auto snapshot = mqtt_snapshot;
       std::optional<device::Binding> candidate_binding;
@@ -833,6 +878,10 @@ int main(int argc, char** argv) {
           }
           if (mqtt_client) {
             active_mqtt_binding = *candidate_binding;
+            if (candidate_binding->device_type == device::Type::kCnsBox) {
+              mqtt_will_has_persisted_binding =
+                  device_session.HasPersistedBinding();
+            }
             telemetry_publisher.emplace(
                 std::vector<telemetry::ChannelDefinition>{
                     {{"遥测快照通道", telemetry_snapshot_topic,
@@ -909,6 +958,7 @@ int main(int argc, char** argv) {
       const auto runtime_snapshot = device_session.CurrentOnlineStatus();
       if (runtime_snapshot && runtime_publication_state.ShouldPublish(
                                   mqtt_client->IsConnected(),
+                                  mqtt_client->ConnectionGeneration(),
                                   *runtime_snapshot)) {
         const auto publication = runtime_status::BuildPublication(
             app_config->mqtt.topics.topic_namespace,

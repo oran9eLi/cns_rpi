@@ -32,33 +32,55 @@ bool DeviceSession::HasPersistedBinding() const {
 
 IdentityObservation DeviceSession::ObserveIdentity(
     const device::Binding& current) {
+  current_identity_ = current;
   if (!active_binding_) {
     active_binding_ = current;
     tracker_.emplace(current.device_id, std::nullopt, started_at_);
   }
 
   if (!has_persisted_binding_) {
-    if (current.device_id == active_binding_->device_id && tracker_) {
+    current_link_identity_verified_ = false;
+    if (current != *active_binding_) {
+      return IdentityObservation::kUnboundMismatch;
+    }
+    if (tracker_) {
       tracker_->ObserveIdentity(current.device_id);
     }
     return IdentityObservation::kUnbound;
   }
 
   tracker_->ObserveIdentity(current.device_id);
-  return current == *active_binding_ ? IdentityObservation::kVerified
-                                     : IdentityObservation::kConflict;
+  current_link_identity_verified_ = current == *active_binding_;
+  return current_link_identity_verified_ ? IdentityObservation::kVerified
+                                         : IdentityObservation::kConflict;
 }
 
-void DeviceSession::ConfirmPersistedBinding() {
-  if (!active_binding_ || !tracker_) {
-    return;
+bool DeviceSession::ConfirmPersistedBinding(
+    const device::Binding& persisted_binding) {
+  if (!active_binding_ || !tracker_ || !current_identity_ ||
+      persisted_binding != *active_binding_ ||
+      persisted_binding != *current_identity_) {
+    return false;
   }
   has_persisted_binding_ = true;
   tracker_->ConfirmPersistedIdentity(active_binding_->device_id);
+  current_link_identity_verified_ = link_available_;
+  return true;
 }
 
 void DeviceSession::SetLinkAvailable(bool available) {
   link_available_ = available;
+  if (!available) {
+    current_link_identity_verified_ = false;
+    current_identity_.reset();
+    if (tracker_) {
+      tracker_->InvalidateCurrentIdentity();
+    }
+  }
+}
+
+bool DeviceSession::CurrentLinkIdentityVerified() const {
+  return current_link_identity_verified_;
 }
 
 void DeviceSession::ObserveBusinessFrame(Clock::time_point now) {
@@ -80,9 +102,13 @@ std::optional<Snapshot> DeviceSession::CurrentOnlineStatus() const {
   return tracker_->CurrentOnlineSnapshot();
 }
 
+bool DeviceSession::CanAcceptTelemetryMessage(bool is_basic_id) const {
+  return is_basic_id || current_link_identity_verified_;
+}
+
 bool DeviceSession::CanSendDeviceCommands() const {
   const auto status = CurrentOnlineStatus();
-  return link_available_ && status &&
+  return link_available_ && current_link_identity_verified_ && status &&
          status->identity_status == IdentityStatus::kVerified;
 }
 

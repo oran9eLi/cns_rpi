@@ -20,6 +20,7 @@ namespace mqtt {
 
 struct ClientState {
   std::atomic<bool> connected{false};
+  std::atomic<std::uint64_t> connection_generation{0};
   std::mutex publish_mutex;
   std::condition_variable publish_cv;
   std::unordered_set<int> waiting_mids;
@@ -54,6 +55,7 @@ void OnConnect(struct mosquitto* mosq, void* userdata, int rc) {
   auto* state = static_cast<ClientState*>(userdata);
   if (rc == 0) {
     state->logger->Info("MQTT已连接");
+    state->connection_generation.fetch_add(1);
     state->connected.store(true);
     for (const auto& [topic, qos] : state->subscriptions) {
       if (mosquitto_subscribe(mosq, /*mid=*/nullptr, topic.c_str(), qos) != MOSQ_ERR_SUCCESS) {
@@ -206,6 +208,10 @@ bool MqttClient::PublishAndWait(const std::string& topic, const std::string& pay
 }
 
 bool MqttClient::IsConnected() const { return state_->connected.load(); }
+
+std::uint64_t MqttClient::ConnectionGeneration() const {
+  return state_->connection_generation.load();
+}
 
 std::optional<IncomingMessage> MqttClient::TryPopMessage() {
   return state_->incoming_messages.TryPop();

@@ -111,6 +111,12 @@ std::expected<Publication, std::string> BuildLastWillPublication(
       });
 }
 
+bool LastWillNeedsRefresh(std::optional<bool> configured_has_binding,
+                          bool current_has_binding) {
+  return configured_has_binding &&
+         *configured_has_binding != current_has_binding;
+}
+
 Tracker::Tracker(std::string device_id,
                  std::optional<std::string> persisted_device_id,
                  Clock::time_point started_at)
@@ -142,6 +148,11 @@ void Tracker::ConfirmPersistedIdentity(const std::string& persisted_device_id) {
                          : IdentityStatus::kConflict;
 }
 
+void Tracker::InvalidateCurrentIdentity() {
+  identity_status_ = persisted_device_id_ ? IdentityStatus::kCached
+                                          : IdentityStatus::kUnbound;
+}
+
 void Tracker::Tick(Clock::time_point now) {
   const auto reference = last_business_frame_.value_or(started_at_);
   if (now - reference >= kBusinessSilenceTimeout) {
@@ -159,11 +170,13 @@ Snapshot Tracker::CurrentOnlineSnapshot() const {
 }
 
 bool PublicationState::ShouldPublish(bool mqtt_connected,
+                                     std::uint64_t connection_generation,
                                      const Snapshot& current) {
-  if (mqtt_connected && !was_connected_) {
+  if (mqtt_connected && connection_generation != 0 &&
+      connection_generation != observed_connection_generation_) {
     connection_requires_publish_ = true;
+    observed_connection_generation_ = connection_generation;
   }
-  was_connected_ = mqtt_connected;
   return mqtt_connected &&
          (connection_requires_publish_ || !last_published_ ||
           *last_published_ != current);
