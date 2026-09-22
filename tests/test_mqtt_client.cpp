@@ -6,12 +6,14 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
 #include <iterator>
 #include <mutex>
 #include <sstream>
 #include <streambuf>
 #include <string>
 #include <thread>
+#include <unistd.h>
 
 #include "logging/logger.hpp"
 #include "mqtt/mqtt_client.hpp"
@@ -62,6 +64,67 @@ std::unique_ptr<logging::Logger> MakeCaptureLogger(std::ostringstream& out,
 }
 
 }  // namespace
+
+TEST_CASE("Broker重启后自动恢复实验Topic的QoS2订阅") {
+  const char* port_text = std::getenv("CNS_TEST_MQTT_RECONNECT_PORT");
+  if (!port_text) {
+    MESSAGE("未设置CNS_TEST_MQTT_RECONNECT_PORT，跳过本地Broker重启检查");
+    return;
+  }
+  const int port = std::stoi(port_text);
+
+  std::ostringstream log_out;
+  std::ostringstream log_err;
+  auto logger = MakeCaptureLogger(log_out, log_err);
+  const std::string topic = "cns_rpi/RECONNECTTEST/experiment/set";
+  auto client = mqtt::MqttClient::Open({
+      .broker_host = "127.0.0.1",
+      .broker_port = port,
+      .client_id = "cns-rpi-experiment-reconnect-" + std::to_string(::getpid()),
+      .username = "",
+      .password = "",
+      .keepalive_seconds = 10,
+      .reconnect_delay_seconds = 1,
+      .reconnect_delay_max_seconds = 1,
+      .will = {.topic = topic + "/will", .payload = "{}", .qos = 0,
+               .retain = false},
+      .subscriptions = {{topic, 2}},
+  }, *logger);
+  INFO(log_err.str());
+  REQUIRE(client.has_value());
+  auto wait_connected = [&](std::uint64_t later_than) {
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+    while (std::chrono::steady_clock::now() < deadline) {
+      if (client->IsConnected() && client->ConnectionGeneration() > later_than) return true;
+      std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+    return false;
+  };
+  auto publish_and_receive = [&](const std::string& payload) {
+    CHECK(client->PublishAndWait(topic, payload, 2, false, std::chrono::seconds(2)));
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (std::chrono::steady_clock::now() < deadline) {
+      if (auto message = client->TryPopMessage(); message && message->payload == payload) {
+        CHECK(message->topic == topic);
+        return true;
+      }
+      std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
+    return false;
+  };
+  REQUIRE(wait_connected(0));
+  REQUIRE(publish_and_receive("首次连接"));
+  std::cerr << "本地Broker首次收发成功；现在停止Broker。\n";
+  const auto first_generation = client->ConnectionGeneration();
+  const auto disconnect_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(20);
+  while (client->IsConnected() && std::chrono::steady_clock::now() < disconnect_deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+  }
+  REQUIRE_FALSE(client->IsConnected());
+  std::cerr << "MQTT断线已检测；现在重启Broker。\n";
+  REQUIRE(wait_connected(first_generation));
+  CHECK(publish_and_receive("重连后"));
+}
 
 TEST_CASE("入站队列先进先出且容量固定为64") {
   mqtt::IncomingMessageQueue queue;

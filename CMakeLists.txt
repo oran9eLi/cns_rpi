@@ -39,6 +39,7 @@ add_library(cns_rpi_core
     src/registration/registration_state.cpp
     src/runtime_status/runtime_status.cpp
     src/runtime_status/device_session.cpp
+    src/experiment/pi_link_inspection.cpp
     src/config_command/command_parser.cpp
     src/config_command/config_updater.cpp
     src/config_command/config_store.cpp
@@ -155,6 +156,10 @@ add_test(NAME registration_state COMMAND test_registration_state)
 add_executable(test_runtime_status tests/test_runtime_status.cpp)
 target_link_libraries(test_runtime_status PRIVATE cns_rpi_core)
 add_test(NAME runtime_status COMMAND test_runtime_status)
+
+add_executable(test_pi_link_inspection tests/test_pi_link_inspection.cpp)
+target_link_libraries(test_pi_link_inspection PRIVATE cns_rpi_core)
+add_test(NAME pi_link_inspection COMMAND test_pi_link_inspection)
 
 add_executable(test_device_session tests/test_device_session.cpp)
 target_link_libraries(test_device_session PRIVATE cns_rpi_core)

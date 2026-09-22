@@ -39,6 +39,7 @@
 #include "control_command/control_endpoint.hpp"
 #include "control_command/control_transaction.hpp"
 #include "device/device_binding_store.hpp"
+#include "experiment/pi_link_inspection.hpp"
 #include "latency/px4_latency.hpp"
 #include "logging/logger.hpp"
 #include "mqtt/mqtt_client.hpp"
@@ -224,6 +225,11 @@ int main(int argc, char** argv) {
   std::optional<mqtt::MqttClient> mqtt_client;
   registration::RegistrationState registration_state;
   runtime_status::PublicationState runtime_publication_state;
+  experiment::PiLinkInspector pi_link_inspector(
+      app_config->mqtt.topics.topic_namespace);
+  experiment::AckOutbox experiment_ack_outbox;
+  bool experiment_ack_failure_logged = false;
+  auto next_experiment_ack_attempt = started_at;
   bool runtime_publish_failure_logged = false;
   std::optional<bool> mqtt_will_has_persisted_binding;
   std::optional<device::Binding> active_mqtt_binding;
@@ -240,6 +246,8 @@ int main(int argc, char** argv) {
   std::string config_ack_topic;
   std::string control_set_topic;
   std::string control_ack_topic;
+  std::string experiment_set_topic;
+  std::string experiment_ack_topic;
   control_command::ControlTransaction control_transaction(kControlAckTimeout);
   std::optional<control_command::ControlledDeviceEndpoint> controlled_device;
   std::optional<uart::MavlinkLink> link;
@@ -330,6 +338,8 @@ int main(int argc, char** argv) {
     config_ack_topic.clear();
     control_set_topic.clear();
     control_ack_topic.clear();
+    experiment_set_topic.clear();
+    experiment_ack_topic.clear();
     offline_payload.clear();
     control_transaction =
         control_command::ControlTransaction(kControlAckTimeout);
@@ -820,6 +830,17 @@ int main(int argc, char** argv) {
           control_ack_topic = mqtt::BuildControlAckTopic(
               topics.topic_namespace, candidate_binding->device_id,
               topics.control_ack.suffix);
+          const auto experiment_subscription =
+              experiment::DeviceSubscription(
+                  topics.topic_namespace,
+                  device_session.HasPersistedBinding()
+                      ? candidate_binding
+                      : std::optional<device::Binding>{});
+          if (experiment_subscription) {
+            experiment_set_topic = experiment_subscription->first;
+            experiment_ack_topic = mqtt::BuildExperimentAckTopic(
+                topics.topic_namespace, candidate_binding->device_id);
+          }
           offline_payload = registration::BuildOfflinePayload(
               candidate_binding->device_id, candidate_binding->device_type);
           mqtt::WillOptions mqtt_will{
@@ -871,6 +892,9 @@ int main(int argc, char** argv) {
                 if (candidate_binding->device_type ==
                     device::Type::kFlightController) {
                   subscriptions.emplace_back(px4_latency_probe_topic, 0);
+                }
+                if (experiment_subscription) {
+                  subscriptions.push_back(*experiment_subscription);
                 }
                 return subscriptions;
               }(),
@@ -996,6 +1020,34 @@ int main(int argc, char** argv) {
                          latency::BuildPx4LatencyAck(*probe).dump(),
                          /*qos=*/0, /*retain=*/false)) {
             (*logger)->Warn("PX4链路探测ACK发布失败");
+          }
+        } else if (!experiment_set_topic.empty() &&
+                   message->topic == experiment_set_topic && !restart_requested) {
+          const auto* current_binding = device_session.ActiveBinding();
+          const std::optional<device::Binding> bound_identity =
+              device_session.HasPersistedBinding() && current_binding
+                  ? std::optional<device::Binding>{*current_binding}
+                  : std::nullopt;
+          const auto outcome = pi_link_inspector.Handle(
+              message->topic, message->payload, bound_identity,
+              [&]() -> std::optional<experiment::Observation> {
+                const auto status = device_session.CurrentOnlineStatus();
+                if (!status) return std::nullopt;
+                return experiment::Observation{
+                    .runtime = *status,
+                    // 未接管端点时发现线程可能正在持有候选串口，不能猜为关闭。
+                    .serial_port_open = experiment::SerialEndpointFact(link.has_value()),
+                    .mqtt_connected = mqtt_client->IsConnected(),
+                };
+              },
+              std::chrono::system_clock::now(),
+              std::chrono::steady_clock::now());
+          if (!outcome.diagnostic.empty()) {
+            (*logger)->Warn("拒绝实验自检请求: " + outcome.diagnostic);
+          }
+          if (outcome.publication &&
+              !experiment_ack_outbox.Enqueue(*outcome.publication)) {
+            (*logger)->Warn("实验自检ACK待发队列已满，无法保存本次终态");
           }
         } else if (message->topic == config_set_topic && !restart_requested) {
           config_command::CommandProcessResult result;
@@ -1123,6 +1175,31 @@ int main(int argc, char** argv) {
         } else {
           (*logger)->Warn("忽略非本设备命令topic: " + message->topic);
         }
+      }
+    }
+
+    // 失败后仅重发原 ACK，不重新采样 Pi/F407 事实；每轮最多尝试一条。
+    if (mqtt_client && mqtt_client->IsConnected() &&
+        experiment_ack_outbox.Size() > 0 &&
+        std::chrono::steady_clock::now() >= next_experiment_ack_attempt) {
+      const bool published = experiment_ack_outbox.FlushOne(
+          [&](const experiment::Publication& ack) {
+            return ack.topic == experiment_ack_topic &&
+                   mqtt_client->Publish(ack.topic, ack.payload, ack.qos,
+                                        ack.retain);
+          });
+      if (published) {
+        if (experiment_ack_failure_logged) {
+          (*logger)->Info("实验自检ACK发布已恢复");
+        }
+        experiment_ack_failure_logged = false;
+      } else {
+        if (!experiment_ack_failure_logged) {
+          (*logger)->Warn("实验自检ACK发布失败，保留原文等待连接恢复");
+        }
+        experiment_ack_failure_logged = true;
+        next_experiment_ack_attempt =
+            std::chrono::steady_clock::now() + std::chrono::seconds(1);
       }
     }
 

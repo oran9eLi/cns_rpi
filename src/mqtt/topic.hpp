@@ -61,6 +61,14 @@ std::string BuildControlSetTopic(const std::string& topic_namespace,
 std::string BuildControlAckTopic(const std::string& topic_namespace,
                                  const std::string& device_id, const std::string& suffix);
 
+/// 拼固定只读实验动作的设备下发 Topic；仅调用方的已持久化身份可用于设备段。
+std::string BuildExperimentSetTopic(const std::string& topic_namespace,
+                                    const std::string& device_id);
+
+/// 拼固定只读实验动作的设备应答 Topic；不用于来源应答。
+std::string BuildExperimentAckTopic(const std::string& topic_namespace,
+                                    const std::string& device_id);
+
 /// 拼本设备作为命令来源时向服务器提交请求的 topic。
 std::string BuildConfigRequestTopic(const std::string& topic_namespace,
                                     const std::string& source_device_id);

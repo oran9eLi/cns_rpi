@@ -63,6 +63,16 @@ std::string BuildControlAckTopic(const std::string& topic_namespace,
   return BuildDeviceTopic(topic_namespace, device_id, suffix);
 }
 
+std::string BuildExperimentSetTopic(const std::string& topic_namespace,
+                                    const std::string& device_id) {
+  return BuildDeviceTopic(topic_namespace, device_id, "experiment/set");
+}
+
+std::string BuildExperimentAckTopic(const std::string& topic_namespace,
+                                    const std::string& device_id) {
+  return BuildDeviceTopic(topic_namespace, device_id, "experiment/ack");
+}
+
 std::string BuildConfigRequestTopic(const std::string& topic_namespace,
                                     const std::string& source_device_id) {
   return topic_namespace + "/sources/" + source_device_id + "/config/request";

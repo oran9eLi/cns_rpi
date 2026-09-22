@@ -40,3 +40,10 @@ TEST_CASE("构造配置命令ACK和设备来源请求topic") {
   CHECK(mqtt::BuildConfigRequestTopic("cns_rpi", "ABC123") ==
         "cns_rpi/sources/ABC123/config/request");
 }
+
+TEST_CASE("实验自检topic使用当前设备身份而非来源topic") {
+  CHECK(mqtt::BuildExperimentSetTopic("cns_rpi", "DCDWCNS1S2MEAG1VTA0C") ==
+        "cns_rpi/DCDWCNS1S2MEAG1VTA0C/experiment/set");
+  CHECK(mqtt::BuildExperimentAckTopic("cns_rpi", "DCDWCNS1S2MEAG1VTA0C") ==
+        "cns_rpi/DCDWCNS1S2MEAG1VTA0C/experiment/ack");
+}
