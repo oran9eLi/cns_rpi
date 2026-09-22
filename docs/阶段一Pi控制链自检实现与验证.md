@@ -2,7 +2,7 @@
 
 日期：2026-09-22
 
-状态：Pi 侧已实现并完成本地自动测试；未部署实体树莓派，未完成 Server/Web 真实闭环验收。协议以[冻结跨端契约](2026-09-22-阶段一Pi控制链自检跨端契约.md)为准，本文只记录本仓库的实现和验证方式。
+状态：Pi 侧已实现并于 2026-09-22 部署到 `dcdw@192.168.11.44`，完成直达设备 Topic 的只读 ACK 验证；未完成 Server/Web 路由、落库和页面闭环验收。协议以[冻结跨端契约](2026-09-22-阶段一Pi控制链自检跨端契约.md)为准，本文只记录本仓库的实现和验证方式。
 
 ## Pi 侧实现边界
 
@@ -35,7 +35,7 @@ CNS_TEST_MQTT_RECONNECT_PORT=45883 /tmp/cns-rpi-pi-inspect-build/test_mqtt_clien
 
 没有设置 `CNS_TEST_MQTT_RECONNECT_PORT` 时，该用例跳过外部 Broker 操作，不影响离线单元测试。
 
-## ACK 形态与现场待验
+## ACK 形态与现场验证
 
 成功形态示例：
 
@@ -49,4 +49,20 @@ CNS_TEST_MQTT_RECONNECT_PORT=45883 /tmp/cns-rpi-pi-inspect-build/test_mqtt_clien
 {"schema_version":1,"command_id":"7d15e276-c7e1-4f52-aaee-7314a6417667","session_id":"c4191037-9e2a-480c-a995-2174e4672563","action_id":"f886f45b-01f8-4a54-b2b6-a65b07477aa1","operation":"inspect_pi_link","status":"rejected","observed_at":"2026-09-22T09:00:02.123Z","error_code":"identity_unavailable"}
 ```
 
-尚未验证：实体 Pi 上已绑定主控箱的 MQTT 订阅与 ACK；真实 F407 业务静默但 Pi 控制在线时的 `completed`；串口拔插瞬间的端点事实；实际 Broker 故障后的待发 ACK；Server 接收、落库和 Web 展示。真机验收需在获得部署授权后记录 Pi 精确提交、Server 版本、原始 MQTT 请求/ACK 与服务端入库结果；仅本地测试不能宣称跨端闭环通过。
+### 2026-09-22 树莓派部署与直达验证
+
+- 现场仓库从干净的 `main` 提交 `5ef86359d2975913f51e12db0f57032b4f86d2e5` 切至独立 `codex/pi-inspect-link` 分支，部署代码提交为 `e4b9a186671746742071c99a5b7de4b492a276d7`。未推送 GitHub、未合并远端 `main`。
+- ARM64 原生 Release 构建成功；现场 `ctest --test-dir /tmp/cns-rpi-pi-inspect-build --output-on-failure` 为 42/42 通过。部署脚本保留 `/var/lib/cns-rpi/config.json`，程序报告版本 `1.0.1`；`cns-rpi.service` 与 `cellular-dialup.service` 均处于 active，部署后主服务 `NRestarts=0`。
+- 启动日志显示 MQTT 连接、F407 身份核验及业务链在线。直达设备 Topic 的非 retained、QoS 2 请求绕过 Server 路由，只用于验证 Pi 自身收发；`command_id=2c3f2d88-cea0-46cf-8062-4c1263358832` 收到的原始 ACK 如下：
+
+```json
+{"action_id":"715cc8d6-6d68-44a2-b988-e4707fc30411","command_id":"2c3f2d88-cea0-46cf-8062-4c1263358832","fact":{"business_status":"online","control_status":"online","identity_status":"verified","serial_port_open":true},"observed_at":"2026-09-22T10:18:06.472Z","operation":"inspect_pi_link","schema_version":1,"session_id":"05e2333a-4392-43aa-836f-848d53654311","status":"completed"}
+```
+
+- 一条过期测试请求的有效期为 `2026-09-22T10:17:11.604Z`，Pi 于其后收到请求并发出以下原始拒绝 ACK，未把过期的新动作作为成功执行：
+
+```json
+{"action_id":"7a255c7a-5afc-48b0-b060-24ed89e4d1a4","command_id":"18bcaa4b-58ef-43d0-a495-fc9549399050","error_code":"action_expired","observed_at":"2026-09-22T10:17:15.554Z","operation":"inspect_pi_link","schema_version":1,"session_id":"3a97bc3e-01a8-418f-a606-3416ae53403a","status":"rejected"}
+```
+
+仍待验证：真实 F407 业务静默但 Pi 控制在线、身份 `cached` 时的 `completed`；串口拔插瞬间的端点事实；实际 Broker 故障后的待发 ACK；Server 路由、接收、落库和 Web 展示。Pi 端点 `true` 不能作为 UART6 真回显证据；仅直达设备 Topic 的 ACK 不能宣称跨端闭环通过。下一次跨端验收需同时记录 Pi 精确代码提交、Server 版本、原始 MQTT 请求/ACK 及服务端入库结果。
