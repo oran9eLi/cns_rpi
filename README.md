@@ -42,7 +42,9 @@ journalctl -u cns-rpi.service -u cellular-dialup.service -n 100 --no-pager
 
 主控箱在 `{namespace}/{device_id}/runtime/status/v1` 以 QoS 1、`retain=true` 发布 Pi 控制链、F407 业务链和身份核验三态。状态只在内容变化时发布；每次 MQTT 连接或重连后强制重发当前值，不增加周期心跳。F407 连续 10 秒没有有效业务帧只会令业务状态离线，不会关闭 MQTT 控制入口。
 
-Pi 将首次真实核验的 F407 身份保存到 `identity.binding_file`。重启或串口暂时失联时可用缓存身份恢复 MQTT；身份重新出现后必须一致才允许遥测和主控箱命令，冲突不会自动改绑。异常断线由 runtime Last Will 发布 `offline|unknown|cached`，从未成功持久化绑定时为 `offline|unknown|unbound`。registration 与运行三态相互独立。协议、维护边界和验收命令见 [设备运行三态发布与验收](docs/设备运行三态发布与验收.md)。
+Pi 将首次真实核验的 F407 身份保存到 `identity.binding_file`。重启或串口暂时失联时可用缓存身份恢复 MQTT；身份重新出现后必须一致才允许遥测和需向主控板下发的命令，冲突不会自动改绑。异常断线由 runtime Last Will 发布 `offline|unknown|cached`，从未成功持久化绑定时为 `offline|unknown|unbound`。registration 与运行三态相互独立。协议、维护边界和验收命令见 [设备运行三态发布与验收](docs/设备运行三态发布与验收.md)。
+
+阶段一里程碑三另有待实施的只读 `inspect_pi_link`：Pi 控制在线且身份为 `verified|cached` 时，可返回本机事实，不要求 F407 业务在线，也不向 UART6 发帧。它与上述需下发主控板的命令门禁不同，不能当作串口通信成功。设备侧格式见 [Pi 控制链自检跨端契约](docs/2026-09-22-阶段一Pi控制链自检跨端契约.md)；此动作目前尚未实现或真机验收。
 
 ## 开发与维护
 
