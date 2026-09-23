@@ -184,6 +184,45 @@ TEST_CASE("完整合法帧一次性喂入能被正确解出") {
   CHECK(decoded.autopilot == MAV_AUTOPILOT_INVALID);
 }
 
+TEST_CASE("同一解析器保留半帧后的真实完整线上字节") {
+  uart::MavlinkFrameAssembler assembler;
+  const auto frame = PackHeartbeatBytes();
+  const auto split = frame.size() / 2;
+  const auto received_at = std::chrono::steady_clock::time_point{std::chrono::seconds(42)};
+  CHECK_FALSE(assembler.FeedFrame(
+      std::span<const std::uint8_t>(frame.data(), split), received_at).has_value());
+  const auto received = assembler.FeedFrame(
+      std::span<const std::uint8_t>(frame.data() + split, frame.size() - split),
+      received_at);
+  REQUIRE(received.has_value());
+  CHECK(received->bytes == frame);
+  CHECK(received->received_at == received_at);
+}
+
+TEST_CASE("现有串口fd读取和写入均返回实际完整帧证据") {
+  auto pty = OpenPtyPair();
+  auto link = uart::MavlinkLink::Open(pty.slave_path, 115200);
+  REQUIRE(link.has_value());
+  const auto applied = link->AppliedBaud();
+  REQUIRE(applied.has_value());
+  CHECK(*applied == 115200);
+
+  const auto frame = PackHeartbeatBytes();
+  REQUIRE(::write(pty.master_fd, frame.data(), frame.size()) ==
+          static_cast<ssize_t>(frame.size()));
+  const auto received = link->ReceiveFrame(std::chrono::milliseconds(20));
+  REQUIRE(received.has_value());
+  REQUIRE(received->has_value());
+  CHECK((**received).bytes == frame);
+
+  const auto sent = link->SendFrame(PackHeartbeatMessage());
+  REQUIRE(sent.has_value());
+  std::array<std::uint8_t, MAVLINK_MAX_PACKET_LEN> written{};
+  const auto count = ::read(pty.master_fd, written.data(), written.size());
+  REQUIRE(count > 0);
+  CHECK(sent->bytes == std::vector<std::uint8_t>(written.begin(), written.begin() + count));
+}
+
 TEST_CASE("CRC被篡改的帧不会被当成合法帧返回") {
   uart::MavlinkFrameAssembler assembler;
   auto bytes = PackHeartbeatBytes();

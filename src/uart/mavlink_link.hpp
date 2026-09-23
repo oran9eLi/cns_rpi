@@ -15,14 +15,31 @@
 
 #include <cstdint>
 #include <chrono>
+#include <deque>
 #include <optional>
 #include <queue>
 #include <span>
+#include <vector>
 
 #include "common/mavlink.h"
 #include "uart/serial_port.hpp"
 
 namespace uart {
+
+using SteadyClock = std::chrono::steady_clock;
+
+/// 在现有唯一串口读者中取得的 CRC 合法帧及其线上原始字节。
+struct WireFrame {
+  mavlink_message_t message{};
+  std::vector<std::uint8_t> bytes;
+  SteadyClock::time_point received_at{};
+};
+
+/// 仅在完整字节写入现有串口 fd 后返回的发送证据。
+struct SentFrame {
+  std::vector<std::uint8_t> bytes;
+  SteadyClock::time_point started_at{};
+};
 
 /**
  * @brief 把原始字节流喂给官方 mavlink_frame_char_buffer()，攒出完整、CRC校验过的帧。
@@ -40,10 +57,15 @@ class MavlinkFrameAssembler {
    */
   std::optional<mavlink_message_t> Feed(std::span<const std::uint8_t> bytes);
 
+  /** @brief 返回同一解析器完成的原始帧和该批字节读取时的单调时点。 */
+  std::optional<WireFrame> FeedFrame(std::span<const std::uint8_t> bytes,
+                                     SteadyClock::time_point received_at);
+
  private:
   mavlink_message_t rx_msg_{};
   mavlink_status_t status_{};
-  std::queue<mavlink_message_t> pending_;
+  std::queue<WireFrame> pending_;
+  std::deque<std::uint8_t> recent_bytes_;
 };
 
 /// 组合 SerialPort + MavlinkFrameAssembler，是 uart/ 层对外暴露的收发入口。
@@ -77,12 +99,23 @@ class MavlinkLink {
   std::expected<std::optional<mavlink_message_t>, UartError> ReceiveMessage(
       std::chrono::milliseconds max_wait);
 
+  /** @brief 从原有串口读取者返回完整线上字节；不另开 fd。 */
+  std::expected<std::optional<WireFrame>, UartError> ReceiveFrame();
+  std::expected<std::optional<WireFrame>, UartError> ReceiveFrame(
+      std::chrono::milliseconds max_wait);
+
   /**
    * @brief 把一条已经 pack 好的帧编码并写入串口。
    * @param message 必须是已经用 mavlink_msg_*_pack 系列函数完成 CRC finalize 的帧。
    * @return 写入成功（字节数与编码长度一致）返回成功，否则返回 UartError。
    */
   std::expected<void, UartError> SendMessage(const mavlink_message_t& message);
+
+  /** @brief 仅在一次完整串口写入成功后返回真实编码缓冲。 */
+  std::expected<SentFrame, UartError> SendFrame(const mavlink_message_t& message);
+
+  /** @brief 查询当前持有 fd 的已应用 termios 波特率。 */
+  std::expected<int, UartError> AppliedBaud() const;
 
  private:
   explicit MavlinkLink(SerialPort&& port) : port_(std::move(port)) {}

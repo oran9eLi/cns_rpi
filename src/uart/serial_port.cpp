@@ -172,4 +172,20 @@ std::expected<std::size_t, UartError> SerialPort::Write(std::span<const std::uin
   return total;
 }
 
+std::expected<int, UartError> SerialPort::AppliedBaud() const {
+  termios tio{};
+  if (fd_ < 0 || ::tcgetattr(fd_, &tio) != 0 || cfgetispeed(&tio) != cfgetospeed(&tio)) {
+    return std::unexpected(UartError::kConfigFailed);
+  }
+  switch (cfgetospeed(&tio)) {
+    case B9600: return 9600;
+    case B19200: return 19200;
+    case B38400: return 38400;
+    case B57600: return 57600;
+    case B115200: return 115200;
+    case B230400: return 230400;
+    default: return std::unexpected(UartError::kConfigFailed);
+  }
+}
+
 }  // namespace uart

@@ -68,6 +68,9 @@ class SerialPort {
    */
   std::expected<std::size_t, UartError> Write(std::span<const std::uint8_t> data);
 
+  /** @brief 只查询当前 fd 的已应用速率，不打开新端点。 */
+  std::expected<int, UartError> AppliedBaud() const;
+
  private:
   explicit SerialPort(int fd) : fd_(fd) {}
 
