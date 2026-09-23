@@ -222,6 +222,16 @@ TEST_CASE("连接broker后订阅消息进入主线程队列") {
   REQUIRE(client->PublishAndWait(topic, "payload", 1, false,
                                  std::chrono::seconds(2)));
 
+  auto tracked_mid = client->PublishTracked(topic, "实验ACK", 2, false);
+  REQUIRE(tracked_mid.has_value());
+  const auto tracked_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+  while (!client->TakePublishCompletion(*tracked_mid) &&
+         std::chrono::steady_clock::now() < tracked_deadline) {
+    std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  }
+  CHECK(std::chrono::steady_clock::now() < tracked_deadline);
+  CHECK_FALSE(client->TakePublishCompletion(*tracked_mid));
+
   std::optional<mqtt::IncomingMessage> received;
   while (!received && std::chrono::steady_clock::now() < deadline) {
     auto candidate = client->TryPopMessage();

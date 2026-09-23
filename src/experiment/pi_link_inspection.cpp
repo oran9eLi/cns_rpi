@@ -332,6 +332,14 @@ bool AckOutbox::Enqueue(Publication publication) {
   return true;
 }
 
+const Publication* AckOutbox::Front() const {
+  return pending_.empty() ? nullptr : &pending_.front();
+}
+
+void AckOutbox::ConfirmFront() {
+  if (!pending_.empty()) pending_.pop_front();
+}
+
 bool AckOutbox::FlushOne(const std::function<bool(const Publication&)>& publish) {
   if (pending_.empty()) return true;
   if (!publish(pending_.front())) return false;
@@ -340,5 +348,13 @@ bool AckOutbox::FlushOne(const std::function<bool(const Publication&)>& publish)
 }
 
 std::size_t AckOutbox::Size() const { return pending_.size(); }
+
+bool FeedRecoveredAckWhenIdle(AckOutbox& outbox,
+                              std::deque<Publication>& recovered) {
+  if (outbox.Size() != 0 || recovered.empty()) return false;
+  if (!outbox.Enqueue(recovered.front())) return false;
+  recovered.pop_front();
+  return true;
+}
 
 }  // namespace experiment

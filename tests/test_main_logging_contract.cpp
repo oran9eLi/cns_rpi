@@ -137,3 +137,15 @@ TEST_CASE("主程序使用运行三态遗嘱并以非阻塞方式事件发布") 
   CHECK(text.find("MQTT运行三态发布失败，连接恢复后重试") !=
         std::string::npos);
 }
+
+TEST_CASE("实验ACK等待QoS完成回调才从待发队列移除") {
+  const auto main_path = std::filesystem::path(SOURCE_DIR) / "src/main.cpp";
+  std::ifstream input(main_path);
+  REQUIRE(input.is_open());
+  const std::string text{std::istreambuf_iterator<char>(input),
+                         std::istreambuf_iterator<char>()};
+  CHECK(text.find("mqtt_client->PublishTracked(") != std::string::npos);
+  CHECK(text.find("mqtt_client->TakePublishCompletion(") != std::string::npos);
+  CHECK(text.find("experiment_ack_outbox.ConfirmFront();") != std::string::npos);
+  CHECK(text.find("mqtt_client->ForgetTrackedPublish(") != std::string::npos);
+}

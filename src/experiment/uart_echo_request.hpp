@@ -31,7 +31,8 @@ bool IsUartEchoOperation(std::string_view payload);
 
 /**
  * @brief 校验设备目标、动作身份、有效期和受限 UTF-8 文本。
- * @return 合法请求或中文拒绝原因；结构错误时调用方不得猜测 ACK 身份。
+ * @return 结构合法请求或中文拒绝原因；已过期但可关联的请求留给事务层
+ * 形成可重投的 action_expired ACK。
  */
 std::expected<UartEchoRequest, std::string> ParseUartEchoRequest(
     std::string_view payload, std::string_view expected_device_id,

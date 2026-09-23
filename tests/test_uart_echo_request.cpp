@@ -79,7 +79,7 @@ TEST_CASE("错误目标动作身份和过期请求被拒绝") {
   CHECK_FALSE(Parse(request).has_value());
   request = Request();
   request["expires_at"] = "2026-09-23T08:59:59.000Z";
-  CHECK_FALSE(Parse(request).has_value());
+  CHECK(Parse(request).has_value());
   request = Request();
   request["lease_version"] = -1;
   CHECK_FALSE(Parse(request).has_value());

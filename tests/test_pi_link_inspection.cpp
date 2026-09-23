@@ -264,3 +264,37 @@ TEST_CASE("发布失败和断线后待发ACK保留原文且有界") {
   CHECK_FALSE(outbox.Enqueue(original));
   CHECK(outbox.Size() == experiment::AckOutbox::kCapacity);
 }
+
+TEST_CASE("实验ACK入队后仅在确认MQTT完成回调时移除") {
+  experiment::AckOutbox outbox;
+  const experiment::Publication original{
+      .topic = kAckTopic, .payload = "{\"status\":\"completed\"}",
+      .qos = 2, .retain = false};
+  REQUIRE(outbox.Enqueue(original));
+  REQUIRE(outbox.Front() != nullptr);
+  CHECK(outbox.Front()->payload == original.payload);
+  // MQTT发布调用仅接受消息时，ACK仍须留在待发队列。
+  CHECK(outbox.Size() == 1);
+  outbox.ConfirmFront();
+  CHECK(outbox.Size() == 0);
+  CHECK(outbox.Front() == nullptr);
+}
+
+TEST_CASE("重启恢复的历史ACK分批入队且不抢占实时自检ACK") {
+  experiment::AckOutbox outbox;
+  std::deque<experiment::Publication> recovered;
+  experiment::Publication publication{
+      .topic = kAckTopic, .payload = "历史终态", .qos = 2, .retain = false};
+  for (std::size_t index = 0; index < experiment::AckOutbox::kCapacity; ++index) {
+    recovered.push_back(publication);
+  }
+  REQUIRE(outbox.Enqueue({.topic = kAckTopic, .payload = "实时自检",
+                          .qos = 2, .retain = false}));
+  CHECK_FALSE(experiment::FeedRecoveredAckWhenIdle(outbox, recovered));
+  CHECK(outbox.Front()->payload == "实时自检");
+  CHECK(recovered.size() == experiment::AckOutbox::kCapacity);
+  outbox.ConfirmFront();
+  CHECK(experiment::FeedRecoveredAckWhenIdle(outbox, recovered));
+  CHECK(outbox.Size() == 1);
+  CHECK(recovered.size() == experiment::AckOutbox::kCapacity - 1);
+}

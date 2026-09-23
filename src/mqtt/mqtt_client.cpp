@@ -207,6 +207,33 @@ bool MqttClient::PublishAndWait(const std::string& topic, const std::string& pay
   return completed;
 }
 
+std::optional<int> MqttClient::PublishTracked(const std::string& topic,
+                                               const std::string& payload, int qos,
+                                               bool retain) {
+  if (qos != 1 && qos != 2) return std::nullopt;
+  std::lock_guard lock(state_->publish_mutex);
+  int mid = -1;
+  const int rc = mosquitto_publish(handle_, &mid, topic.c_str(),
+                                   static_cast<int>(payload.size()),
+                                   payload.data(), qos, retain);
+  if (rc != MOSQ_ERR_SUCCESS) return std::nullopt;
+  state_->waiting_mids.insert(mid);
+  return mid;
+}
+
+bool MqttClient::TakePublishCompletion(int mid) {
+  std::lock_guard lock(state_->publish_mutex);
+  if (!state_->completed_mids.erase(mid)) return false;
+  state_->waiting_mids.erase(mid);
+  return true;
+}
+
+void MqttClient::ForgetTrackedPublish(int mid) {
+  std::lock_guard lock(state_->publish_mutex);
+  state_->waiting_mids.erase(mid);
+  state_->completed_mids.erase(mid);
+}
+
 bool MqttClient::IsConnected() const { return state_->connected.load(); }
 
 std::uint64_t MqttClient::ConnectionGeneration() const {

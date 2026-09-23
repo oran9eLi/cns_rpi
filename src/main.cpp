@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <filesystem>
 #include <iostream>
 #include <optional>
@@ -230,6 +231,7 @@ int main(int argc, char** argv) {
   experiment::PiLinkInspector pi_link_inspector(
       app_config->mqtt.topics.topic_namespace);
   experiment::AckOutbox experiment_ack_outbox;
+  std::deque<experiment::Publication> recovered_echo_publications;
   experiment::UartEchoTransaction uart_echo_transaction(
       app_config->identity.binding_file.string() + ".h1-actions.json",
       app_config->mqtt.topics.topic_namespace);
@@ -237,12 +239,31 @@ int main(int argc, char** argv) {
     (*logger)->Warn("H1动作去重记录不可用，已禁止回显发帧: " + journal.error());
   }
   auto enqueue_echo_result = [&](std::optional<experiment::Publication> result) {
+    const auto diagnostic = uart_echo_transaction.TakeDiagnostic();
+    if (!diagnostic.empty()) (*logger)->Error(diagnostic);
     if (result && !experiment_ack_outbox.Enqueue(std::move(*result))) {
       (*logger)->Error("H1回显ACK待发队列已满，动作终态仍保留在去重记录中");
     }
   };
+  if (persisted_binding) {
+    const auto own_ack_topic = mqtt::BuildExperimentAckTopic(
+        app_config->mqtt.topics.topic_namespace, persisted_binding->device_id);
+    for (auto& publication : uart_echo_transaction.RecoveredPublications()) {
+      if (publication.topic == own_ack_topic) {
+        recovered_echo_publications.push_back(std::move(publication));
+      } else {
+        (*logger)->Warn("忽略与当前持久化身份不符的H1历史ACK");
+      }
+    }
+  }
   bool experiment_ack_failure_logged = false;
   auto next_experiment_ack_attempt = started_at;
+  struct PendingExperimentAck {
+    int mid;
+    std::uint64_t connection_generation;
+    std::chrono::steady_clock::time_point deadline;
+  };
+  std::optional<PendingExperimentAck> pending_experiment_ack;
   bool runtime_publish_failure_logged = false;
   std::optional<bool> mqtt_will_has_persisted_binding;
   std::optional<device::Binding> active_mqtt_binding;
@@ -263,6 +284,7 @@ int main(int argc, char** argv) {
   std::string experiment_ack_topic;
   control_command::ControlTransaction control_transaction(kControlAckTimeout);
   std::optional<control_command::ControlledDeviceEndpoint> controlled_device;
+  bool h1_endpoint_identity_verified = false;
   std::optional<uart::MavlinkLink> link;
   std::optional<network::QgcUdpBridge> qgc_udp_bridge;
   std::string active_serial_device;
@@ -320,6 +342,10 @@ int main(int argc, char** argv) {
 
   auto close_mqtt_session = [&](bool publish_offline) {
     fail_pending_control();
+    if (mqtt_client && pending_experiment_ack) {
+      mqtt_client->ForgetTrackedPublish(pending_experiment_ack->mid);
+    }
+    pending_experiment_ack.reset();
     if (publish_offline && mqtt_client && mqtt_client->IsConnected()) {
       if (!runtime_status_topic.empty() && !runtime_offline_payload.empty()) {
         (void)mqtt_client->PublishAndWait(
@@ -363,6 +389,7 @@ int main(int argc, char** argv) {
         "serial_unavailable", std::chrono::system_clock::now()));
     fail_pending_control();
     device_session.SetLinkAvailable(false);
+    h1_endpoint_identity_verified = false;
     // 主控箱的 MQTT 控制入口绑定于持久化身份，不随瞬时串口故障销毁；PX4
     // 尚无绑定缓存，暂时保留原有会话关闭行为。
     if (!active_mqtt_binding ||
@@ -397,6 +424,7 @@ int main(int argc, char** argv) {
              controlled_device->endpoint.component_id)) {
       (*logger)->Error(
           "同一串口检测到冲突的受控设备特征，停止 MQTT 上报并等待检查接线");
+      h1_endpoint_identity_verified = false;
       close_mqtt_session(/*publish_offline=*/true);
       state_store.ResetDeviceState();
       controlled_device.reset();
@@ -414,6 +442,7 @@ int main(int argc, char** argv) {
       return;
     }
     if (endpoint_was_unknown) {
+      h1_endpoint_identity_verified = false;
       state_store.UpdateControlledDevice(
           controlled_device->type, controlled_device->endpoint.system_id,
           controlled_device->endpoint.component_id);
@@ -511,8 +540,10 @@ int main(int argc, char** argv) {
     if (controlled_device->type == device::Type::kCnsBox &&
         (decoded_standard || decoded_extension) && !is_identity_or_metadata) {
       device_session.ObserveBusinessFrame(now);
-      if (wire_frame &&
-          message.compid == controlled_device->endpoint.component_id) {
+      if (wire_frame && experiment::IsFreshEchoBusinessFrame(
+                            message, decoded_standard, decoded_extension,
+                            controlled_device->endpoint.system_id,
+                            controlled_device->endpoint.component_id)) {
         enqueue_echo_result(uart_echo_transaction.OnBusinessFrame(
             wire_frame->received_at, std::chrono::system_clock::now()));
       }
@@ -539,8 +570,15 @@ int main(int argc, char** argv) {
           .device_type = device::Type::kCnsBox,
       };
       auto observation = device_session.ObserveIdentity(current_binding);
+      if (observation == runtime_status::IdentityObservation::kVerified &&
+          experiment::IsCurrentEchoIdentityFrame(
+              message, controlled_device->endpoint.system_id,
+              controlled_device->endpoint.component_id, current_binding.device_id)) {
+        h1_endpoint_identity_verified = true;
+      }
       if (observation ==
           runtime_status::IdentityObservation::kUnboundMismatch) {
+        h1_endpoint_identity_verified = false;
         (*logger)->Error(
             "F407未绑定候选身份发生变化，保持首次候选并拒绝建绑: 新device_id=" +
             uas_id);
@@ -569,6 +607,11 @@ int main(int argc, char** argv) {
         } else {
           if (device_session.ConfirmPersistedBinding(current_binding)) {
             observation = runtime_status::IdentityObservation::kVerified;
+            h1_endpoint_identity_verified =
+                experiment::IsCurrentEchoIdentityFrame(
+                    message, controlled_device->endpoint.system_id,
+                    controlled_device->endpoint.component_id,
+                    current_binding.device_id);
             (*logger)->Info("设备身份绑定已持久化: device_id=" + uas_id);
           } else if (binding_error_log_limiter.ShouldLog(now)) {
             (*logger)->Error("设备身份绑定落盘结果与当前身份不一致，拒绝确认");
@@ -577,6 +620,7 @@ int main(int argc, char** argv) {
       }
 
       if (observation == runtime_status::IdentityObservation::kConflict) {
+        h1_endpoint_identity_verified = false;
         (*logger)->Error(
             "F407身份与持久化绑定冲突，保持原Topic并阻断遥测和控制: 新device_id=" +
             uas_id);
@@ -605,6 +649,7 @@ int main(int argc, char** argv) {
         (*logger)->Info("受控设备身份就绪: device_id=" + uas_id);
         break;
       case state::DeviceIdUpdate::kConflict:
+        h1_endpoint_identity_verified = false;
         // 不静默切 topic：先让旧身份正确离线，再清空状态重新识别设备。
         (*logger)->Error("受控设备身份冲突，旧身份下线并重新识别: 新 uas_id=" +
                          uas_id);
@@ -1062,7 +1107,8 @@ int main(int argc, char** argv) {
               const auto started = uart_echo_transaction.Start(
                   *parsed,
                   {.serial_open = link.has_value(),
-                   .identity_verified = device_session.CanSendDeviceCommands(),
+                   .identity_verified = device_session.CanSendDeviceCommands() &&
+                                        h1_endpoint_identity_verified,
                    .cns_box = active_mqtt_binding->device_type == device::Type::kCnsBox &&
                               controlled_device &&
                               controlled_device->type == device::Type::kCnsBox,
@@ -1261,35 +1307,66 @@ int main(int argc, char** argv) {
     }
 
     if (uart_echo_transaction.HasPending() &&
-        !device_session.CanSendDeviceCommands()) {
+        (!device_session.CanSendDeviceCommands() ||
+         !h1_endpoint_identity_verified)) {
       enqueue_echo_result(uart_echo_transaction.Abort(
           "identity_unavailable", std::chrono::system_clock::now()));
     }
     enqueue_echo_result(uart_echo_transaction.Tick(
         std::chrono::steady_clock::now(), std::chrono::system_clock::now()));
+    (void)experiment::FeedRecoveredAckWhenIdle(
+        experiment_ack_outbox, recovered_echo_publications);
 
-    // 失败后仅重发原 ACK，不重新采样 Pi/F407 事实；每轮最多尝试一条。
-    if (mqtt_client && mqtt_client->IsConnected() &&
-        experiment_ack_outbox.Size() > 0 &&
-        std::chrono::steady_clock::now() >= next_experiment_ack_attempt) {
-      const bool published = experiment_ack_outbox.FlushOne(
-          [&](const experiment::Publication& ack) {
-            return ack.topic == experiment_ack_topic &&
-                   mqtt_client->Publish(ack.topic, ack.payload, ack.qos,
-                                        ack.retain);
-          });
-      if (published) {
+    // QoS 2 调用成功只表示已入队；直到完成回调才删除原 ACK。
+    const auto ack_now = std::chrono::steady_clock::now();
+    bool confirmed_experiment_ack = false;
+    if (pending_experiment_ack) {
+      const bool same_connection =
+          mqtt_client && mqtt_client->IsConnected() &&
+          mqtt_client->ConnectionGeneration() ==
+              pending_experiment_ack->connection_generation;
+      if (same_connection &&
+          mqtt_client->TakePublishCompletion(pending_experiment_ack->mid)) {
+        experiment_ack_outbox.ConfirmFront();
+        pending_experiment_ack.reset();
+        confirmed_experiment_ack = true;
         if (experiment_ack_failure_logged) {
           (*logger)->Info("实验自检ACK发布已恢复");
         }
         experiment_ack_failure_logged = false;
-      } else {
+      } else if (!same_connection ||
+                 ack_now >= pending_experiment_ack->deadline) {
+        if (mqtt_client) {
+          mqtt_client->ForgetTrackedPublish(pending_experiment_ack->mid);
+        }
+        pending_experiment_ack.reset();
+        next_experiment_ack_attempt = ack_now + std::chrono::seconds(1);
         if (!experiment_ack_failure_logged) {
-          (*logger)->Warn("实验自检ACK发布失败，保留原文等待连接恢复");
+          (*logger)->Warn("实验自检ACK未获MQTT完成确认，保留原文等待重发");
         }
         experiment_ack_failure_logged = true;
-        next_experiment_ack_attempt =
-            std::chrono::steady_clock::now() + std::chrono::seconds(1);
+      }
+    }
+    if (!confirmed_experiment_ack && !pending_experiment_ack &&
+        mqtt_client && mqtt_client->IsConnected() &&
+        ack_now >= next_experiment_ack_attempt) {
+      if (const auto* ack = experiment_ack_outbox.Front()) {
+        if (ack->topic == experiment_ack_topic) {
+          const auto generation = mqtt_client->ConnectionGeneration();
+          if (const auto mid = mqtt_client->PublishTracked(
+                  ack->topic, ack->payload, ack->qos, ack->retain)) {
+            pending_experiment_ack = PendingExperimentAck{
+                .mid = *mid,
+                .connection_generation = generation,
+                .deadline = ack_now + std::chrono::seconds(5)};
+          } else {
+            if (!experiment_ack_failure_logged) {
+              (*logger)->Warn("实验自检ACK发布失败，保留原文等待重发");
+            }
+            experiment_ack_failure_logged = true;
+            next_experiment_ack_attempt = ack_now + std::chrono::seconds(1);
+          }
+        }
       }
     }
 

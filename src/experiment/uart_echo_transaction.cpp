@@ -14,14 +14,15 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <string_view>
+#include <utility>
 
 #include "experiment/uart_echo_protocol.hpp"
 #include "mqtt/topic.hpp"
+#include "protocol/identity.hpp"
 
 namespace experiment {
 namespace {
 using Json = nlohmann::json;
-constexpr auto kRetention = std::chrono::seconds(300);
 constexpr auto kResponseTimeout = std::chrono::seconds(5);
 constexpr auto kActionTimeout = std::chrono::seconds(10);
 constexpr std::size_t kMaxRecords = 128;
@@ -94,12 +95,43 @@ std::expected<void, std::string> WriteAll(int fd, std::string_view content) {
 }
 }  // namespace
 
+bool IsCurrentEchoIdentityFrame(const mavlink_message_t& message,
+                                std::uint8_t system_id, std::uint8_t component_id,
+                                std::string_view bound_device_id) {
+  if (message.msgid != MAVLINK_MSG_ID_OPEN_DRONE_ID_BASIC_ID ||
+      message.sysid != system_id || message.compid != component_id) return false;
+  mavlink_open_drone_id_basic_id_t basic_id{};
+  mavlink_msg_open_drone_id_basic_id_decode(&message, &basic_id);
+  return protocol::ExtractUasId(basic_id.uas_id) == bound_device_id;
+}
+
+bool IsFreshEchoBusinessFrame(const mavlink_message_t& message,
+                              bool decoded_standard, bool decoded_extension,
+                              std::uint8_t system_id, std::uint8_t component_id) {
+  if ((!decoded_standard && !decoded_extension) ||
+      message.sysid != system_id || message.compid != component_id) return false;
+  switch (message.msgid) {
+    case MAVLINK_MSG_ID_HEARTBEAT:
+    case MAVLINK_MSG_ID_AUTOPILOT_VERSION:
+    case MAVLINK_MSG_ID_OPEN_DRONE_ID_BASIC_ID:
+    case MAVLINK_MSG_ID_OPEN_DRONE_ID_LOCATION:
+    case MAVLINK_MSG_ID_OPEN_DRONE_ID_SYSTEM:
+    case MAVLINK_MSG_ID_OPEN_DRONE_ID_OPERATOR_ID:
+    case MAVLINK_MSG_ID_OPEN_DRONE_ID_SELF_ID:
+      return false;
+    default:
+      return true;
+  }
+}
+
 UartEchoTransaction::UartEchoTransaction(
     std::filesystem::path journal_path, std::string topic_namespace,
-    NonceGenerator nonce_generator)
+    NonceGenerator nonce_generator, DirectorySync directory_sync)
     : journal_path_(std::move(journal_path)),
       topic_namespace_(std::move(topic_namespace)),
-      nonce_generator_(nonce_generator ? std::move(nonce_generator) : RandomNonce) {}
+      nonce_generator_(nonce_generator ? std::move(nonce_generator) : RandomNonce),
+      directory_sync_(directory_sync ? std::move(directory_sync)
+                                     : DirectorySync{[](int fd) { return ::fsync(fd); }}) {}
 
 std::expected<void, std::string> UartEchoTransaction::Load() {
   records_.clear();
@@ -108,6 +140,7 @@ std::expected<void, std::string> UartEchoTransaction::Load() {
   if (!std::filesystem::exists(journal_path_, error)) {
     if (error) return std::unexpected("读取动作去重记录失败: " + error.message());
     loaded_ = true;
+    storage_ambiguous_ = false;
     return {};
   }
   std::ifstream input(journal_path_, std::ios::binary);
@@ -121,9 +154,15 @@ std::expected<void, std::string> UartEchoTransaction::Load() {
     }
     for (const auto& record : document.at("records")) {
       const auto expiry_ms = record.at("expiry_ms").get<std::int64_t>();
-      records_.push_back({record.at("action_id").get<std::string>(),
-                          record.at("comparison").get<std::string>(),
-                          record.at("terminal_payload").get<std::string>(),
+      const auto action_id = record.at("action_id").get<std::string>();
+      const auto comparison = record.at("comparison").get<std::string>();
+      const auto terminal = record.at("terminal_payload").get<std::string>();
+      const Json identity = Json::parse(comparison);
+      if (!protocol::IsValidUasId(identity.at("device_id").get<std::string>()) ||
+          (!terminal.empty() && Json::parse(terminal).at("action_id") != action_id)) {
+        return std::unexpected("动作去重记录身份不一致");
+      }
+      records_.push_back({action_id, comparison, terminal,
                           WallClock::time_point{std::chrono::milliseconds(expiry_ms)}});
     }
   } catch (const Json::exception&) {
@@ -131,10 +170,24 @@ std::expected<void, std::string> UartEchoTransaction::Load() {
     return std::unexpected("动作去重记录格式非法");
   }
   loaded_ = true;
+  storage_ambiguous_ = false;
   return {};
 }
 
-std::expected<void, std::string> UartEchoTransaction::SaveRecords() const {
+std::vector<Publication> UartEchoTransaction::RecoveredPublications() const {
+  std::vector<Publication> recovered;
+  if (!loaded_) return recovered;
+  for (const auto& record : records_) {
+    if (record.terminal_payload.empty()) continue;
+    const auto comparison = Json::parse(record.comparison);
+    recovered.push_back(Publish(comparison.at("device_id").get<std::string>(),
+                                record.terminal_payload));
+  }
+  return recovered;
+}
+
+std::expected<void, std::string> UartEchoTransaction::SaveRecords() {
+  last_save_renamed_ = false;
   Json items = Json::array();
   for (const auto& record : records_) {
     items.push_back({{"action_id", record.action_id},
@@ -154,15 +207,20 @@ std::expected<void, std::string> UartEchoTransaction::SaveRecords() const {
     ::unlink(temporary.c_str());
     return std::unexpected("持久化动作去重记录失败");
   }
+  last_save_renamed_ = true;
   const auto parent = journal_path_.parent_path().empty()
                           ? std::filesystem::path{"."}
                           : journal_path_.parent_path();
   const int dir_fd = ::open(parent.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
   if (dir_fd < 0) return std::unexpected("同步动作记录目录失败");
-  const bool dir_synced = ::fsync(dir_fd) == 0;
+  const bool dir_synced = directory_sync_(dir_fd) == 0;
   ::close(dir_fd);
   if (!dir_synced) return std::unexpected("同步动作记录目录失败");
   return {};
+}
+
+std::string UartEchoTransaction::TakeDiagnostic() {
+  return std::exchange(storage_diagnostic_, {});
 }
 
 Publication UartEchoTransaction::Publish(const std::string& device_id,
@@ -180,7 +238,13 @@ EchoStart UartEchoTransaction::Start(const UartEchoRequest& request, EchoGate ga
                                    FailedAck(request, wall_now, code).dump()),
             .diagnostic = std::move(message)};
   };
-  if (!loaded_) return rejected("result_uncertain", "动作去重记录未成功加载");
+  if (!loaded_) {
+    if (storage_ambiguous_) {
+      return {.outbound = std::nullopt, .publication = std::nullopt,
+              .diagnostic = "动作去重记录同步结果不明，需重新装载后再应答"};
+    }
+    return rejected("result_uncertain", "动作去重记录未成功加载");
+  }
   const auto comparison = Comparison(request);
   for (const auto& record : records_) {
     if (record.action_id != request.action_id) continue;
@@ -199,36 +263,61 @@ EchoStart UartEchoTransaction::Start(const UartEchoRequest& request, EchoGate ga
     return {.outbound = std::nullopt,
             .publication = Publish(request.device_id, ack.dump()), .diagnostic = {}};
   }
-  if (wall_now >= request.expiry) return rejected("action_expired", "回显动作已过期");
+  auto durable_rejected = [&](std::string_view code, std::string message) -> EchoStart {
+    if (records_.size() >= kMaxRecords) {
+      return rejected("result_uncertain", "动作去重记录已达上限");
+    }
+    auto outcome = rejected(code, std::move(message));
+    records_.push_back({request.action_id, comparison,
+                        outcome.publication->payload, request.expiry});
+    if (const auto saved = SaveRecords(); !saved) {
+      loaded_ = false;
+      if (last_save_renamed_) {
+        storage_ambiguous_ = true;
+        storage_diagnostic_ = "H1拒绝终态目录同步失败，结果暂不发布: " + saved.error();
+        return {.outbound = std::nullopt, .publication = std::nullopt,
+                .diagnostic = storage_diagnostic_};
+      }
+      records_.pop_back();
+      return rejected("result_uncertain", saved.error());
+    }
+    return outcome;
+  };
+  if (wall_now >= request.expiry) {
+    return durable_rejected("action_expired", "回显动作已过期");
+  }
   if (pending_ || gate.serial_busy) {
-    return rejected("serial_unavailable", "串口下行动作仍在进行");
+    return durable_rejected("serial_unavailable", "串口下行动作仍在进行");
   }
   if (!gate.cns_box || !gate.identity_verified ||
       gate.source_system == 0 || gate.target_system == 0 ||
       gate.target_component == 0) {
-    return rejected("identity_unavailable", "F407当前身份尚未核验");
+    return durable_rejected("identity_unavailable", "F407当前身份尚未核验");
   }
   if (!gate.serial_open || gate.pi_baud <= 0) {
-    return rejected("serial_unavailable", "串口端点或实际波特率不可用");
+    return durable_rejected("serial_unavailable", "串口端点或实际波特率不可用");
   }
   auto nonce = nonce_generator_();
   if (!nonce || *nonce == 0) {
-    return rejected("result_uncertain", "无法取得不可预测随机数");
+    return durable_rejected("result_uncertain", "无法取得不可预测随机数");
   }
   auto outbound = EncodeEchoRequest(request.text_bytes, *nonce,
                                     gate.source_system, gate.source_component,
                                     gate.target_system, gate.target_component);
-  if (!outbound) return rejected("payload_mismatch", outbound.error());
-  records_.erase(std::remove_if(records_.begin(), records_.end(), [&](const Record& record) {
-    return wall_now > record.expiry + kRetention;
-  }), records_.end());
+  if (!outbound) return durable_rejected("payload_mismatch", outbound.error());
   if (records_.size() >= kMaxRecords) {
     return rejected("result_uncertain", "动作去重记录已达上限");
   }
   records_.push_back({request.action_id, comparison, "", request.expiry});
   if (const auto saved = SaveRecords(); !saved) {
-    records_.pop_back();
     loaded_ = false;
+    if (last_save_renamed_) {
+      storage_ambiguous_ = true;
+      storage_diagnostic_ = "H1动作准备记录目录同步失败，已禁止物理发帧: " + saved.error();
+      return {.outbound = std::nullopt, .publication = std::nullopt,
+              .diagnostic = storage_diagnostic_};
+    }
+    records_.pop_back();
     return rejected("result_uncertain", saved.error());
   }
   pending_ = Pending{.request = request, .comparison = comparison,
@@ -353,7 +442,21 @@ std::optional<Publication> UartEchoTransaction::Finish(
   });
   if (existing != records_.end()) {
     existing->terminal_payload = publication.payload;
-    (void)SaveRecords();
+    if (const auto saved = SaveRecords(); !saved) {
+      loaded_ = false;
+      storage_diagnostic_ = "H1终态持久化失败，已禁止后续回显: " + saved.error();
+      if (last_save_renamed_) {
+        storage_ambiguous_ = true;
+        pending_.reset();
+        return std::nullopt;
+      }
+      existing->terminal_payload.clear();
+      const auto uncertain = Publish(
+          pending_->request.device_id,
+          FailedAck(pending_->request, wall_now, "result_uncertain").dump());
+      pending_.reset();
+      return uncertain;
+    }
   }
   pending_.reset();
   return publication;

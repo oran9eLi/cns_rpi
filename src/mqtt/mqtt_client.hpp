@@ -119,6 +119,14 @@ class MqttClient {
   bool PublishAndWait(const std::string& topic, const std::string& payload, int qos, bool retain,
                       std::chrono::milliseconds timeout);
 
+  /// 非阻塞发布并追踪 QoS 1/2 完成回调；返回值只表示已入队，不能据此删除业务 ACK。
+  std::optional<int> PublishTracked(const std::string& topic, const std::string& payload,
+                                    int qos, bool retain);
+  /// 完成回调到达后只消费一次；未完成时保留追踪状态。
+  bool TakePublishCompletion(int mid);
+  /// 连接失效或等待超时时放弃旧 MID，业务层保留原 ACK 以便重发。
+  void ForgetTrackedPublish(int mid);
+
   /// 读取当前连接状态（由 on_connect/on_disconnect 回调维护，不主动问库）。
   bool IsConnected() const;
 

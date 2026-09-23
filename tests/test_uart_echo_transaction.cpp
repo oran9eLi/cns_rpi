@@ -3,6 +3,7 @@
 
 #include <filesystem>
 #include <nlohmann/json.hpp>
+#include <unistd.h>
 
 #include "experiment/uart_echo_protocol.hpp"
 #include "experiment/uart_echo_transaction.hpp"
@@ -104,7 +105,21 @@ TEST_CASE("H1 缓存身份、错误来源与波特率不一致均不得成功") 
   REQUIRE(denied.publication);
   CHECK(nlohmann::json::parse(denied.publication->payload).at("status") == "rejected");
   CHECK_FALSE(denied.outbound);
-  auto started = tx.Start(Request(wall), Gate(), wall, t0);
+  auto denied_again = tx.Start(Request(wall), Gate(), wall, t0);
+  CHECK_FALSE(denied_again.outbound);
+  REQUIRE(denied_again.publication);
+  CHECK(denied_again.publication->payload == denied.publication->payload);
+  experiment::UartEchoTransaction after_restart(path, "cns");
+  REQUIRE(after_restart.Load());
+  auto denied_after_restart = after_restart.Start(
+      Request(wall), Gate(), wall + std::chrono::hours(24), t0);
+  CHECK_FALSE(denied_after_restart.outbound);
+  REQUIRE(denied_after_restart.publication);
+  CHECK(denied_after_restart.publication->payload == denied.publication->payload);
+  auto new_request = Request(wall);
+  new_request.action_id = "44444444-4444-4444-8444-444444444444";
+  new_request.request_id = new_request.action_id;
+  auto started = tx.Start(new_request, Gate(), wall, t0);
   REQUIRE(started.outbound);
   auto sent = Wire(*started.outbound, t0);
   CHECK_FALSE(tx.OnSent({sent.bytes, t0}, wall));
@@ -113,6 +128,24 @@ TEST_CASE("H1 缓存身份、错误来源与波特率不一致均不得成功") 
   REQUIRE(ack);
   CHECK(nlohmann::json::parse(ack->payload).at("error_code") == "baud_mismatch");
   CHECK_FALSE(nlohmann::json::parse(ack->payload).contains("fact"));
+  std::filesystem::remove(path);
+}
+
+TEST_CASE("H1 已过期动作形成可重投的拒绝ACK") {
+  auto path = Journal();
+  const auto wall = Wall::time_point{std::chrono::seconds(1000)};
+  const auto t0 = Clock::time_point{std::chrono::seconds(100)};
+  experiment::UartEchoTransaction tx(path, "cns");
+  REQUIRE(tx.Load());
+  auto request = Request(wall);
+  request.expiry = wall - std::chrono::milliseconds(1);
+  auto expired = tx.Start(request, Gate(), wall, t0);
+  CHECK_FALSE(expired.outbound);
+  REQUIRE(expired.publication);
+  CHECK(nlohmann::json::parse(expired.publication->payload).at("error_code") == "action_expired");
+  auto replay = tx.Start(request, Gate(), wall, t0);
+  REQUIRE(replay.publication);
+  CHECK(replay.publication->payload == expired.publication->payload);
   std::filesystem::remove(path);
 }
 
@@ -192,5 +225,97 @@ TEST_CASE("H1 已完成动作重投只重发终态ACK") {
   CHECK_FALSE(duplicate.outbound);
   REQUIRE(duplicate.publication);
   CHECK(duplicate.publication->payload == completed->payload);
+  experiment::UartEchoTransaction restarted(path, "cns");
+  REQUIRE(restarted.Load());
+  const auto recovered = restarted.RecoveredPublications();
+  REQUIRE(recovered.size() == 1);
+  CHECK(recovered.front().payload == completed->payload);
+  experiment::AckOutbox retry;
+  REQUIRE(retry.Enqueue(recovered.front()));
+  CHECK_FALSE(retry.FlushOne([](const experiment::Publication&) { return false; }));
+  CHECK(retry.Size() == 1);
+  CHECK(retry.FlushOne([&](const experiment::Publication& publication) {
+    return publication.payload == completed->payload;
+  }));
+  CHECK(retry.Size() == 0);
   std::filesystem::remove(path);
+}
+
+TEST_CASE("H1 终态记录写入失败时不发布完成事实") {
+  const auto wall = Wall::time_point{std::chrono::seconds(1000)};
+  const auto t0 = Clock::time_point{std::chrono::seconds(100)};
+  auto path = Journal();
+  experiment::UartEchoTransaction tx(path, "cns", [] {
+    return std::expected<std::uint64_t, std::string>{123};
+  });
+  REQUIRE(tx.Load());
+  auto started = tx.Start(Request(wall), Gate(), wall, t0);
+  REQUIRE(started.outbound);
+  auto sent = Wire(*started.outbound, t0);
+  CHECK_FALSE(tx.OnSent({sent.bytes, t0}, wall));
+  CHECK_FALSE(tx.OnFrame(Wire(Response(123, 115200), t0 + std::chrono::milliseconds(2)), wall));
+  REQUIRE(std::filesystem::remove(path));
+  REQUIRE(std::filesystem::create_directory(path));
+  const auto ack = tx.OnBusinessFrame(t0 + std::chrono::milliseconds(3), wall);
+  REQUIRE(ack);
+  const auto body = nlohmann::json::parse(ack->payload);
+  CHECK(body.at("status") == "rejected");
+  CHECK(body.at("error_code") == "result_uncertain");
+  CHECK_FALSE(body.contains("fact"));
+  std::filesystem::remove(path);
+}
+
+TEST_CASE("目录同步歧义期间重复动作不发布矛盾终态") {
+  const auto wall = Wall::time_point{std::chrono::seconds(1000)};
+  const auto t0 = Clock::time_point{std::chrono::seconds(100)};
+  auto path = Journal();
+  int sync_count = 0;
+  experiment::UartEchoTransaction tx(
+      path, "cns", [] { return std::expected<std::uint64_t, std::string>{123}; },
+      [&](int fd) {
+        if (++sync_count == 2) return -1;
+        return ::fsync(fd);
+      });
+  REQUIRE(tx.Load());
+  auto started = tx.Start(Request(wall), Gate(), wall, t0);
+  REQUIRE(started.outbound);
+  auto sent = Wire(*started.outbound, t0);
+  CHECK_FALSE(tx.OnSent({sent.bytes, t0}, wall));
+  CHECK_FALSE(tx.OnFrame(Wire(Response(123, 115200), t0 + std::chrono::milliseconds(2)), wall));
+  CHECK_FALSE(tx.OnBusinessFrame(t0 + std::chrono::milliseconds(3), wall));
+  CHECK_FALSE(tx.TakeDiagnostic().empty());
+  const auto duplicate = tx.Start(Request(wall), Gate(), wall, t0);
+  CHECK_FALSE(duplicate.outbound);
+  CHECK_FALSE(duplicate.publication);
+  experiment::UartEchoTransaction restarted(path, "cns");
+  REQUIRE(restarted.Load());
+  const auto recovered = restarted.RecoveredPublications();
+  REQUIRE(recovered.size() == 1);
+  CHECK(nlohmann::json::parse(recovered.front().payload).at("status") == "completed");
+  std::filesystem::remove(path);
+}
+
+TEST_CASE("H1 身份帧与新业务帧必须来自本次F407组件且不含普通心跳") {
+  const std::string device_id = "DCDWCNS1GHC0G6LF8MY6";
+  std::uint8_t uas_id[20]{};
+  std::uint8_t id_or_mac[20]{};
+  std::copy(device_id.begin(), device_id.end(), uas_id);
+  mavlink_message_t basic_id{};
+  mavlink_msg_open_drone_id_basic_id_pack(
+      43, 193, &basic_id, 43, 193, id_or_mac, 0, 0, uas_id);
+  CHECK(experiment::IsCurrentEchoIdentityFrame(basic_id, 43, 193, device_id));
+  CHECK_FALSE(experiment::IsCurrentEchoIdentityFrame(basic_id, 43, 194, device_id));
+  basic_id.compid = 194;
+  CHECK_FALSE(experiment::IsCurrentEchoIdentityFrame(basic_id, 43, 193, device_id));
+
+  mavlink_message_t heartbeat{};
+  mavlink_msg_heartbeat_pack(43, 193, &heartbeat, MAV_TYPE_ONBOARD_CONTROLLER,
+                             MAV_AUTOPILOT_INVALID, 0, 0, MAV_STATE_ACTIVE);
+  CHECK_FALSE(experiment::IsFreshEchoBusinessFrame(heartbeat, true, false, 43, 193));
+  mavlink_message_t attitude{};
+  mavlink_msg_attitude_pack(43, 193, &attitude, 1000, 0, 0, 0, 0, 0, 0);
+  CHECK(experiment::IsFreshEchoBusinessFrame(attitude, true, false, 43, 193));
+  attitude.compid = 194;
+  CHECK_FALSE(experiment::IsFreshEchoBusinessFrame(attitude, true, false, 43, 193));
+  CHECK_FALSE(experiment::IsFreshEchoBusinessFrame(attitude, false, false, 43, 194));
 }

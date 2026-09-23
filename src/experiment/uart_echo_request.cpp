@@ -144,7 +144,7 @@ bool IsUartEchoOperation(std::string_view payload) {
 
 std::expected<UartEchoRequest, std::string> ParseUartEchoRequest(
     std::string_view payload, std::string_view expected_device_id,
-    std::chrono::system_clock::time_point now) {
+    std::chrono::system_clock::time_point /*now*/) {
   if (payload.size() > kMaximumPayloadBytes) {
     return std::unexpected("回显请求超过4096字节");
   }
@@ -193,9 +193,7 @@ std::expected<UartEchoRequest, std::string> ParseUartEchoRequest(
       return std::unexpected("回显请求身份或操作非法");
     }
     const auto expiry = ParseUtcMillis(request.expires_at);
-    if (!expiry || now >= *expiry) {
-      return std::unexpected("回显请求已过期或有效期非法");
-    }
+    if (!expiry) return std::unexpected("回显请求有效期格式非法");
     request.expiry = *expiry;
     const auto text = root.at("text").get<std::string>();
     if (!IsAllowedText(text)) {

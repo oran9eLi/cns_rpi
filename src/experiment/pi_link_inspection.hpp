@@ -84,7 +84,7 @@ class PiLinkInspector {
 };
 
 /**
- * @brief 有界保存尚未被 MQTT 发布调用接受的原始 ACK。
+ * @brief 有界保存尚未得到 MQTT 完成回调的原始 ACK。
  * @details 发布失败或断线后只重发保存的原文，不能重新调用事实采样器。
  */
 class AckOutbox {
@@ -94,6 +94,9 @@ class AckOutbox {
   /// 满容量时返回 false，原有待发 ACK 不被覆盖。
   bool Enqueue(Publication publication);
 
+  const Publication* Front() const;
+  void ConfirmFront();
+
   /// 一次最多尝试一条；发布失败保留原文，成功后移除。
   bool FlushOne(const std::function<bool(const Publication&)>& publish);
   std::size_t Size() const;
@@ -101,5 +104,9 @@ class AckOutbox {
  private:
   std::deque<Publication> pending_;
 };
+
+/// 历史终态仅在待发队列空闲时一次补入一条，避免挤掉实时只读自检 ACK。
+bool FeedRecoveredAckWhenIdle(AckOutbox& outbox,
+                              std::deque<Publication>& recovered);
 
 }  // namespace experiment
