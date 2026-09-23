@@ -84,3 +84,10 @@ TEST_CASE("错误目标动作身份和过期请求被拒绝") {
   request["lease_version"] = -1;
   CHECK_FALSE(Parse(request).has_value());
 }
+
+TEST_CASE("同一实验Topic仅按明确操作名分流H1请求") {
+  CHECK(experiment::IsUartEchoOperation(Request().dump()));
+  auto inspect = Request(); inspect["operation"] = "inspect_pi_link";
+  CHECK_FALSE(experiment::IsUartEchoOperation(inspect.dump()));
+  CHECK_FALSE(experiment::IsUartEchoOperation("{不完整"));
+}

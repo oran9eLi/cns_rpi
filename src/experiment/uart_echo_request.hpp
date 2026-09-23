@@ -26,6 +26,9 @@ struct UartEchoRequest {
   std::vector<std::uint8_t> text_bytes;
 };
 
+/** @brief 仅供现有实验 Topic 分流；严格字段校验仍由 ParseUartEchoRequest 执行。 */
+bool IsUartEchoOperation(std::string_view payload);
+
 /**
  * @brief 校验设备目标、动作身份、有效期和受限 UTF-8 文本。
  * @return 合法请求或中文拒绝原因；结构错误时调用方不得猜测 ACK 身份。

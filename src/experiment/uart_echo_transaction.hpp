@@ -82,6 +82,7 @@ class UartEchoTransaction {
     bool fresh_business_frame{};
     std::vector<std::uint8_t> tx_bytes;
     std::optional<uart::WireFrame> response_frame;
+    std::vector<std::uint8_t> response_text_bytes;
     std::optional<std::uint32_t> f407_baud;
   };
 

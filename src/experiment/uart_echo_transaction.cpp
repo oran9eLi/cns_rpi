@@ -235,6 +235,7 @@ EchoStart UartEchoTransaction::Start(const UartEchoRequest& request, EchoGate ga
                      .nonce = *nonce, .gate = gate, .started_at = steady_now,
                      .sent_at = {}, .sent = false, .fresh_business_frame = false,
                      .tx_bytes = {}, .response_frame = std::nullopt,
+                     .response_text_bytes = {},
                      .f407_baud = std::nullopt};
   return {.outbound = *outbound, .publication = std::nullopt, .diagnostic = {}};
 }
@@ -275,6 +276,7 @@ std::optional<Publication> UartEchoTransaction::OnFrame(
     return Finish("raw_frame_missing", wall_now);
   }
   pending_->response_frame = frame;
+  pending_->response_text_bytes = response->text_bytes;
   pending_->f407_baud = response->f407_baud_rate;
   if (pending_->fresh_business_frame) return Finish("", wall_now);
   return std::nullopt;
@@ -328,8 +330,10 @@ std::optional<Publication> UartEchoTransaction::Finish(
       ack["status"] = "completed";
       const std::string text(pending_->request.text_bytes.begin(),
                              pending_->request.text_bytes.end());
+      const std::string returned_text(pending_->response_text_bytes.begin(),
+                                      pending_->response_text_bytes.end());
       ack["fact"] = {{"nonce", NonceHex(pending_->nonce)},
-                     {"request_text", text}, {"response_text", text},
+                     {"request_text", text}, {"response_text", returned_text},
                      {"pi_baud_rate", pending_->gate.pi_baud},
                      {"f407_baud_rate", *pending_->f407_baud},
                      {"fresh_business_frame", true},

@@ -134,6 +134,14 @@ bool IsAllowedText(std::string_view text) {
 
 }  // namespace
 
+bool IsUartEchoOperation(std::string_view payload) {
+  if (payload.size() > kMaximumPayloadBytes) return false;
+  const Json root = Json::parse(payload.begin(), payload.end(), nullptr, false);
+  return root.is_object() && root.contains("operation") &&
+         root.at("operation").is_string() &&
+         root.at("operation").get<std::string>() == "uart_echo";
+}
+
 std::expected<UartEchoRequest, std::string> ParseUartEchoRequest(
     std::string_view payload, std::string_view expected_device_id,
     std::chrono::system_clock::time_point now) {
