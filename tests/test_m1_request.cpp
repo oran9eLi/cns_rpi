@@ -52,17 +52,19 @@ TEST_CASE("三种M1操作保留动作身份和受限波特率") {
   CHECK_FALSE(probe->baud_rate.has_value());
 }
 
-TEST_CASE("M1请求拒绝额外字段、错误目标及非法速率") {
+TEST_CASE("M1请求拒绝额外字段和错误目标，合法结构的超范围速率交事务层回执") {
   auto value = Request(); value["raw_frame_hex"] = "FD00";
   CHECK_FALSE(Parse(value).has_value());
   value = Request(); value["target"]["device_id"] = "DCDWCNS1OTHERDEVICE";
   CHECK_FALSE(Parse(value).has_value());
   value = Request(); value["baud_rate"] = 230400;
-  CHECK_FALSE(Parse(value).has_value());
+  const auto oversized_baud = Parse(value);
+  INFO((oversized_baud.has_value() ? std::string{} : oversized_baud.error()));
+  REQUIRE(oversized_baud.has_value());
   value = Request(); value["baud_rate"] = 4295024896ULL;
   CHECK_FALSE(Parse(value).has_value());
   value = Request(); value["baud_rate"] = 115200;
-  CHECK_FALSE(Parse(value).has_value());
+  REQUIRE(Parse(value).has_value());
   value = Request("uart_probe"); value["baud_rate"] = 57600;
   CHECK_FALSE(Parse(value).has_value());
 }

@@ -41,6 +41,10 @@
 #include "control_command/control_transaction.hpp"
 #include "device/device_binding_store.hpp"
 #include "experiment/pi_link_inspection.hpp"
+#include "experiment/m1_request.hpp"
+#include "experiment/m1_transaction.hpp"
+#include "experiment/pi_baud_change.hpp"
+#include "experiment/serial_affinity.hpp"
 #include "experiment/uart_echo_request.hpp"
 #include "experiment/uart_echo_transaction.hpp"
 #include "latency/px4_latency.hpp"
@@ -232,17 +236,47 @@ int main(int argc, char** argv) {
       app_config->mqtt.topics.topic_namespace);
   experiment::AckOutbox experiment_ack_outbox;
   std::deque<experiment::Publication> recovered_echo_publications;
+  bool h1_journal_ready = false;
+  bool m1_journal_ready = false;
   experiment::UartEchoTransaction uart_echo_transaction(
       app_config->identity.binding_file.string() + ".h1-actions.json",
       app_config->mqtt.topics.topic_namespace);
+  experiment::M1Transaction m1_transaction(
+      app_config->identity.binding_file.string() + ".m1-actions.json",
+      app_config->mqtt.topics.topic_namespace,
+      {}, {}, [&](std::string_view action_id) {
+        return !h1_journal_ready ||
+               uart_echo_transaction.HasActionId(action_id);
+      });
+  uart_echo_transaction.SetForeignActionLookup(
+      [&](std::string_view action_id) {
+        return !m1_journal_ready ||
+               m1_transaction.HasActionId(action_id);
+      });
+  experiment::SerialAffinity serial_affinity(
+      app_config->identity.binding_file.string() + ".m1-serial-affinity.json");
   if (const auto journal = uart_echo_transaction.Load(); !journal) {
     (*logger)->Warn("H1动作去重记录不可用，已禁止回显发帧: " + journal.error());
+  } else {
+    h1_journal_ready = true;
+  }
+  if (const auto journal = m1_transaction.Load(); !journal) {
+    (*logger)->Warn("M1动作去重记录不可用，已禁止M1实验发帧: " + journal.error());
+  } else {
+    m1_journal_ready = true;
   }
   auto enqueue_echo_result = [&](std::optional<experiment::Publication> result) {
     const auto diagnostic = uart_echo_transaction.TakeDiagnostic();
     if (!diagnostic.empty()) (*logger)->Error(diagnostic);
     if (result && !experiment_ack_outbox.Enqueue(std::move(*result))) {
       (*logger)->Error("H1回显ACK待发队列已满，动作终态仍保留在去重记录中");
+    }
+  };
+  auto enqueue_m1_result = [&](std::optional<experiment::Publication> result) {
+    const auto diagnostic = m1_transaction.TakeDiagnostic();
+    if (!diagnostic.empty()) (*logger)->Error(diagnostic);
+    if (result && !experiment_ack_outbox.Enqueue(std::move(*result))) {
+      (*logger)->Error("M1实验ACK待发队列已满，终态仍保留在去重记录中");
     }
   };
   if (persisted_binding) {
@@ -253,6 +287,13 @@ int main(int argc, char** argv) {
         recovered_echo_publications.push_back(std::move(publication));
       } else {
         (*logger)->Warn("忽略与当前持久化身份不符的H1历史ACK");
+      }
+    }
+    for (auto& publication : m1_transaction.RecoveredPublications()) {
+      if (publication.topic == own_ack_topic) {
+        recovered_echo_publications.push_back(std::move(publication));
+      } else {
+        (*logger)->Warn("忽略与当前持久化身份不符的M1历史ACK");
       }
     }
   }
@@ -288,6 +329,9 @@ int main(int argc, char** argv) {
   std::optional<uart::MavlinkLink> link;
   std::optional<network::QgcUdpBridge> qgc_udp_bridge;
   std::string active_serial_device;
+  std::string last_affinity_node;
+  std::optional<std::pair<std::uint8_t, std::uint8_t>> last_affinity_endpoint;
+  std::optional<std::chrono::steady_clock::time_point> manual_serial_opened_at;
   std::optional<mavlink_message_t> pending_first_message;
   bool ambiguous_device_type = false;
   uart::AsyncMavlinkDiscovery discovery;
@@ -385,6 +429,8 @@ int main(int argc, char** argv) {
   };
 
   auto mark_link_disconnected = [&] {
+    enqueue_m1_result(m1_transaction.Abort(
+        "serial_unavailable", std::chrono::system_clock::now()).publication);
     enqueue_echo_result(uart_echo_transaction.Abort(
         "serial_unavailable", std::chrono::system_clock::now()));
     fail_pending_control();
@@ -400,6 +446,7 @@ int main(int argc, char** argv) {
     link.reset();
     qgc_udp_bridge.reset();
     active_serial_device.clear();
+    manual_serial_opened_at.reset();
     pending_first_message.reset();
     controlled_device.reset();
     ambiguous_device_type = false;
@@ -409,10 +456,35 @@ int main(int argc, char** argv) {
     next_discovery = std::chrono::steady_clock::now();
   };
 
+  auto send_m1_frame = [&](const mavlink_message_t& frame) {
+    if (!link) {
+      enqueue_m1_result(m1_transaction.Abort(
+          "serial_unavailable", std::chrono::system_clock::now()).publication);
+      return;
+    }
+    const auto sent = link->SendFrame(frame);
+    if (!sent) {
+      enqueue_m1_result(m1_transaction.Abort(
+          "serial_unavailable", std::chrono::system_clock::now()).publication);
+      mark_link_disconnected();
+      return;
+    }
+    enqueue_m1_result(m1_transaction.OnSent(
+        *sent, std::chrono::system_clock::now()).publication);
+    (*logger)->Info("M1实验帧已写入唯一串口链路");
+  };
+
   auto process_mavlink_message = [&](const mavlink_message_t& message,
                                      std::chrono::steady_clock::time_point now,
                                      const uart::WireFrame* wire_frame = nullptr) {
     silence_watchdog.ObserveValidFrame(now);
+    if (wire_frame) manual_serial_opened_at.reset();
+    // 失配探测期间受控设备端点可能已从实时状态清除，响应仍须按持久化
+    // 的目标端点、随机数及完整原始帧匹配，不能依赖当前身份重新出现。
+    if (wire_frame) {
+      enqueue_m1_result(m1_transaction.OnFrame(
+          *wire_frame, std::chrono::system_clock::now()).publication);
+    }
     const auto classified =
         control_command::ClassifyControlledDeviceHeartbeat(
             message, app_config->device.mode);
@@ -632,6 +704,26 @@ int main(int argc, char** argv) {
             protocol::FormatDcdwLabel(controlled_device->endpoint.system_id));
         return;
       }
+      if (observation == runtime_status::IdentityObservation::kVerified &&
+          h1_endpoint_identity_verified && !active_serial_device.empty() &&
+          (last_affinity_node != active_serial_device ||
+           last_affinity_endpoint != std::pair{
+               controlled_device->endpoint.system_id,
+               controlled_device->endpoint.component_id})) {
+        const auto saved = serial_affinity.ObserveVerified(
+            current_binding.device_id, active_serial_device,
+            controlled_device->endpoint.system_id,
+            controlled_device->endpoint.component_id);
+        if (saved) {
+          last_affinity_node = active_serial_device;
+          last_affinity_endpoint = std::pair{
+              controlled_device->endpoint.system_id,
+              controlled_device->endpoint.component_id};
+          (*logger)->Info("已保存主控箱串口拓扑与MAVLink端点关联");
+        } else if (binding_error_log_limiter.ShouldLog(now)) {
+          (*logger)->Warn("未能保存主控箱串口拓扑关联: " + saved.error());
+        }
+      }
     }
     switch (state_store.UpdateDeviceId(uas_id)) {
       case state::DeviceIdUpdate::kUnchanged:
@@ -694,7 +786,8 @@ int main(int argc, char** argv) {
       }
 
       now = std::chrono::steady_clock::now();
-      if (!link && !discovery.IsRunning() && now >= next_discovery) {
+      if (!link && !m1_transaction.HasPending() &&
+          !discovery.IsRunning() && now >= next_discovery) {
         (void)discovery.Start(app_config->serial.device,
                               app_config->serial.baud,
                               kDiscoveryProbeTimeout);
@@ -742,7 +835,11 @@ int main(int argc, char** argv) {
           }
         }
       }
-      if (link && silence_watchdog.Expired(std::chrono::steady_clock::now())) {
+      if (link && !m1_transaction.HasPending() &&
+          (silence_watchdog.Expired(std::chrono::steady_clock::now()) ||
+           (manual_serial_opened_at &&
+            std::chrono::steady_clock::now() - *manual_serial_opened_at >=
+                kMavlinkSilenceTimeout))) {
         (*logger)->Error("连续10秒未收到合法MAVLink帧");
         mark_link_disconnected();
       }
@@ -1095,7 +1192,124 @@ int main(int argc, char** argv) {
           }
         } else if (!experiment_set_topic.empty() &&
                    message->topic == experiment_set_topic && !restart_requested) {
-          if (experiment::IsUartEchoOperation(message->payload)) {
+          if (experiment::IsM1Operation(message->payload)) {
+            const auto parsed = experiment::ParseM1Request(
+                message->payload, active_mqtt_binding->device_id);
+            if (!parsed) {
+              (*logger)->Warn("拒绝非法M1实验请求: " + parsed.error());
+            } else {
+              const auto endpoint = serial_affinity.Resolve(
+                  active_mqtt_binding->device_id);
+              const auto status = device_session.CurrentOnlineStatus();
+              const bool identity_conflict =
+                  status && status->identity_status ==
+                                runtime_status::IdentityStatus::kConflict;
+              std::error_code path_error;
+              const bool same_serial = endpoint &&
+                  (!link || std::filesystem::equivalent(
+                      active_serial_device, endpoint->path, path_error));
+              if (parsed->operation == experiment::M1Operation::kUartProbe &&
+                  endpoint && same_serial && !link && !identity_conflict &&
+                  !uart_echo_transaction.HasPending() &&
+                  !control_transaction.HasPending()) {
+                discovery.CancelAndJoin();
+                auto opened = uart::MavlinkLink::Open(
+                    endpoint->path.string(), app_config->serial.baud);
+                if (opened) {
+                  link.emplace(std::move(*opened));
+                  active_serial_device = endpoint->path.string();
+                  manual_serial_opened_at = std::chrono::steady_clock::now();
+                  (*logger)->Info("已按持久化拓扑路径打开M1失配探测串口");
+                } else {
+                  (*logger)->Warn("M1失配探测串口无法打开");
+                }
+              }
+              const auto applied_baud = link ? link->AppliedBaud()
+                                             : std::expected<int, uart::UartError>{0};
+              const bool current_identity =
+                  device_session.CanSendDeviceCommands() &&
+                  h1_endpoint_identity_verified && controlled_device &&
+                  controlled_device->type == device::Type::kCnsBox;
+              const auto started = m1_transaction.Start(
+                  *parsed,
+                  {.cns_box = active_mqtt_binding->device_type ==
+                                  device::Type::kCnsBox,
+                   .persisted_binding = device_session.HasPersistedBinding(),
+                   .identity_verified = current_identity,
+                   .trusted_endpoint = same_serial && !identity_conflict,
+                   .serial_open = link.has_value(),
+                   .serial_busy = uart_echo_transaction.HasPending() ||
+                                  control_transaction.HasPending(),
+                   .mqtt_connected = mqtt_client->IsConnected(),
+                   .source_system = endpoint ? endpoint->system_id : std::uint8_t{0},
+                   .source_component = kComponentId,
+                   .target_system = endpoint ? endpoint->system_id : std::uint8_t{0},
+                   .target_component = endpoint ? endpoint->component_id : std::uint8_t{0},
+                   .pi_baud = applied_baud ? *applied_baud : app_config->serial.baud},
+                  std::chrono::system_clock::now(), now);
+              if (!started.diagnostic.empty()) {
+                (*logger)->Warn("M1实验请求未执行: action_id=" +
+                                parsed->action_id + "，原因=" + started.diagnostic);
+              }
+              enqueue_m1_result(started.publication);
+              if (started.outbound) send_m1_frame(*started.outbound);
+              if (started.apply_pi_baud && endpoint) {
+                const auto changed = experiment::ApplyPiBaud(
+                    config_path, *started.apply_pi_baud,
+                    [&](const nlohmann::json& candidate) {
+                      return config_command::PersistConfig(
+                          *writer_options, config_path, candidate);
+                    },
+                    [&] {
+                      discovery.CancelAndJoin();
+                      link.reset();
+                      qgc_udp_bridge.reset();
+                      active_serial_device.clear();
+                      manual_serial_opened_at.reset();
+                      pending_first_message.reset();
+                      controlled_device.reset();
+                      h1_endpoint_identity_verified = false;
+                      device_session.SetLinkAvailable(false);
+                      state_store.ResetDeviceState();
+                      silence_watchdog.Reset();
+                    },
+                    [&](int baud) -> std::expected<int, std::string> {
+                      auto opened = uart::MavlinkLink::Open(
+                          endpoint->path.string(), baud);
+                      if (!opened) return std::unexpected("目标串口重新打开失败");
+                      link.emplace(std::move(*opened));
+                      active_serial_device = endpoint->path.string();
+                      manual_serial_opened_at = std::chrono::steady_clock::now();
+                      const auto actual = link->AppliedBaud();
+                      if (!actual) return std::unexpected("目标串口波特率读回失败");
+                      return *actual;
+                    });
+                if (changed) {
+                  app_config->serial.baud = changed->applied_baud;
+                  enqueue_m1_result(m1_transaction.OnPiBaudApplied(
+                      changed->applied_baud, link.has_value(),
+                      std::chrono::system_clock::now()));
+                  (*logger)->Info("Pi实验串口已在线切换并读回波特率: " +
+                                  std::to_string(changed->applied_baud));
+                } else {
+                  if (changed.error().configuration_persisted) {
+                    app_config->serial.baud = *started.apply_pi_baud;
+                    if (changed.error().code == "serial_reconfigure_failed") {
+                      link.reset();
+                      active_serial_device.clear();
+                      manual_serial_opened_at.reset();
+                    }
+                  }
+                  enqueue_m1_result(m1_transaction.OnPiBaudFailed(
+                      changed.error().code, std::chrono::system_clock::now()));
+                  (*logger)->Error("Pi实验串口在线换速失败: " +
+                                   changed.error().message);
+                }
+                next_discovery = std::chrono::steady_clock::now() +
+                                 kDiscoveryRetryInterval;
+              }
+            }
+          } else if (experiment::IsUartEchoOperation(message->payload)) {
             const auto parsed = experiment::ParseUartEchoRequest(
                 message->payload, active_mqtt_binding->device_id,
                 std::chrono::system_clock::now());
@@ -1112,7 +1326,8 @@ int main(int argc, char** argv) {
                    .cns_box = active_mqtt_binding->device_type == device::Type::kCnsBox &&
                               controlled_device &&
                               controlled_device->type == device::Type::kCnsBox,
-                   .serial_busy = control_transaction.HasPending(),
+                   .serial_busy = control_transaction.HasPending() ||
+                                  m1_transaction.HasPending(),
                    .source_system = rpi_system_id.value_or(0),
                    .source_component = kComponentId,
                    .target_system = controlled_device
@@ -1183,7 +1398,8 @@ int main(int argc, char** argv) {
                       .code = "config_write_failed", .message = "不可达的持久化分支"});
                 });
           } else if (control_transaction.HasPending() ||
-                     uart_echo_transaction.HasPending()) {
+                     uart_echo_transaction.HasPending() ||
+                     m1_transaction.HasPending()) {
             result.ack = config_command::BuildRejectedAck(
                 parsed->command_id,
                 {.code = "control_command_busy",
@@ -1232,7 +1448,8 @@ int main(int argc, char** argv) {
             (void)mqtt_client->Publish(
                 control_ack_topic, ack.dump(),
                 app_config->mqtt.topics.control_ack.qos, /*retain=*/false);
-          } else if (uart_echo_transaction.HasPending()) {
+          } else if (uart_echo_transaction.HasPending() ||
+                     m1_transaction.HasPending()) {
             const auto ack = control_command::BuildRejectedAck(
                 command->command_id, command->command,
                 {.code = "device_link_unavailable",
@@ -1314,6 +1531,10 @@ int main(int argc, char** argv) {
     }
     enqueue_echo_result(uart_echo_transaction.Tick(
         std::chrono::steady_clock::now(), std::chrono::system_clock::now()));
+    const auto m1_tick = m1_transaction.Tick(
+        std::chrono::steady_clock::now(), std::chrono::system_clock::now());
+    enqueue_m1_result(m1_tick.publication);
+    if (m1_tick.outbound) send_m1_frame(*m1_tick.outbound);
     (void)experiment::FeedRecoveredAckWhenIdle(
         experiment_ack_outbox, recovered_echo_publications);
 

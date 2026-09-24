@@ -7,6 +7,7 @@
 
 #include <charconv>
 #include <chrono>
+#include <limits>
 #include <optional>
 #include <ranges>
 #include <string>
@@ -135,9 +136,10 @@ std::expected<M1Request, std::string> ParseM1Request(
         (!lease.is_number_unsigned() && lease.get<std::int64_t>() <= 0)) {
       return std::unexpected("M1租约版本非法");
     }
-    if (has_baud && root.at("baud_rate") != 57600 &&
-        root.at("baud_rate") != 115200) {
-      return std::unexpected("M1目标波特率不在白名单内");
+    if (has_baud &&
+        (root.at("baud_rate") < std::numeric_limits<int>::min() ||
+         root.at("baud_rate") > std::numeric_limits<int>::max())) {
+      return std::unexpected("M1目标波特率超出整数范围");
     }
     M1Request request{
         .command_id = root.at("command_id").get<std::string>(),
@@ -162,11 +164,6 @@ std::expected<M1Request, std::string> ParseM1Request(
     const auto expiry = ParseUtcMillis(request.expires_at);
     if (!expiry) return std::unexpected("M1有效期格式非法");
     request.expiry = *expiry;
-    if ((*operation == M1Operation::kSetF407Baud && request.baud_rate != 57600) ||
-        (*operation == M1Operation::kSetPiBaud && request.baud_rate != 57600 &&
-         request.baud_rate != 115200)) {
-      return std::unexpected("M1目标波特率不在白名单内");
-    }
     return request;
   } catch (const Json::exception&) {
     return std::unexpected("M1请求不是合法JSON或字段类型非法");

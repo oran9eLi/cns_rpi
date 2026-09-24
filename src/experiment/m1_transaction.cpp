@@ -295,7 +295,7 @@ M1Start M1Transaction::Start(const M1Request& request, M1Gate gate,
       (request.operation == M1Operation::kSetPiBaud &&
        request.baud_rate != 57600 && request.baud_rate != 115200) ||
       (request.operation == M1Operation::kUartProbe && request.baud_rate)) {
-    return durable_rejected("invalid_request", "M1动作目标波特率不符合约定");
+    return durable_rejected("unsupported_baud_rate", "M1动作目标波特率不符合约定");
   }
   if (pending_ || gate.serial_busy) {
     return durable_rejected("serial_unavailable", "串口下行动作仍在进行");
@@ -397,6 +397,7 @@ M1Step M1Transaction::OnSent(const uart::SentFrame& sent,
 M1Step M1Transaction::OnFrame(const uart::WireFrame& frame,
                               WallClock::time_point wall_now) {
   if (!pending_ || !pending_->sent || frame.received_at < pending_->sent_at ||
+      frame.received_at - pending_->sent_at >= kResponseTimeout ||
       frame.message.sysid != pending_->gate.target_system ||
       frame.message.compid != pending_->gate.target_component ||
       frame.bytes.empty() || frame.bytes.size() > kMaxFrameBytes) return {};

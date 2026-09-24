@@ -3,6 +3,7 @@
 
 #include <filesystem>
 #include <nlohmann/json.hpp>
+#include <unistd.h>
 
 #include "experiment/m1_transaction.hpp"
 
@@ -36,8 +37,11 @@ experiment::M1Gate Gate() {
 
 std::filesystem::path Journal() {
   static int serial = 0;
-  return std::filesystem::temp_directory_path() /
-         ("cns-m1-journal-test-" + std::to_string(++serial) + ".json");
+  const auto path = std::filesystem::temp_directory_path() /
+      ("cns-m1-journal-test-" + std::to_string(::getpid()) + "-" +
+       std::to_string(++serial) + ".json");
+  std::filesystem::remove(path);
+  return path;
 }
 
 uart::WireFrame Wire(const mavlink_message_t& message, Clock::time_point received_at) {
@@ -300,5 +304,64 @@ TEST_CASE("事务入口不会因缺失改参目标值而解引用空值") {
   REQUIRE(started.publication.has_value());
   CHECK(nlohmann::json::parse(started.publication->payload).at("status") ==
         "rejected");
+  std::filesystem::remove(path);
+}
+
+TEST_CASE("结构正确但超出操作白名单的速率有明确拒绝回执") {
+  const auto path = Journal();
+  const auto wall = Wall::time_point{std::chrono::seconds(1000)};
+  experiment::M1Transaction tx(path, "cns");
+  REQUIRE(tx.Load().has_value());
+  auto request = Request(experiment::M1Operation::kSetF407Baud, wall);
+  request.baud_rate = 115200;
+  const auto rejected = tx.Start(request, Gate(), wall, Clock::time_point{});
+  CHECK_FALSE(rejected.outbound.has_value());
+  REQUIRE(rejected.publication.has_value());
+  CHECK(nlohmann::json::parse(rejected.publication->payload).at("error_code") ==
+        "unsupported_baud_rate");
+  std::filesystem::remove(path);
+}
+
+TEST_CASE("超过每轮五秒截止的迟到响应不能计入改参接受或探测回显") {
+  const auto wall = Wall::time_point{std::chrono::seconds(1000)};
+  const auto t0 = Clock::time_point{std::chrono::seconds(100)};
+  for (const auto operation : {experiment::M1Operation::kSetF407Baud,
+                               experiment::M1Operation::kUartProbe}) {
+    const auto path = Journal();
+    experiment::M1Transaction tx(path, "cns", [] {
+      return std::expected<std::uint64_t, std::string>{kNonce};
+    });
+    REQUIRE(tx.Load().has_value());
+    const auto started = tx.Start(Request(operation, wall), Gate(), wall, t0);
+    REQUIRE(started.outbound.has_value());
+    CHECK_FALSE(tx.OnSent({Wire(*started.outbound, t0).bytes, t0}, wall).publication);
+    const auto late = Wire(operation == experiment::M1Operation::kSetF407Baud
+                               ? Accepted() : Echo(kNonce),
+                           t0 + std::chrono::seconds(5) +
+                               std::chrono::milliseconds(1));
+    CHECK_FALSE(tx.OnFrame(late, wall).publication.has_value());
+    const auto tick = tx.Tick(late.received_at, wall);
+    if (operation == experiment::M1Operation::kSetF407Baud) {
+      REQUIRE(tick.publication.has_value());
+      CHECK(nlohmann::json::parse(tick.publication->payload).at("error_code") ==
+            "result_uncertain");
+    } else {
+      REQUIRE(tick.outbound.has_value());
+    }
+    std::filesystem::remove(path);
+  }
+}
+
+TEST_CASE("配置写入状态不明时实验ACK只使用已约定的结果待核验码") {
+  const auto path = Journal();
+  const auto wall = Wall::time_point{std::chrono::seconds(1000)};
+  experiment::M1Transaction tx(path, "cns");
+  REQUIRE(tx.Load().has_value());
+  REQUIRE(tx.Start(Request(experiment::M1Operation::kSetPiBaud, wall),
+                   Gate(), wall, Clock::time_point{}).apply_pi_baud.has_value());
+  const auto failed = tx.OnPiBaudFailed("config_write_uncertain", wall);
+  REQUIRE(failed.has_value());
+  CHECK(nlohmann::json::parse(failed->payload).at("error_code") ==
+        "result_uncertain");
   std::filesystem::remove(path);
 }
