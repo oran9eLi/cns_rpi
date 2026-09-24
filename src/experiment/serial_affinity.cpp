@@ -74,12 +74,11 @@ std::expected<void, std::string> SerialAffinity::ObserveVerified(
     if (resolved && *resolved == active) matches.push_back(candidate);
   }
   if (error || matches.empty()) {
-    return std::unexpected("当前串口没有唯一可核对的USB拓扑路径");
+    return std::unexpected("当前串口没有可核对的USB拓扑路径");
   }
   std::sort(matches.begin(), matches.end());
-  if (matches.size() != 1) {
-    return std::unexpected("当前串口对应多个USB拓扑路径");
-  }
+  // 同一个 ttyUSB 节点可能同时有 usb 与 usbv2 别名；只保留稳定排序的
+  // 第一条。所有候选均已解析到同一当前节点，不把不同设备混为一体。
   const auto content = Json{{"schema_version", 1},
                             {"device_id", device_id},
                             {"path", matches.front().string()},

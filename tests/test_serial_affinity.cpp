@@ -58,6 +58,16 @@ TEST_CASE("ttyUSB枚举号变动后仍通过同一拓扑路径找到串口") {
   CHECK_FALSE(restarted.Resolve(kId).has_value());
 }
 
+TEST_CASE("同一ttyUSB节点有两条系统拓扑别名时确定性选取其中一条") {
+  Fixture f;
+  std::filesystem::create_symlink(f.node, f.by_path / "usbv2-1:2.3");
+  experiment::SerialAffinity affinity(f.journal, f.by_path, f.device_root);
+  REQUIRE(affinity.ObserveVerified(kId, f.node, 42, 193).has_value());
+  const auto resolved = affinity.Resolve(kId);
+  REQUIRE(resolved.has_value());
+  CHECK(resolved->path == f.by_path / "usb-1:2.3");
+}
+
 TEST_CASE("不接受不可信节点或被改写到设备目录外的拓扑路径") {
   Fixture f;
   experiment::SerialAffinity affinity(f.journal, f.by_path, f.device_root);
