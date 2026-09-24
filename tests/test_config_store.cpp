@@ -58,6 +58,22 @@ TEST_CASE("direct原子替换完整JSON且不残留候选文件") {
                       std::filesystem::directory_iterator{}) == 1);
 }
 
+TEST_CASE("direct替换配置时保留原文件权限") {
+  TempDirectory directory;
+  const auto path = directory.path() / "config.json";
+  WriteText(path, R"({"old":true})");
+  std::filesystem::permissions(path, std::filesystem::perms::owner_read |
+                                      std::filesystem::perms::owner_write |
+                                      std::filesystem::perms::group_read,
+                               std::filesystem::perm_options::replace);
+  REQUIRE(config_command::PersistConfig(
+      {.mode = config_command::ConfigWriterMode::kDirect, .helper_path = {}}, path,
+      nlohmann::json{{"new", true}}).has_value());
+  CHECK((std::filesystem::status(path).permissions() &
+         std::filesystem::perms::group_read) ==
+        std::filesystem::perms::group_read);
+}
+
 TEST_CASE("disabled和写入失败返回稳定错误且保留旧配置") {
   TempDirectory directory;
   const auto path = directory.path() / "config.json";

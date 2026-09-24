@@ -295,6 +295,19 @@ TEST_CASE("后台发现启动后不会阻塞主循环") {
   CHECK_FALSE(discovery.IsRunning());
 }
 
+TEST_CASE("受控动作前可停止并回收后台发现串口持有者") {
+  auto silent = OpenPtyPair();
+  uart::AsyncMavlinkDiscovery discovery;
+  REQUIRE(discovery.Start(silent.slave_path, 115200,
+                          std::chrono::seconds(5)));
+  discovery.CancelAndJoin();
+  CHECK_FALSE(discovery.IsRunning());
+  CHECK_FALSE(discovery.TryTakeResult().has_value());
+  CHECK(discovery.Start(silent.slave_path, 115200,
+                        std::chrono::milliseconds(1)));
+  discovery.CancelAndJoin();
+}
+
 TEST_CASE("后台发现完成后返回首个合法帧") {
   auto mavlink = OpenPtyPair();
   WriteAll(mavlink.master_fd, Encode(PackHeartbeat(22)));

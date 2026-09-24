@@ -10,6 +10,7 @@
 #include <fstream>
 
 #include <fcntl.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -83,8 +84,17 @@ bool FsyncFile(const std::filesystem::path& path) {
 
 std::expected<void, CommandError> PersistDirect(const std::filesystem::path& config_path,
                                                 const nlohmann::json& candidate) {
+  struct stat original_stat {};
+  if (::stat(config_path.c_str(), &original_stat) != 0 ||
+      !S_ISREG(original_stat.st_mode)) {
+    return std::unexpected(WriteError("原配置文件不可读取或不是普通文件"));
+  }
   auto temporary = WriteCandidate(config_path, candidate);
   if (!temporary) return std::unexpected(temporary.error());
+  if (::chmod(temporary->c_str(), original_stat.st_mode & 07777) != 0) {
+    ::unlink(temporary->c_str());
+    return std::unexpected(WriteError("无法保留配置文件权限"));
+  }
   const std::filesystem::path backup = temporary->string() + ".old";
   if (::link(config_path.c_str(), backup.c_str()) != 0 || !FsyncDirectory(config_path)) {
     ::unlink(temporary->c_str());

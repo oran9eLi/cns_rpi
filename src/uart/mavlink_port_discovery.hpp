@@ -98,6 +98,8 @@ class AsyncMavlinkDiscovery {
 
   bool Start(std::string configured_device, int baud,
              std::chrono::milliseconds per_port_timeout);
+  /// 在主循环独占串口前，停止后台候选读取并回收未消费的结果。
+  void CancelAndJoin();
   bool IsRunning() const { return running_.load(std::memory_order_acquire); }
   std::optional<DiscoveryAttempt> TryTakeResult();
 

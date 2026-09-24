@@ -248,4 +248,14 @@ std::optional<DiscoveryAttempt> AsyncMavlinkDiscovery::TryTakeResult() {
   return result;
 }
 
+void AsyncMavlinkDiscovery::CancelAndJoin() {
+  if (worker_.joinable()) {
+    worker_.request_stop();
+    worker_.join();
+  }
+  std::scoped_lock lock(mutex_);
+  result_.reset();
+  running_.store(false, std::memory_order_release);
+}
+
 }  // 命名空间 uart

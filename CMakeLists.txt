@@ -44,6 +44,8 @@ add_library(cns_rpi_core
     src/experiment/m1_request.cpp
     src/experiment/m1_protocol.cpp
     src/experiment/m1_transaction.cpp
+    src/experiment/serial_affinity.cpp
+    src/experiment/pi_baud_change.cpp
   src/experiment/uart_echo_protocol.cpp
   src/experiment/uart_echo_transaction.cpp
     src/config_command/command_parser.cpp
@@ -182,6 +184,14 @@ add_test(NAME m1_protocol COMMAND test_m1_protocol)
 add_executable(test_m1_transaction tests/test_m1_transaction.cpp)
 target_link_libraries(test_m1_transaction PRIVATE cns_rpi_core)
 add_test(NAME m1_transaction COMMAND test_m1_transaction)
+
+add_executable(test_serial_affinity tests/test_serial_affinity.cpp)
+target_link_libraries(test_serial_affinity PRIVATE cns_rpi_core)
+add_test(NAME serial_affinity COMMAND test_serial_affinity)
+
+add_executable(test_pi_baud_change tests/test_pi_baud_change.cpp)
+target_link_libraries(test_pi_baud_change PRIVATE cns_rpi_core)
+add_test(NAME pi_baud_change COMMAND test_pi_baud_change)
 
 add_executable(test_uart_echo_protocol tests/test_uart_echo_protocol.cpp)
 target_link_libraries(test_uart_echo_protocol PRIVATE cns_rpi_core)
