@@ -223,6 +223,17 @@ std::string UartEchoTransaction::TakeDiagnostic() {
   return std::exchange(storage_diagnostic_, {});
 }
 
+bool UartEchoTransaction::HasActionId(std::string_view action_id) const {
+  return std::ranges::any_of(records_, [&](const Record& record) {
+    return record.action_id == action_id;
+  });
+}
+
+void UartEchoTransaction::SetForeignActionLookup(
+    std::function<bool(std::string_view)> lookup) {
+  foreign_action_lookup_ = std::move(lookup);
+}
+
 Publication UartEchoTransaction::Publish(const std::string& device_id,
                                           const std::string& payload) const {
   return {.topic = mqtt::BuildExperimentAckTopic(topic_namespace_, device_id),
@@ -262,6 +273,9 @@ EchoStart UartEchoTransaction::Start(const UartEchoRequest& request, EchoGate ga
     ack["command_id"] = request.command_id;
     return {.outbound = std::nullopt,
             .publication = Publish(request.device_id, ack.dump()), .diagnostic = {}};
+  }
+  if (foreign_action_lookup_ && foreign_action_lookup_(request.action_id)) {
+    return rejected("duplicate_conflict", "动作ID已被其他实验操作占用");
   }
   auto durable_rejected = [&](std::string_view code, std::string message) -> EchoStart {
     if (records_.size() >= kMaxRecords) {

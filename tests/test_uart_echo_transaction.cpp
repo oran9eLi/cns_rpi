@@ -55,6 +55,24 @@ uart::WireFrame Wire(mavlink_message_t message, Clock::time_point at) {
 }
 }  // namespace
 
+TEST_CASE("H1遇到已由M1占用的动作ID时不得发送回显帧") {
+  const auto path = Journal();
+  const auto wall = Wall::time_point{std::chrono::seconds(1000)};
+  const auto request = Request(wall);
+  experiment::UartEchoTransaction tx(path, "cns");
+  REQUIRE(tx.Load().has_value());
+  tx.SetForeignActionLookup([&](std::string_view action_id) {
+    return action_id == request.action_id;
+  });
+  const auto result = tx.Start(request, Gate(), wall, Clock::time_point{});
+  CHECK_FALSE(result.outbound.has_value());
+  REQUIRE(result.publication.has_value());
+  CHECK(nlohmann::json::parse(result.publication->payload).at("error_code") ==
+        "duplicate_conflict");
+  CHECK_FALSE(tx.HasPending());
+  std::filesystem::remove(path);
+}
+
 TEST_CASE("H1 完整回显与本动作后新业务帧共同形成成功事实") {
   auto path = Journal();
   const auto wall = Wall::time_point{std::chrono::seconds(1000)};

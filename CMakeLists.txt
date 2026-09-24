@@ -43,6 +43,7 @@ add_library(cns_rpi_core
     src/experiment/uart_echo_request.cpp
     src/experiment/m1_request.cpp
     src/experiment/m1_protocol.cpp
+    src/experiment/m1_transaction.cpp
   src/experiment/uart_echo_protocol.cpp
   src/experiment/uart_echo_transaction.cpp
     src/config_command/command_parser.cpp
@@ -177,6 +178,10 @@ add_test(NAME m1_request COMMAND test_m1_request)
 add_executable(test_m1_protocol tests/test_m1_protocol.cpp)
 target_link_libraries(test_m1_protocol PRIVATE cns_rpi_core)
 add_test(NAME m1_protocol COMMAND test_m1_protocol)
+
+add_executable(test_m1_transaction tests/test_m1_transaction.cpp)
+target_link_libraries(test_m1_transaction PRIVATE cns_rpi_core)
+add_test(NAME m1_transaction COMMAND test_m1_transaction)
 
 add_executable(test_uart_echo_protocol tests/test_uart_echo_protocol.cpp)
 target_link_libraries(test_uart_echo_protocol PRIVATE cns_rpi_core)

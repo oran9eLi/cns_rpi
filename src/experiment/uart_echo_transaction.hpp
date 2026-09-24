@@ -65,6 +65,10 @@ class UartEchoTransaction {
   std::vector<Publication> RecoveredPublications() const;
   /** @brief 取出最近一次无法形成 ACK 的持久化诊断。 */
   std::string TakeDiagnostic();
+  /** @brief 供其他实验动作查询 H1 已占用的动作身份。 */
+  bool HasActionId(std::string_view action_id) const;
+  /** @brief 串行主循环提供其他实验操作的持久化动作身份查询。 */
+  void SetForeignActionLookup(std::function<bool(std::string_view)> lookup);
   EchoStart Start(const UartEchoRequest& request, EchoGate gate,
                   WallClock::time_point wall_now, SteadyClock::time_point steady_now);
   /** @brief 仅在完整写入串口后确认 TX 事实。 */
@@ -116,6 +120,7 @@ class UartEchoTransaction {
   std::string storage_diagnostic_;
   std::vector<Record> records_;
   std::optional<Pending> pending_;
+  std::function<bool(std::string_view)> foreign_action_lookup_;
 };
 
 }  // namespace experiment
