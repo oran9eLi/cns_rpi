@@ -82,13 +82,15 @@ Json FailedAck(const M1Request& request, std::chrono::system_clock::time_point n
 }
 
 std::string Comparison(const M1Request& request) {
+  const Json baud_rate = request.baud_rate
+                             ? Json(*request.baud_rate) : Json(nullptr);
   return Json{{"device_id", request.device_id},
               {"session_id", request.session_id},
               {"request_id", request.request_id},
               {"lease_version", request.lease_version},
               {"expires_at", request.expires_at},
               {"operation", OperationName(request.operation)},
-              {"baud_rate", request.baud_rate}}.dump();
+              {"baud_rate", baud_rate}}.dump();
 }
 
 std::string NonceHex(std::uint64_t nonce) {
