@@ -41,6 +41,8 @@ add_library(cns_rpi_core
     src/runtime_status/device_session.cpp
     src/experiment/pi_link_inspection.cpp
     src/experiment/uart_echo_request.cpp
+    src/experiment/m1_request.cpp
+    src/experiment/m1_protocol.cpp
   src/experiment/uart_echo_protocol.cpp
   src/experiment/uart_echo_transaction.cpp
     src/config_command/command_parser.cpp
@@ -167,6 +169,14 @@ add_test(NAME pi_link_inspection COMMAND test_pi_link_inspection)
 add_executable(test_uart_echo_request tests/test_uart_echo_request.cpp)
 target_link_libraries(test_uart_echo_request PRIVATE cns_rpi_core)
 add_test(NAME uart_echo_request COMMAND test_uart_echo_request)
+
+add_executable(test_m1_request tests/test_m1_request.cpp)
+target_link_libraries(test_m1_request PRIVATE cns_rpi_core)
+add_test(NAME m1_request COMMAND test_m1_request)
+
+add_executable(test_m1_protocol tests/test_m1_protocol.cpp)
+target_link_libraries(test_m1_protocol PRIVATE cns_rpi_core)
+add_test(NAME m1_protocol COMMAND test_m1_protocol)
 
 add_executable(test_uart_echo_protocol tests/test_uart_echo_protocol.cpp)
 target_link_libraries(test_uart_echo_protocol PRIVATE cns_rpi_core)
