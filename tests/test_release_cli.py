@@ -18,7 +18,7 @@ class ReleaseCliTest(unittest.TestCase):
     def test_version_without_configuration(self):
         result = self.run_cli("--version")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("1.0.2", result.stdout)
+        self.assertIn("1.0.3", result.stdout)
 
     def test_valid_configuration_without_hardware(self):
         result = self.run_cli("--check-config", str(ROOT / "config/config.example.json"))
