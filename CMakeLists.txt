@@ -46,6 +46,7 @@ add_library(cns_rpi_core
     src/experiment/m1_transaction.cpp
     src/experiment/serial_affinity.cpp
     src/experiment/pi_baud_change.cpp
+    src/experiment/startup_baud_recovery.cpp
   src/experiment/uart_echo_protocol.cpp
   src/experiment/uart_echo_transaction.cpp
     src/config_command/command_parser.cpp
@@ -192,6 +193,10 @@ add_test(NAME serial_affinity COMMAND test_serial_affinity)
 add_executable(test_pi_baud_change tests/test_pi_baud_change.cpp)
 target_link_libraries(test_pi_baud_change PRIVATE cns_rpi_core)
 add_test(NAME pi_baud_change COMMAND test_pi_baud_change)
+
+add_executable(test_startup_baud_recovery tests/test_startup_baud_recovery.cpp)
+target_link_libraries(test_startup_baud_recovery PRIVATE cns_rpi_core)
+add_test(NAME startup_baud_recovery COMMAND test_startup_baud_recovery)
 
 add_executable(test_uart_echo_protocol tests/test_uart_echo_protocol.cpp)
 target_link_libraries(test_uart_echo_protocol PRIVATE cns_rpi_core)

@@ -97,3 +97,51 @@ TEST_CASE("非白名单速率不持久化也不操作串口") {
   REQUIRE_FALSE(result.has_value());
   CHECK_FALSE(touched);
 }
+
+TEST_CASE("重启恢复只持久化已核验的基准速率并保留其他配置") {
+  Fixture f;
+  std::ofstream(f.path) <<
+      R"({"serial":{"device":"auto","baud":57600},"mqtt":{"keep":1}})";
+  const auto result = experiment::PersistRecoveredBaud(
+      f.path, 115200, [&](const nlohmann::json& candidate) {
+        return config_command::PersistConfig(
+            {.mode = config_command::ConfigWriterMode::kDirect,
+             .helper_path = {}},
+            f.path, candidate);
+      });
+  REQUIRE(result.has_value());
+  std::ifstream input(f.path);
+  const auto persisted = nlohmann::json::parse(input);
+  CHECK(persisted.at("serial").at("baud") == 115200);
+  CHECK(persisted.at("serial").at("device") == "auto");
+  CHECK(persisted.at("mqtt").at("keep") == 1);
+}
+
+TEST_CASE("重启恢复不能把未核验或非基准速率写入配置") {
+  Fixture f;
+  bool called = false;
+  const auto result = experiment::PersistRecoveredBaud(
+      f.path, 57600,
+      [&](const nlohmann::json&) ->
+          std::expected<void, config_command::CommandError> {
+        called = true;
+        return {};
+      });
+  REQUIRE_FALSE(result.has_value());
+  CHECK_FALSE(called);
+}
+
+TEST_CASE("恢复重试即使配置已有基准值仍重新确认持久化") {
+  Fixture f;
+  bool called = false;
+  const auto result = experiment::PersistRecoveredBaud(
+      f.path, 115200,
+      [&](const nlohmann::json& candidate) ->
+          std::expected<void, config_command::CommandError> {
+        called = true;
+        CHECK(candidate.at("serial").at("baud") == 115200);
+        return {};
+      });
+  REQUIRE(result.has_value());
+  CHECK(called);
+}

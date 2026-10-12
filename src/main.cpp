@@ -45,6 +45,7 @@
 #include "experiment/m1_transaction.hpp"
 #include "experiment/pi_baud_change.hpp"
 #include "experiment/serial_affinity.hpp"
+#include "experiment/startup_baud_recovery.hpp"
 #include "experiment/uart_echo_request.hpp"
 #include "experiment/uart_echo_transaction.hpp"
 #include "latency/px4_latency.hpp"
@@ -70,8 +71,11 @@ namespace {
 constexpr std::uint8_t kComponentId = MAV_COMP_ID_ONBOARD_COMPUTER;
 constexpr auto kControlAckTimeout = std::chrono::seconds(2);
 constexpr auto kDiscoveryProbeTimeout = std::chrono::milliseconds(300);
+// 基准速率只探测已核验拓扑路径，等待窗口覆盖固件的周期身份/心跳帧。
+constexpr auto kStartupRecoveryProbeTimeout = std::chrono::milliseconds(2000);
 constexpr auto kDiscoveryRetryInterval = std::chrono::seconds(1);
 constexpr auto kDiscoveryWarningInterval = std::chrono::seconds(10);
+constexpr auto kRecoveryPersistRetryInterval = std::chrono::seconds(5);
 constexpr auto kMavlinkSilenceTimeout = std::chrono::seconds(10);
 constexpr auto kPx4IdentityRequestInterval = std::chrono::seconds(2);
 /// 身份未就绪的提示日志间隔。请求节拍是 2s，逐次告警会淹没日志。
@@ -255,6 +259,11 @@ int main(int argc, char** argv) {
       });
   experiment::SerialAffinity serial_affinity(
       app_config->identity.binding_file.string() + ".m1-serial-affinity.json");
+  experiment::StartupBaudRecovery startup_baud_recovery(
+      app_config->serial.baud,
+      persisted_binding && persisted_binding->device_type == device::Type::kCnsBox);
+  std::optional<int> recovered_baud_to_persist;
+  auto next_recovery_persist_attempt = started_at;
   if (const auto journal = uart_echo_transaction.Load(); !journal) {
     (*logger)->Warn("H1动作去重记录不可用，已禁止回显发帧: " + journal.error());
   } else {
@@ -429,6 +438,7 @@ int main(int argc, char** argv) {
   };
 
   auto mark_link_disconnected = [&] {
+    startup_baud_recovery.LinkLost();
     enqueue_m1_result(m1_transaction.Abort(
         "serial_unavailable", std::chrono::system_clock::now()).publication);
     enqueue_echo_result(uart_echo_transaction.Abort(
@@ -705,6 +715,21 @@ int main(int argc, char** argv) {
         return;
       }
       if (observation == runtime_status::IdentityObservation::kVerified &&
+          h1_endpoint_identity_verified && startup_baud_recovery.Active() && link) {
+        const auto actual_baud = link->AppliedBaud();
+        if (actual_baud && *actual_baud ==
+                               startup_baud_recovery.ProbeBaud(
+                                   app_config->serial.baud)) {
+          startup_baud_recovery.IdentityVerified();
+          if (const auto recovered = startup_baud_recovery.RecoveredBaud()) {
+            app_config->serial.baud = *recovered;
+            recovered_baud_to_persist = *recovered;
+            next_recovery_persist_attempt = now;
+            (*logger)->Info("启动恢复已核验F407身份与基准波特率，准备持久化配置");
+          }
+        }
+      }
+      if (observation == runtime_status::IdentityObservation::kVerified &&
           h1_endpoint_identity_verified && !active_serial_device.empty() &&
           (last_affinity_node != active_serial_device ||
            last_affinity_endpoint != std::pair{
@@ -759,10 +784,15 @@ int main(int argc, char** argv) {
     if (!link) {
       if (auto attempt = discovery.TryTakeResult()) {
         if (attempt->found) {
+          startup_baud_recovery.ProbeFound();
           active_serial_device = std::move(attempt->found->device);
           pending_first_message = attempt->found->first_message;
           link.emplace(std::move(attempt->found->link));
           silence_watchdog.ObserveValidFrame(std::chrono::steady_clock::now());
+          if (startup_baud_recovery.UseTrustedEndpoint()) {
+            (*logger)->Info(
+                "启动恢复在受信串口以115200收到合法MAVLink帧，等待F407身份复核");
+          }
           if (ever_connected_to_device) {
             (*logger)->Info("已重新发现受控设备 MAVLink 串口，链路恢复: " +
                             active_serial_device);
@@ -772,6 +802,7 @@ int main(int argc, char** argv) {
             ever_connected_to_device = true;
           }
         } else if (!g_exit_requested) {
+          startup_baud_recovery.ProbeFailed();
           const auto discovery_finished = std::chrono::steady_clock::now();
           if (discovery_log_limiter.ShouldLog(discovery_finished)) {
             std::string warning = "尚未发现受控设备 MAVLink 串口，继续等待";
@@ -788,9 +819,30 @@ int main(int argc, char** argv) {
       now = std::chrono::steady_clock::now();
       if (!link && !m1_transaction.HasPending() &&
           !discovery.IsRunning() && now >= next_discovery) {
-        (void)discovery.Start(app_config->serial.device,
-                              app_config->serial.baud,
-                              kDiscoveryProbeTimeout);
+        std::string probe_device = app_config->serial.device;
+        int probe_baud = startup_baud_recovery.ProbeBaud(
+            app_config->serial.baud);
+        if (startup_baud_recovery.UseTrustedEndpoint() && persisted_binding) {
+          const auto endpoint = serial_affinity.Resolve(
+              persisted_binding->device_id);
+          if (endpoint) {
+            probe_device = endpoint->path.string();
+          } else {
+            if (binding_error_log_limiter.ShouldLog(now)) {
+              (*logger)->Warn(
+                  "启动恢复缺少受信串口拓扑，暂不尝试基准速率: " +
+                  endpoint.error());
+            }
+            startup_baud_recovery.ProbeFailed();
+            probe_baud = startup_baud_recovery.ProbeBaud(
+                app_config->serial.baud);
+          }
+        }
+        (void)discovery.Start(
+            probe_device, probe_baud,
+            startup_baud_recovery.UseTrustedEndpoint()
+                ? kStartupRecoveryProbeTimeout
+                : kDiscoveryProbeTimeout);
       }
     }
 
@@ -846,9 +898,27 @@ int main(int argc, char** argv) {
     }
 
     now = std::chrono::steady_clock::now();
+    if (recovered_baud_to_persist &&
+        now >= next_recovery_persist_attempt) {
+      const auto persisted = experiment::PersistRecoveredBaud(
+          config_path, *recovered_baud_to_persist,
+          [&](const nlohmann::json& candidate) {
+            return config_command::PersistConfig(
+                *writer_options, config_path, candidate);
+          });
+      if (persisted) {
+        (*logger)->Info("启动恢复的串口波特率已持久化: " +
+                        std::to_string(*recovered_baud_to_persist));
+        recovered_baud_to_persist.reset();
+      } else {
+        (*logger)->Error("启动恢复波特率持久化失败，稍后重试: " +
+                         persisted.error().message);
+        next_recovery_persist_attempt = now + kRecoveryPersistRetryInterval;
+      }
+    }
     const auto rpi_system_id =
         control_command::LearnedControlledSystemId(controlled_device);
-    if (link && rpi_system_id &&
+    if (link && rpi_system_id && startup_baud_recovery.AllowPeriodicOutput() &&
         now - last_heartbeat >= app_config->runtime.heartbeat_interval) {
       mavlink_message_t heartbeat = BuildHeartbeat(*rpi_system_id);
       if (!link->SendMessage(heartbeat)) {
@@ -858,7 +928,7 @@ int main(int argc, char** argv) {
       }
     }
 
-    if (link && rpi_system_id &&
+    if (link && rpi_system_id && startup_baud_recovery.AllowPeriodicOutput() &&
         now - last_cellular_heartbeat >= app_config->cellular.heartbeat_interval) {
       const auto cellular_snapshot = cellular::ReadStatusSnapshot(
           app_config->cellular.status_snapshot_path,
@@ -1209,6 +1279,7 @@ int main(int argc, char** argv) {
                   (!link || std::filesystem::equivalent(
                       active_serial_device, endpoint->path, path_error));
               if (parsed->operation == experiment::M1Operation::kUartProbe &&
+                  startup_baud_recovery.AllowM1Probe() &&
                   endpoint && same_serial && !link && !identity_conflict &&
                   !uart_echo_transaction.HasPending() &&
                   !control_transaction.HasPending()) {
@@ -1239,7 +1310,9 @@ int main(int argc, char** argv) {
                    .trusted_endpoint = same_serial && !identity_conflict,
                    .serial_open = link.has_value(),
                    .serial_busy = uart_echo_transaction.HasPending() ||
-                                  control_transaction.HasPending(),
+                                  control_transaction.HasPending() ||
+                                  (parsed->operation == experiment::M1Operation::kUartProbe &&
+                                   !startup_baud_recovery.AllowM1Probe()),
                    .mqtt_connected = mqtt_client->IsConnected(),
                    .source_system = endpoint ? endpoint->system_id : std::uint8_t{0},
                    .source_component = kComponentId,
@@ -1247,6 +1320,9 @@ int main(int argc, char** argv) {
                    .target_component = endpoint ? endpoint->component_id : std::uint8_t{0},
                    .pi_baud = applied_baud ? *applied_baud : app_config->serial.baud},
                   std::chrono::system_clock::now(), now);
+              if (started.outbound || started.apply_pi_baud) {
+                startup_baud_recovery.Cancel();
+              }
               if (!started.diagnostic.empty()) {
                 (*logger)->Warn("M1实验请求未执行: action_id=" +
                                 parsed->action_id + "，原因=" + started.diagnostic);
@@ -1254,6 +1330,7 @@ int main(int argc, char** argv) {
               enqueue_m1_result(started.publication);
               if (started.outbound) send_m1_frame(*started.outbound);
               if (started.apply_pi_baud && endpoint) {
+                recovered_baud_to_persist.reset();
                 const auto changed = experiment::ApplyPiBaud(
                     config_path, *started.apply_pi_baud,
                     [&](const nlohmann::json& candidate) {

@@ -40,4 +40,30 @@ std::expected<PiBaudApplied, PiBaudFailure> ApplyPiBaud(
   return PiBaudApplied{*actual};
 }
 
+std::expected<void, PiBaudFailure> PersistRecoveredBaud(
+    const std::filesystem::path& config_path, int verified_baud,
+    const BaudPersist& persist) {
+  if (verified_baud != 115200) {
+    return std::unexpected(PiBaudFailure{
+        "invalid_request", "启动恢复速率不是主控箱基准速率", false});
+  }
+  const auto loaded = config_command::LoadConfigJson(config_path);
+  if (!loaded || !loaded->is_object() || !loaded->contains("serial") ||
+      !loaded->at("serial").is_object() ||
+      !loaded->at("serial").contains("baud")) {
+    return std::unexpected(PiBaudFailure{
+        "config_write_failed", "无法读取现有串口配置", false});
+  }
+  auto candidate = *loaded;
+  candidate["serial"]["baud"] = verified_baud;
+  const auto written = persist(candidate);
+  if (!written) {
+    const auto uncertain = written.error().code == "config_write_uncertain";
+    return std::unexpected(PiBaudFailure{
+        uncertain ? "config_write_uncertain" : "config_write_failed",
+        written.error().message, false});
+  }
+  return {};
+}
+
 }  // namespace experiment

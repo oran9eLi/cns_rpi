@@ -31,4 +31,9 @@ std::expected<PiBaudApplied, PiBaudFailure> ApplyPiBaud(
     const BaudPersist& persist, const BaudClose& close,
     const BaudOpen& open);
 
+/** @brief 身份已复核后仅持久化启动恢复的基准速率，不重开已经确认的串口。 */
+std::expected<void, PiBaudFailure> PersistRecoveredBaud(
+    const std::filesystem::path& config_path, int verified_baud,
+    const BaudPersist& persist);
+
 }  // namespace experiment
