@@ -1378,9 +1378,9 @@ int main(int argc, char** argv) {
             if (!parsed) {
               (*logger)->Warn("拒绝非法M1实验请求: " + parsed.error());
             } else if (!replay_deferred &&
-                       deferred_serial_requests.ShouldIntercept(
-                           endpoint_revalidation.Pending()) &&
-                       parsed->operation != experiment::M1Operation::kSetPiBaud) {
+                       deferred_serial_requests.ShouldInterceptM1(
+                           endpoint_revalidation.Pending(),
+                           parsed->operation == experiment::M1Operation::kSetPiBaud)) {
               const auto queued = deferred_serial_requests.Enqueue(*parsed);
               if (queued == experiment::DeferResult::kQueued) {
                 (*logger)->Info("F407身份待复核，已暂存一个M1串口请求: action_id=" +

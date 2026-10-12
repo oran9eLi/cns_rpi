@@ -75,6 +75,12 @@ bool DeferredSerialRequestQueue::ShouldIntercept(
   return revalidation_pending || pending_.has_value();
 }
 
+bool DeferredSerialRequestQueue::ShouldInterceptM1(
+    bool revalidation_pending, bool local_pi_baud) const {
+  return pending_.has_value() ||
+         (revalidation_pending && !local_pi_baud);
+}
+
 const DeferredSerialRequest* DeferredSerialRequestQueue::Front() const {
   return pending_ ? &*pending_ : nullptr;
 }

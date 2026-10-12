@@ -26,6 +26,8 @@ class DeferredSerialRequestQueue {
   DeferResult Enqueue(DeferredSerialRequest request);
   /** @brief 槽内动作移交前始终拦截来信，避免重投绕开去重。 */
   bool ShouldIntercept(bool revalidation_pending) const;
+  /** @brief Pi本地换速在槽空时走原门禁；槽被占用时先做动作ID检查。 */
+  bool ShouldInterceptM1(bool revalidation_pending, bool local_pi_baud) const;
   const DeferredSerialRequest* Front() const;
   std::optional<DeferredSerialRequest> Take();
 

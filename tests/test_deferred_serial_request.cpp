@@ -74,6 +74,23 @@ TEST_CASE("身份已复核但旧动作仍占串口时槽内重投继续由待发
   CHECK_FALSE(queue.ShouldIntercept(false));
 }
 
+TEST_CASE("待发槽中的H1动作ID不能被本地M1换速动作抢占") {
+  experiment::DeferredSerialRequestQueue queue;
+  CHECK_FALSE(queue.ShouldInterceptM1(true, true));
+  REQUIRE(queue.Enqueue(Echo("动作1")) == experiment::DeferResult::kQueued);
+  CHECK(queue.ShouldInterceptM1(true, true));
+  CHECK(queue.ShouldInterceptM1(false, true));
+  auto same_id_local = Probe("动作1");
+  same_id_local.operation = experiment::M1Operation::kSetPiBaud;
+  same_id_local.baud_rate = 57600;
+  CHECK(queue.Enqueue(same_id_local) == experiment::DeferResult::kConflict);
+  auto another_local = same_id_local;
+  another_local.action_id = "动作2";
+  CHECK(queue.Enqueue(another_local) == experiment::DeferResult::kFull);
+  REQUIRE(queue.Front() != nullptr);
+  CHECK(std::get<experiment::UartEchoRequest>(*queue.Front()).action_id == "动作1");
+}
+
 TEST_CASE("单槽被占用时不同动作不能挤掉原动作") {
   experiment::DeferredSerialRequestQueue queue;
   CHECK(queue.Enqueue(Echo("动作1")) == experiment::DeferResult::kQueued);
