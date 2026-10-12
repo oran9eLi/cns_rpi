@@ -390,8 +390,13 @@ std::optional<Publication> UartEchoTransaction::OnFrame(
 }
 
 std::optional<Publication> UartEchoTransaction::OnBusinessFrame(
-    SteadyClock::time_point received_at, WallClock::time_point wall_now) {
+    const mavlink_message_t& message, SteadyClock::time_point received_at,
+    WallClock::time_point wall_now) {
   if (!pending_ || !pending_->sent || received_at < pending_->sent_at) {
+    return std::nullopt;
+  }
+  if (message.sysid != pending_->gate.target_system ||
+      message.compid != pending_->gate.target_component) {
     return std::nullopt;
   }
   pending_->fresh_business_frame = true;

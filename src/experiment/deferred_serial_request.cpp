@@ -81,6 +81,18 @@ bool DeferredSerialRequestQueue::ShouldInterceptM1(
          (revalidation_pending && !local_pi_baud);
 }
 
+SerialRequestDecision DeferredSerialRequestQueue::Decide(
+    bool revalidation_pending, bool identity_conflict,
+    bool local_pi_baud) const {
+  if (identity_conflict && !local_pi_baud) {
+    return SerialRequestDecision::kRejectIdentity;
+  }
+  if (ShouldInterceptM1(revalidation_pending, local_pi_baud)) {
+    return SerialRequestDecision::kDefer;
+  }
+  return SerialRequestDecision::kProceed;
+}
+
 const DeferredSerialRequest* DeferredSerialRequestQueue::Front() const {
   return pending_ ? &*pending_ : nullptr;
 }

@@ -20,6 +20,7 @@ namespace experiment {
 
 using DeferredSerialRequest = std::variant<UartEchoRequest, M1Request>;
 enum class DeferResult { kQueued, kDuplicate, kConflict, kFull };
+enum class SerialRequestDecision { kProceed, kDefer, kRejectIdentity };
 
 class DeferredSerialRequestQueue {
  public:
@@ -28,6 +29,10 @@ class DeferredSerialRequestQueue {
   bool ShouldIntercept(bool revalidation_pending) const;
   /** @brief Pi本地换速在槽空时走原门禁；槽被占用时先做动作ID检查。 */
   bool ShouldInterceptM1(bool revalidation_pending, bool local_pi_baud) const;
+  /** @brief 身份冲突优先拒绝串口动作；本地换速保留原门禁。 */
+  SerialRequestDecision Decide(bool revalidation_pending,
+                               bool identity_conflict,
+                               bool local_pi_baud) const;
   const DeferredSerialRequest* Front() const;
   std::optional<DeferredSerialRequest> Take();
 

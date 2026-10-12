@@ -78,7 +78,9 @@ class UartEchoTransaction {
                                     WallClock::time_point wall_now);
   std::optional<Publication> OnFrame(const uart::WireFrame& frame,
                                      WallClock::time_point wall_now);
-  std::optional<Publication> OnBusinessFrame(SteadyClock::time_point received_at,
+  /** @brief 仅接受本动作发往的端点所产生的新业务帧。 */
+  std::optional<Publication> OnBusinessFrame(const mavlink_message_t& message,
+                                             SteadyClock::time_point received_at,
                                              WallClock::time_point wall_now);
   std::optional<Publication> Tick(SteadyClock::time_point now,
                                    WallClock::time_point wall_now);

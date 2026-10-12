@@ -91,6 +91,17 @@ TEST_CASE("待发槽中的H1动作ID不能被本地M1换速动作抢占") {
   CHECK(std::get<experiment::UartEchoRequest>(*queue.Front()).action_id == "动作1");
 }
 
+TEST_CASE("候选身份冲突后新串口实验动作立即拒绝而非入槽") {
+  experiment::DeferredSerialRequestQueue queue;
+  CHECK(queue.Decide(true, true, false) ==
+        experiment::SerialRequestDecision::kRejectIdentity);
+  CHECK_FALSE(queue.Front());
+  CHECK(queue.Decide(true, true, true) ==
+        experiment::SerialRequestDecision::kProceed);
+  CHECK(queue.Decide(true, false, false) ==
+        experiment::SerialRequestDecision::kDefer);
+}
+
 TEST_CASE("单槽被占用时不同动作不能挤掉原动作") {
   experiment::DeferredSerialRequestQueue queue;
   CHECK(queue.Enqueue(Echo("动作1")) == experiment::DeferResult::kQueued);

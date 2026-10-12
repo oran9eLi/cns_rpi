@@ -53,6 +53,14 @@ uart::WireFrame Wire(mavlink_message_t message, Clock::time_point at) {
   auto length = mavlink_msg_to_send_buffer(raw, &message);
   return {.message = message, .bytes = {raw, raw + length}, .received_at = at};
 }
+
+mavlink_message_t BusinessFrame(std::uint8_t system_id = 43) {
+  mavlink_message_t message{};
+  mavlink_msg_sys_status_pack(system_id, 193, &message,
+                              0, 0, 0, 0, 0, 0, 0, 0,
+                              0, 0, 0, 0, 0, 0, 0, 0);
+  return message;
+}
 }  // namespace
 
 TEST_CASE("H1遇到已由M1占用的动作ID时不得发送回显帧") {
@@ -110,11 +118,11 @@ TEST_CASE("H1 完整回显与本动作后新业务帧共同形成成功事实") 
   CHECK_FALSE(started.publication);
   auto sent = Wire(*started.outbound, t0);
   CHECK_FALSE(tx.OnSent({sent.bytes, t0}, wall));
-  CHECK_FALSE(tx.OnBusinessFrame(t0 - std::chrono::milliseconds(1), wall));
+  CHECK_FALSE(tx.OnBusinessFrame(BusinessFrame(), t0 - std::chrono::milliseconds(1), wall));
   auto response = Wire(Response(0x0102030405060708ULL, 115200),
                        t0 + std::chrono::milliseconds(3));
   CHECK_FALSE(tx.OnFrame(response, wall));
-  auto ack = tx.OnBusinessFrame(t0 + std::chrono::milliseconds(4), wall);
+  auto ack = tx.OnBusinessFrame(BusinessFrame(), t0 + std::chrono::milliseconds(4), wall);
   REQUIRE(ack);
   auto body = nlohmann::json::parse(ack->payload);
   CHECK(body.at("status") == "completed");
@@ -131,6 +139,27 @@ TEST_CASE("H1 完整回显与本动作后新业务帧共同形成成功事实") 
   CHECK(ack->qos == 2);
   CHECK_FALSE(ack->retain);
   CHECK_FALSE(tx.HasPending());
+  std::filesystem::remove(path);
+}
+
+TEST_CASE("旧端点H1不得由换号后的新端点业务帧完成") {
+  const auto path = Journal();
+  const auto wall = Wall::time_point{std::chrono::seconds(1000)};
+  const auto t0 = Clock::time_point{std::chrono::seconds(100)};
+  experiment::UartEchoTransaction tx(path, "cns", [] {
+    return std::expected<std::uint64_t, std::string>{123};
+  });
+  REQUIRE(tx.Load());
+  auto started = tx.Start(Request(wall), Gate(), wall, t0);
+  REQUIRE(started.outbound);
+  CHECK_FALSE(tx.OnSent({Wire(*started.outbound, t0).bytes, t0}, wall));
+  CHECK_FALSE(tx.OnFrame(Wire(Response(123, 115200), t0 + std::chrono::milliseconds(2)), wall));
+  CHECK_FALSE(tx.OnBusinessFrame(BusinessFrame(110), t0 + std::chrono::milliseconds(3), wall));
+  CHECK(tx.HasPending());
+  auto result = tx.Tick(t0 + std::chrono::seconds(11), wall);
+  REQUIRE(result);
+  CHECK(nlohmann::json::parse(result->payload).at("error_code") ==
+        "fresh_business_frame_missing");
   std::filesystem::remove(path);
 }
 
@@ -261,7 +290,7 @@ TEST_CASE("H1 已完成动作重投只重发终态ACK") {
   auto sent = Wire(*started.outbound, t0);
   CHECK_FALSE(tx.OnSent({sent.bytes, t0}, wall));
   CHECK_FALSE(tx.OnFrame(Wire(Response(123, 115200), t0 + std::chrono::milliseconds(2)), wall));
-  auto completed = tx.OnBusinessFrame(t0 + std::chrono::milliseconds(3), wall);
+  auto completed = tx.OnBusinessFrame(BusinessFrame(), t0 + std::chrono::milliseconds(3), wall);
   REQUIRE(completed);
   auto duplicate = tx.Start(Request(wall), Gate(), wall, t0);
   CHECK_FALSE(duplicate.outbound);
@@ -298,7 +327,7 @@ TEST_CASE("H1 终态记录写入失败时不发布完成事实") {
   CHECK_FALSE(tx.OnFrame(Wire(Response(123, 115200), t0 + std::chrono::milliseconds(2)), wall));
   REQUIRE(std::filesystem::remove(path));
   REQUIRE(std::filesystem::create_directory(path));
-  const auto ack = tx.OnBusinessFrame(t0 + std::chrono::milliseconds(3), wall);
+  const auto ack = tx.OnBusinessFrame(BusinessFrame(), t0 + std::chrono::milliseconds(3), wall);
   REQUIRE(ack);
   const auto body = nlohmann::json::parse(ack->payload);
   CHECK(body.at("status") == "rejected");
@@ -324,7 +353,7 @@ TEST_CASE("目录同步歧义期间重复动作不发布矛盾终态") {
   auto sent = Wire(*started.outbound, t0);
   CHECK_FALSE(tx.OnSent({sent.bytes, t0}, wall));
   CHECK_FALSE(tx.OnFrame(Wire(Response(123, 115200), t0 + std::chrono::milliseconds(2)), wall));
-  CHECK_FALSE(tx.OnBusinessFrame(t0 + std::chrono::milliseconds(3), wall));
+  CHECK_FALSE(tx.OnBusinessFrame(BusinessFrame(), t0 + std::chrono::milliseconds(3), wall));
   CHECK_FALSE(tx.TakeDiagnostic().empty());
   const auto duplicate = tx.Start(Request(wall), Gate(), wall, t0);
   CHECK_FALSE(duplicate.outbound);

@@ -713,7 +713,7 @@ int main(int argc, char** argv) {
                             controlled_device->endpoint.system_id,
                             controlled_device->endpoint.component_id)) {
         enqueue_echo_result(uart_echo_transaction.OnBusinessFrame(
-            wire_frame->received_at, std::chrono::system_clock::now()));
+            message, wire_frame->received_at, std::chrono::system_clock::now()));
       }
     }
 
@@ -1359,6 +1359,11 @@ int main(int argc, char** argv) {
       }
       if (!message) message = mqtt_client->TryPopMessage();
       if (message) {
+        const auto identity_conflict_now = [&] {
+          const auto status = device_session.CurrentOnlineStatus();
+          return status && status->identity_status ==
+                               runtime_status::IdentityStatus::kConflict;
+        };
         if (message->topic == px4_latency_probe_topic &&
             controlled_device &&
             controlled_device->type == device::Type::kFlightController) {
@@ -1381,9 +1386,16 @@ int main(int argc, char** argv) {
             if (!parsed) {
               (*logger)->Warn("拒绝非法M1实验请求: " + parsed.error());
             } else if (!replay_deferred &&
-                       deferred_serial_requests.ShouldInterceptM1(
-                           endpoint_revalidation.Pending(),
-                           parsed->operation == experiment::M1Operation::kSetPiBaud)) {
+                       deferred_serial_requests.Decide(
+                           endpoint_revalidation.Pending(), identity_conflict_now(),
+                           parsed->operation == experiment::M1Operation::kSetPiBaud) ==
+                           experiment::SerialRequestDecision::kRejectIdentity) {
+              reject_deferred(*parsed, "identity_unavailable");
+            } else if (!replay_deferred &&
+                       deferred_serial_requests.Decide(
+                           endpoint_revalidation.Pending(), identity_conflict_now(),
+                           parsed->operation == experiment::M1Operation::kSetPiBaud) ==
+                           experiment::SerialRequestDecision::kDefer) {
               const auto queued = deferred_serial_requests.Enqueue(*parsed);
               if (queued == experiment::DeferResult::kQueued) {
                 (*logger)->Info("F407身份待复核，已暂存一个M1串口请求: action_id=" +
@@ -1532,8 +1544,15 @@ int main(int argc, char** argv) {
             if (!parsed) {
               (*logger)->Warn("拒绝非法H1回显请求: " + parsed.error());
             } else if (!replay_deferred &&
-                       deferred_serial_requests.ShouldIntercept(
-                           endpoint_revalidation.Pending())) {
+                       deferred_serial_requests.Decide(
+                           endpoint_revalidation.Pending(), identity_conflict_now(),
+                           false) ==
+                           experiment::SerialRequestDecision::kRejectIdentity) {
+              reject_deferred(*parsed, "identity_unavailable");
+            } else if (!replay_deferred &&
+                       deferred_serial_requests.Decide(
+                           endpoint_revalidation.Pending(), identity_conflict_now(),
+                           false) == experiment::SerialRequestDecision::kDefer) {
               const auto queued = deferred_serial_requests.Enqueue(*parsed);
               if (queued == experiment::DeferResult::kQueued) {
                 (*logger)->Info("F407身份待复核，已暂存一个H1回显请求: action_id=" +
