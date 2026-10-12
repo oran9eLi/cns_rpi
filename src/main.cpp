@@ -25,6 +25,7 @@
 #include <string>
 #include <string_view>
 #include <thread>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -290,6 +291,25 @@ int main(int argc, char** argv) {
       (*logger)->Error("M1实验ACK待发队列已满，终态仍保留在去重记录中");
     }
   };
+  auto reject_deferred = [&](const experiment::DeferredSerialRequest& request,
+                             std::string_view error_code) {
+    const auto wall_now = std::chrono::system_clock::now();
+    const auto steady_now = std::chrono::steady_clock::now();
+    std::visit([&](const auto& value) {
+      using Request = std::decay_t<decltype(value)>;
+      if constexpr (std::is_same_v<Request, experiment::UartEchoRequest>) {
+        const auto rejected = uart_echo_transaction.Start(
+            value, {}, wall_now, steady_now, error_code);
+        if (!rejected.diagnostic.empty()) (*logger)->Warn(rejected.diagnostic);
+        enqueue_echo_result(rejected.publication);
+      } else {
+        const auto rejected = m1_transaction.Start(
+            value, {}, wall_now, steady_now, error_code);
+        if (!rejected.diagnostic.empty()) (*logger)->Warn(rejected.diagnostic);
+        enqueue_m1_result(rejected.publication);
+      }
+    }, request);
+  };
   if (persisted_binding) {
     const auto own_ack_topic = mqtt::BuildExperimentAckTopic(
         app_config->mqtt.topics.topic_namespace, persisted_binding->device_id);
@@ -446,11 +466,7 @@ int main(int argc, char** argv) {
     endpoint_revalidation.Reset();
     m1_held_for_identity = false;
     if (auto pending = deferred_serial_requests.Take()) {
-      if (!experiment_ack_outbox.Enqueue(experiment::BuildDeferredRejection(
-              *pending, app_config->mqtt.topics.topic_namespace,
-              "serial_unavailable", std::chrono::system_clock::now()))) {
-        (*logger)->Error("串口断开时实验待发请求的拒绝ACK队列已满");
-      }
+      reject_deferred(*pending, "serial_unavailable");
     }
     startup_baud_recovery.LinkLost();
     enqueue_m1_result(m1_transaction.Abort(
@@ -577,11 +593,7 @@ int main(int argc, char** argv) {
               .device_id = protocol::ExtractUasId(basic_id.uas_id),
               .device_type = device::Type::kCnsBox});
           if (auto deferred = deferred_serial_requests.Take()) {
-            if (!experiment_ack_outbox.Enqueue(experiment::BuildDeferredRejection(
-                    *deferred, app_config->mqtt.topics.topic_namespace,
-                    "identity_unavailable", std::chrono::system_clock::now()))) {
-              (*logger)->Error("F407身份冲突时实验待发请求的拒绝ACK队列已满");
-            }
+            reject_deferred(*deferred, "identity_unavailable");
           }
           (*logger)->Error("F407候选端点身份与持久化绑定冲突，保持原Topic并阻断下行");
         }
@@ -1365,17 +1377,20 @@ int main(int argc, char** argv) {
                 message->payload, active_mqtt_binding->device_id);
             if (!parsed) {
               (*logger)->Warn("拒绝非法M1实验请求: " + parsed.error());
-            } else if (!replay_deferred && endpoint_revalidation.Pending() &&
+            } else if (!replay_deferred &&
+                       deferred_serial_requests.ShouldIntercept(
+                           endpoint_revalidation.Pending()) &&
                        parsed->operation != experiment::M1Operation::kSetPiBaud) {
               const auto queued = deferred_serial_requests.Enqueue(*parsed);
               if (queued == experiment::DeferResult::kQueued) {
                 (*logger)->Info("F407身份待复核，已暂存一个M1串口请求: action_id=" +
                                 parsed->action_id);
-              } else if (queued != experiment::DeferResult::kDuplicate) {
+              } else if (queued == experiment::DeferResult::kFull) {
+                reject_deferred(*parsed, "serial_unavailable");
+              } else if (queued == experiment::DeferResult::kConflict) {
                 const auto rejection = experiment::BuildDeferredRejection(
                     *parsed, app_config->mqtt.topics.topic_namespace,
-                    queued == experiment::DeferResult::kConflict
-                        ? "duplicate_conflict" : "serial_unavailable",
+                    "duplicate_conflict",
                     std::chrono::system_clock::now());
                 if (!experiment_ack_outbox.Enqueue(rejection)) {
                   (*logger)->Error("M1待发请求拒绝ACK队列已满");
@@ -1513,16 +1528,19 @@ int main(int argc, char** argv) {
                 std::chrono::system_clock::now());
             if (!parsed) {
               (*logger)->Warn("拒绝非法H1回显请求: " + parsed.error());
-            } else if (!replay_deferred && endpoint_revalidation.Pending()) {
+            } else if (!replay_deferred &&
+                       deferred_serial_requests.ShouldIntercept(
+                           endpoint_revalidation.Pending())) {
               const auto queued = deferred_serial_requests.Enqueue(*parsed);
               if (queued == experiment::DeferResult::kQueued) {
                 (*logger)->Info("F407身份待复核，已暂存一个H1回显请求: action_id=" +
                                 parsed->action_id);
-              } else if (queued != experiment::DeferResult::kDuplicate) {
+              } else if (queued == experiment::DeferResult::kFull) {
+                reject_deferred(*parsed, "serial_unavailable");
+              } else if (queued == experiment::DeferResult::kConflict) {
                 const auto rejection = experiment::BuildDeferredRejection(
                     *parsed, app_config->mqtt.topics.topic_namespace,
-                    queued == experiment::DeferResult::kConflict
-                        ? "duplicate_conflict" : "serial_unavailable",
+                    "duplicate_conflict",
                     std::chrono::system_clock::now());
                 if (!experiment_ack_outbox.Enqueue(rejection)) {
                   (*logger)->Error("H1待发请求拒绝ACK队列已满");

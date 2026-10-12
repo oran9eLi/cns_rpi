@@ -63,6 +63,17 @@ TEST_CASE("重复动作不再次入队且同ID不同内容拒绝") {
         std::vector<std::uint8_t>{'A'});
 }
 
+TEST_CASE("身份已复核但旧动作仍占串口时槽内重投继续由待发槽拦截") {
+  experiment::DeferredSerialRequestQueue queue;
+  CHECK_FALSE(queue.ShouldIntercept(false));
+  CHECK(queue.ShouldIntercept(true));
+  REQUIRE(queue.Enqueue(Echo("动作1")) == experiment::DeferResult::kQueued);
+  CHECK(queue.ShouldIntercept(false));
+  CHECK(queue.Enqueue(Echo("动作1")) == experiment::DeferResult::kDuplicate);
+  REQUIRE(queue.Take().has_value());
+  CHECK_FALSE(queue.ShouldIntercept(false));
+}
+
 TEST_CASE("单槽被占用时不同动作不能挤掉原动作") {
   experiment::DeferredSerialRequestQueue queue;
   CHECK(queue.Enqueue(Echo("动作1")) == experiment::DeferResult::kQueued);

@@ -167,6 +167,60 @@ TEST_CASE("身份复核暂停期间M1已发探测不产生后续下行并按原�
   std::filesystem::remove(path);
 }
 
+TEST_CASE("M1外部拒绝先持久化且重投不再执行物理动作") {
+  const auto path = Journal();
+  const auto wall = Wall::time_point{std::chrono::seconds(1000)};
+  const auto t0 = Clock::time_point{std::chrono::seconds(100)};
+  const auto request = Request(experiment::M1Operation::kSetF407Baud, wall);
+  {
+    experiment::M1Transaction tx(path, "cns");
+    REQUIRE(tx.Load().has_value());
+    const auto denied = tx.Start(request, Gate(), wall, t0, "serial_unavailable");
+    CHECK_FALSE(denied.outbound.has_value());
+    REQUIRE(denied.publication.has_value());
+    CHECK(nlohmann::json::parse(denied.publication->payload).at("error_code") ==
+          "serial_unavailable");
+  }
+  experiment::M1Transaction restarted(path, "cns");
+  REQUIRE(restarted.Load().has_value());
+  const auto replay = restarted.Start(request, Gate(), wall, t0);
+  CHECK_FALSE(replay.outbound.has_value());
+  REQUIRE(replay.publication.has_value());
+  CHECK(nlohmann::json::parse(replay.publication->payload).at("error_code") ==
+        "serial_unavailable");
+  std::filesystem::remove(path);
+}
+
+TEST_CASE("M1已完成首轮回显后换号不可误报为从未执行的过期") {
+  const auto path = Journal();
+  const auto wall = Wall::time_point{std::chrono::seconds(1000)};
+  const auto t0 = Clock::time_point{std::chrono::seconds(100)};
+  experiment::M1Transaction tx(path, "cns", [] {
+    return std::expected<std::uint64_t, std::string>{kNonce};
+  });
+  REQUIRE(tx.Load().has_value());
+  auto gate = Gate();
+  gate.identity_verified = false;
+  const auto started = tx.Start(
+      Request(experiment::M1Operation::kUartProbe, wall), gate, wall, t0);
+  REQUIRE(started.outbound.has_value());
+  const auto sent = Wire(*started.outbound, t0);
+  CHECK_FALSE(tx.OnSent({sent.bytes, t0}, wall).publication.has_value());
+  const auto first_response = tx.OnFrame(
+      Wire(Echo(kNonce), t0 + std::chrono::milliseconds(3)), wall);
+  CHECK_FALSE(first_response.outbound.has_value());
+  CHECK_FALSE(first_response.publication.has_value());
+  const auto paused = tx.TickWhilePaused(t0 + std::chrono::seconds(4), wall);
+  CHECK_FALSE(paused.outbound.has_value());
+  CHECK_FALSE(paused.publication.has_value());
+  const auto finished = tx.TickWhilePaused(t0 + std::chrono::seconds(5), wall);
+  CHECK_FALSE(finished.outbound.has_value());
+  REQUIRE(finished.publication.has_value());
+  CHECK(nlohmann::json::parse(finished.publication->payload).at("error_code") ==
+        "result_uncertain");
+  std::filesystem::remove(path);
+}
+
 TEST_CASE("失配探测三次真实发送而无有效回显时仅形成观察事实") {
   const auto path = Journal();
   const auto wall = Wall::time_point{std::chrono::seconds(1000)};

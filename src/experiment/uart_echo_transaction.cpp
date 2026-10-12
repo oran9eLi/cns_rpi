@@ -242,7 +242,8 @@ Publication UartEchoTransaction::Publish(const std::string& device_id,
 
 EchoStart UartEchoTransaction::Start(const UartEchoRequest& request, EchoGate gate,
                                       WallClock::time_point wall_now,
-                                      SteadyClock::time_point steady_now) {
+                                      SteadyClock::time_point steady_now,
+                                      std::optional<std::string_view> forced_rejection) {
   auto rejected = [&](std::string_view code, std::string message) -> EchoStart {
     return {.outbound = std::nullopt,
             .publication = Publish(request.device_id,
@@ -299,6 +300,9 @@ EchoStart UartEchoTransaction::Start(const UartEchoRequest& request, EchoGate ga
   };
   if (wall_now >= request.expiry) {
     return durable_rejected("action_expired", "回显动作已过期");
+  }
+  if (forced_rejection) {
+    return durable_rejected(*forced_rejection, "H1待发动作未执行，拒绝终态已保存");
   }
   if (pending_ || gate.serial_busy) {
     return durable_rejected("serial_unavailable", "串口下行动作仍在进行");

@@ -226,7 +226,8 @@ Publication M1Transaction::Publish(const std::string& device_id,
 
 M1Start M1Transaction::Start(const M1Request& request, M1Gate gate,
                              WallClock::time_point wall_now,
-                             SteadyClock::time_point steady_now) {
+                             SteadyClock::time_point steady_now,
+                             std::optional<std::string_view> forced_rejection) {
   auto rejected = [&](std::string_view code, std::string diagnostic) {
     M1Start outcome;
     outcome.publication = Publish(request.device_id,
@@ -288,6 +289,9 @@ M1Start M1Transaction::Start(const M1Request& request, M1Gate gate,
   };
   if (wall_now >= request.expiry) {
     return durable_rejected("action_expired", "M1动作已过期");
+  }
+  if (forced_rejection) {
+    return durable_rejected(*forced_rejection, "M1待发动作未执行，拒绝终态已保存");
   }
   if (!gate.mqtt_connected || !gate.cns_box || !gate.persisted_binding) {
     return durable_rejected("identity_unavailable", "主控箱固定绑定或MQTT控制不可用");
@@ -479,12 +483,16 @@ M1Step M1Transaction::Tick(SteadyClock::time_point now,
 M1Step M1Transaction::TickWhilePaused(SteadyClock::time_point now,
                                       WallClock::time_point wall_now) {
   if (!pending_) return {};
-  if (pending_->sent &&
+  const bool ever_sent = !pending_->tx_bytes.empty() ||
+      std::ranges::any_of(pending_->samples, [](const ProbeSample& sample) {
+        return !sample.tx_bytes.empty();
+      });
+  if (ever_sent &&
       (now - pending_->sent_at >= kResponseTimeout ||
        wall_now >= pending_->request.expiry)) {
     return Finish("result_uncertain", wall_now);
   }
-  if (!pending_->sent && wall_now >= pending_->request.expiry) {
+  if (!ever_sent && wall_now >= pending_->request.expiry) {
     return Finish("action_expired", wall_now);
   }
   return {};

@@ -70,6 +70,11 @@ DeferResult DeferredSerialRequestQueue::Enqueue(DeferredSerialRequest request) {
   return DeferResult::kQueued;
 }
 
+bool DeferredSerialRequestQueue::ShouldIntercept(
+    bool revalidation_pending) const {
+  return revalidation_pending || pending_.has_value();
+}
+
 const DeferredSerialRequest* DeferredSerialRequestQueue::Front() const {
   return pending_ ? &*pending_ : nullptr;
 }

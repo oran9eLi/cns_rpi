@@ -24,6 +24,8 @@ enum class DeferResult { kQueued, kDuplicate, kConflict, kFull };
 class DeferredSerialRequestQueue {
  public:
   DeferResult Enqueue(DeferredSerialRequest request);
+  /** @brief 槽内动作移交前始终拦截来信，避免重投绕开去重。 */
+  bool ShouldIntercept(bool revalidation_pending) const;
   const DeferredSerialRequest* Front() const;
   std::optional<DeferredSerialRequest> Take();
 
@@ -31,7 +33,7 @@ class DeferredSerialRequestQueue {
   std::optional<DeferredSerialRequest> pending_;
 };
 
-/** @brief 队列冲突或不可用时构造既有格式的终态 ACK，不做物理动作。 */
+/** @brief 同动作 ID 不同内容的冲突重投 ACK；原待发动作不被覆盖。 */
 Publication BuildDeferredRejection(
     const DeferredSerialRequest& request, const std::string& topic_namespace,
     std::string_view error_code, std::chrono::system_clock::time_point now);

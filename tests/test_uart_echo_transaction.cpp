@@ -73,6 +73,30 @@ TEST_CASE("H1遇到已由M1占用的动作ID时不得发送回显帧") {
   std::filesystem::remove(path);
 }
 
+TEST_CASE("H1外部拒绝持久化后相同动作重投不会发帧") {
+  const auto path = Journal();
+  const auto wall = Wall::time_point{std::chrono::seconds(1000)};
+  const auto t0 = Clock::time_point{std::chrono::seconds(100)};
+  const auto request = Request(wall);
+  {
+    experiment::UartEchoTransaction tx(path, "cns");
+    REQUIRE(tx.Load().has_value());
+    const auto denied = tx.Start(request, Gate(), wall, t0, "identity_unavailable");
+    CHECK_FALSE(denied.outbound.has_value());
+    REQUIRE(denied.publication.has_value());
+    CHECK(nlohmann::json::parse(denied.publication->payload).at("error_code") ==
+          "identity_unavailable");
+  }
+  experiment::UartEchoTransaction restarted(path, "cns");
+  REQUIRE(restarted.Load().has_value());
+  const auto replay = restarted.Start(request, Gate(), wall, t0);
+  CHECK_FALSE(replay.outbound.has_value());
+  REQUIRE(replay.publication.has_value());
+  CHECK(nlohmann::json::parse(replay.publication->payload).at("error_code") ==
+        "identity_unavailable");
+  std::filesystem::remove(path);
+}
+
 TEST_CASE("H1 完整回显与本动作后新业务帧共同形成成功事实") {
   auto path = Journal();
   const auto wall = Wall::time_point{std::chrono::seconds(1000)};

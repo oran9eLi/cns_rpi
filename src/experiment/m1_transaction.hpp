@@ -70,8 +70,10 @@ class M1Transaction {
   /** @brief 返回并清除最近一次持久化诊断。 */
   std::string TakeDiagnostic();
 
+  /** @brief 强制拒绝仍通过原去重记录落盘；只用于不允许发帧的待发动作。 */
   M1Start Start(const M1Request& request, M1Gate gate,
-                WallClock::time_point wall_now, SteadyClock::time_point steady_now);
+                WallClock::time_point wall_now, SteadyClock::time_point steady_now,
+                std::optional<std::string_view> forced_rejection = std::nullopt);
   M1Step OnSent(const uart::SentFrame& sent, WallClock::time_point wall_now);
   M1Step OnFrame(const uart::WireFrame& frame, WallClock::time_point wall_now);
   M1Step Tick(SteadyClock::time_point now, WallClock::time_point wall_now);

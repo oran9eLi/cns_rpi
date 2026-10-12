@@ -69,8 +69,10 @@ class UartEchoTransaction {
   bool HasActionId(std::string_view action_id) const;
   /** @brief 串行主循环提供其他实验操作的持久化动作身份查询。 */
   void SetForeignActionLookup(std::function<bool(std::string_view)> lookup);
+  /** @brief 强制拒绝仍通过原去重记录落盘；只用于不允许发帧的待发动作。 */
   EchoStart Start(const UartEchoRequest& request, EchoGate gate,
-                  WallClock::time_point wall_now, SteadyClock::time_point steady_now);
+                  WallClock::time_point wall_now, SteadyClock::time_point steady_now,
+                  std::optional<std::string_view> forced_rejection = std::nullopt);
   /** @brief 仅在完整写入串口后确认 TX 事实。 */
   std::optional<Publication> OnSent(const uart::SentFrame& sent,
                                     WallClock::time_point wall_now);
