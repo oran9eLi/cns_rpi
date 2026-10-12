@@ -290,9 +290,6 @@ M1Start M1Transaction::Start(const M1Request& request, M1Gate gate,
   if (wall_now >= request.expiry) {
     return durable_rejected("action_expired", "M1动作已过期");
   }
-  if (forced_rejection) {
-    return durable_rejected(*forced_rejection, "M1待发动作未执行，拒绝终态已保存");
-  }
   if (!gate.mqtt_connected || !gate.cns_box || !gate.persisted_binding) {
     return durable_rejected("identity_unavailable", "主控箱固定绑定或MQTT控制不可用");
   }
@@ -302,6 +299,9 @@ M1Start M1Transaction::Start(const M1Request& request, M1Gate gate,
        request.baud_rate != 57600 && request.baud_rate != 115200) ||
       (request.operation == M1Operation::kUartProbe && request.baud_rate)) {
     return durable_rejected("unsupported_baud_rate", "M1动作目标波特率不符合约定");
+  }
+  if (forced_rejection) {
+    return durable_rejected(*forced_rejection, "M1待发动作未执行，拒绝终态已保存");
   }
   if (pending_ || gate.serial_busy) {
     return durable_rejected("serial_unavailable", "串口下行动作仍在进行");

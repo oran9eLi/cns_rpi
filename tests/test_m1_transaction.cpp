@@ -191,6 +191,22 @@ TEST_CASE("M1外部拒绝先持久化且重投不再执行物理动作") {
   std::filesystem::remove(path);
 }
 
+TEST_CASE("M1非法目标波特率优先于待发槽满的拒绝原因") {
+  const auto path = Journal();
+  const auto wall = Wall::time_point{std::chrono::seconds(1000)};
+  auto request = Request(experiment::M1Operation::kSetF407Baud, wall);
+  request.baud_rate = 38400;
+  experiment::M1Transaction tx(path, "cns");
+  REQUIRE(tx.Load().has_value());
+  const auto denied = tx.Start(request, Gate(), wall, Clock::time_point{},
+                               "serial_unavailable");
+  CHECK_FALSE(denied.outbound.has_value());
+  REQUIRE(denied.publication.has_value());
+  CHECK(nlohmann::json::parse(denied.publication->payload).at("error_code") ==
+        "unsupported_baud_rate");
+  std::filesystem::remove(path);
+}
+
 TEST_CASE("M1已完成首轮回显后换号不可误报为从未执行的过期") {
   const auto path = Journal();
   const auto wall = Wall::time_point{std::chrono::seconds(1000)};

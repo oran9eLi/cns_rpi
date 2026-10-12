@@ -304,7 +304,10 @@ int main(int argc, char** argv) {
         enqueue_echo_result(rejected.publication);
       } else {
         const auto rejected = m1_transaction.Start(
-            value, {}, wall_now, steady_now, error_code);
+            value, {.cns_box = true,
+                    .persisted_binding = true,
+                    .mqtt_connected = true},
+            wall_now, steady_now, error_code);
         if (!rejected.diagnostic.empty()) (*logger)->Warn(rejected.diagnostic);
         enqueue_m1_result(rejected.publication);
       }
