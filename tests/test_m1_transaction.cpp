@@ -140,6 +140,33 @@ TEST_CASE("已发F407改参帧无接受响应时结果不确定且重启不重�
   std::filesystem::remove(path);
 }
 
+TEST_CASE("身份复核暂停期间M1已发探测不产生后续下行并按原等待超时") {
+  const auto path = Journal();
+  const auto wall = Wall::time_point{std::chrono::seconds(1000)};
+  const auto t0 = Clock::time_point{std::chrono::seconds(100)};
+  experiment::M1Transaction tx(path, "cns", [] {
+    return std::expected<std::uint64_t, std::string>{kNonce};
+  });
+  REQUIRE(tx.Load().has_value());
+  auto gate = Gate();
+  gate.identity_verified = false;
+  const auto started = tx.Start(
+      Request(experiment::M1Operation::kUartProbe, wall), gate, wall, t0);
+  REQUIRE(started.outbound.has_value());
+  REQUIRE(tx.OnSent({Wire(*started.outbound, t0).bytes, t0}, wall).publication ==
+          std::nullopt);
+
+  const auto waiting = tx.TickWhilePaused(t0 + std::chrono::seconds(4), wall);
+  CHECK_FALSE(waiting.outbound.has_value());
+  CHECK_FALSE(waiting.publication.has_value());
+  const auto timed_out = tx.TickWhilePaused(t0 + std::chrono::seconds(5), wall);
+  CHECK_FALSE(timed_out.outbound.has_value());
+  REQUIRE(timed_out.publication.has_value());
+  CHECK(nlohmann::json::parse(timed_out.publication->payload).at("error_code") ==
+        "result_uncertain");
+  std::filesystem::remove(path);
+}
+
 TEST_CASE("失配探测三次真实发送而无有效回显时仅形成观察事实") {
   const auto path = Journal();
   const auto wall = Wall::time_point{std::chrono::seconds(1000)};

@@ -75,6 +75,9 @@ class M1Transaction {
   M1Step OnSent(const uart::SentFrame& sent, WallClock::time_point wall_now);
   M1Step OnFrame(const uart::WireFrame& frame, WallClock::time_point wall_now);
   M1Step Tick(SteadyClock::time_point now, WallClock::time_point wall_now);
+  /** @brief 身份复核期间只推进既有超时，不生成新的 UART 下行。 */
+  M1Step TickWhilePaused(SteadyClock::time_point now,
+                         WallClock::time_point wall_now);
   M1Step Abort(std::string_view error_code, WallClock::time_point wall_now);
 
   /** @brief 配置已持久化且串口重新打开并读回目标值后形成成功事实。 */

@@ -38,9 +38,11 @@
 #include "config_command/config_updater.hpp"
 #include "control_command/control_command.hpp"
 #include "control_command/control_endpoint.hpp"
+#include "control_command/endpoint_revalidation.hpp"
 #include "control_command/control_transaction.hpp"
 #include "device/device_binding_store.hpp"
 #include "experiment/pi_link_inspection.hpp"
+#include "experiment/deferred_serial_request.hpp"
 #include "experiment/m1_request.hpp"
 #include "experiment/m1_transaction.hpp"
 #include "experiment/pi_baud_change.hpp"
@@ -333,6 +335,9 @@ int main(int argc, char** argv) {
   std::string experiment_set_topic;
   std::string experiment_ack_topic;
   control_command::ControlTransaction control_transaction(kControlAckTimeout);
+  control_command::EndpointRevalidation endpoint_revalidation;
+  experiment::DeferredSerialRequestQueue deferred_serial_requests;
+  bool m1_held_for_identity = false;
   std::optional<control_command::ControlledDeviceEndpoint> controlled_device;
   bool h1_endpoint_identity_verified = false;
   std::optional<uart::MavlinkLink> link;
@@ -438,6 +443,15 @@ int main(int argc, char** argv) {
   };
 
   auto mark_link_disconnected = [&] {
+    endpoint_revalidation.Reset();
+    m1_held_for_identity = false;
+    if (auto pending = deferred_serial_requests.Take()) {
+      if (!experiment_ack_outbox.Enqueue(experiment::BuildDeferredRejection(
+              *pending, app_config->mqtt.topics.topic_namespace,
+              "serial_unavailable", std::chrono::system_clock::now()))) {
+        (*logger)->Error("串口断开时实验待发请求的拒绝ACK队列已满");
+      }
+    }
     startup_baud_recovery.LinkLost();
     enqueue_m1_result(m1_transaction.Abort(
         "serial_unavailable", std::chrono::system_clock::now()).publication);
@@ -499,6 +513,27 @@ int main(int argc, char** argv) {
         control_command::ClassifyControlledDeviceHeartbeat(
             message, app_config->device.mode);
     if (controlled_device && classified &&
+        classified->type == device::Type::kCnsBox &&
+        controlled_device->type == device::Type::kCnsBox &&
+        classified->endpoint.component_id == controlled_device->endpoint.component_id &&
+        classified->endpoint.system_id != controlled_device->endpoint.system_id &&
+        device_session.HasPersistedBinding()) {
+      const auto observed = endpoint_revalidation.ObserveHeartbeat(
+          *controlled_device, *classified, true, now);
+      if (observed == control_command::HeartbeatObservation::kCandidate) {
+        device_session.InvalidateCurrentIdentity();
+        h1_endpoint_identity_verified = false;
+        m1_held_for_identity = m1_transaction.HasPending();
+        (*logger)->Warn("F407节点编号变化，暂停新串口下行并等待Basic ID复核: 旧sysid=" +
+                        std::to_string(controlled_device->endpoint.system_id) +
+                        "，候选sysid=" +
+                        std::to_string(classified->endpoint.system_id));
+      } else if (observed == control_command::HeartbeatObservation::kAmbiguous) {
+        (*logger)->Error("同一串口出现第三个F407节点端点，保持身份待复核并暂停下行");
+      }
+      return;
+    }
+    if (controlled_device && classified &&
         (classified->type != controlled_device->type ||
          classified->endpoint.system_id !=
              controlled_device->endpoint.system_id ||
@@ -506,6 +541,7 @@ int main(int argc, char** argv) {
              controlled_device->endpoint.component_id)) {
       (*logger)->Error(
           "同一串口检测到冲突的受控设备特征，停止 MQTT 上报并等待检查接线");
+      endpoint_revalidation.Reset();
       h1_endpoint_identity_verified = false;
       close_mqtt_session(/*publish_offline=*/true);
       state_store.ResetDeviceState();
@@ -516,6 +552,41 @@ int main(int argc, char** argv) {
     }
     if (ambiguous_device_type) {
       return;
+    }
+    if (endpoint_revalidation.Pending()) {
+      const auto* binding = device_session.ActiveBinding();
+      if (binding && message.msgid == MAVLINK_MSG_ID_OPEN_DRONE_ID_BASIC_ID) {
+        const auto observation = endpoint_revalidation.ObserveBasicId(
+            message, binding->device_id);
+        if (observation == control_command::BasicIdObservation::kVerified) {
+          const auto candidate = endpoint_revalidation.Candidate();
+          controlled_device->endpoint = *candidate;
+          endpoint_revalidation.Reset();
+          state_store.ResetDeviceState();
+          state_store.UpdateControlledDevice(
+              device::Type::kCnsBox, candidate->system_id,
+              candidate->component_id);
+          state_store.UpdateDcdwLabel(
+              protocol::FormatDcdwLabel(candidate->system_id));
+          (*logger)->Info("F407身份复核通过，已切换MAVLink端点: sysid=" +
+                          std::to_string(candidate->system_id));
+        } else if (observation == control_command::BasicIdObservation::kConflict) {
+          mavlink_open_drone_id_basic_id_t basic_id{};
+          mavlink_msg_open_drone_id_basic_id_decode(&message, &basic_id);
+          device_session.ObserveIdentity({
+              .device_id = protocol::ExtractUasId(basic_id.uas_id),
+              .device_type = device::Type::kCnsBox});
+          if (auto deferred = deferred_serial_requests.Take()) {
+            if (!experiment_ack_outbox.Enqueue(experiment::BuildDeferredRejection(
+                    *deferred, app_config->mqtt.topics.topic_namespace,
+                    "identity_unavailable", std::chrono::system_clock::now()))) {
+              (*logger)->Error("F407身份冲突时实验待发请求的拒绝ACK队列已满");
+            }
+          }
+          (*logger)->Error("F407候选端点身份与持久化绑定冲突，保持原Topic并阻断下行");
+        }
+      }
+      if (endpoint_revalidation.Pending()) return;
     }
     const bool endpoint_was_unknown = !controlled_device.has_value();
     controlled_device = control_command::ObserveControlledDeviceHeartbeat(
@@ -772,6 +843,7 @@ int main(int argc, char** argv) {
                          uas_id);
         close_mqtt_session(/*publish_offline=*/true);
         state_store.ResetDeviceState();
+        endpoint_revalidation.Reset();
         controlled_device.reset();
         qgc_udp_bridge.reset();
         px4_basic_id_requests_sent = 0;
@@ -918,7 +990,8 @@ int main(int argc, char** argv) {
     }
     const auto rpi_system_id =
         control_command::LearnedControlledSystemId(controlled_device);
-    if (link && rpi_system_id && startup_baud_recovery.AllowPeriodicOutput() &&
+    if (link && rpi_system_id && !endpoint_revalidation.Pending() &&
+        startup_baud_recovery.AllowPeriodicOutput() &&
         now - last_heartbeat >= app_config->runtime.heartbeat_interval) {
       mavlink_message_t heartbeat = BuildHeartbeat(*rpi_system_id);
       if (!link->SendMessage(heartbeat)) {
@@ -928,7 +1001,8 @@ int main(int argc, char** argv) {
       }
     }
 
-    if (link && rpi_system_id && startup_baud_recovery.AllowPeriodicOutput() &&
+    if (link && rpi_system_id && !endpoint_revalidation.Pending() &&
+        startup_baud_recovery.AllowPeriodicOutput() &&
         now - last_cellular_heartbeat >= app_config->cellular.heartbeat_interval) {
       const auto cellular_snapshot = cellular::ReadStatusSnapshot(
           app_config->cellular.status_snapshot_path,
@@ -995,6 +1069,9 @@ int main(int argc, char** argv) {
     }
 
     device_session.Tick(now);
+    if (endpoint_revalidation.ShouldWarn(now)) {
+      (*logger)->Warn("F407新节点端点超过3秒仍未取得可核验的Basic ID，继续暂停串口下行");
+    }
     auto mqtt_snapshot = state_store.Snapshot();
     if (mqtt_client && active_mqtt_binding &&
         active_mqtt_binding->device_type == device::Type::kFlightController &&
@@ -1245,7 +1322,28 @@ int main(int argc, char** argv) {
     // 运行三态发布结束。
 
     if (mqtt_client && active_mqtt_binding) {
-      if (auto message = mqtt_client->TryPopMessage()) {
+      std::optional<mqtt::IncomingMessage> message;
+      bool replay_deferred = false;
+      if (const auto* pending = deferred_serial_requests.Front()) {
+        if (experiment::ShouldReplayDeferred(
+                *pending, std::chrono::system_clock::now(),
+                !endpoint_revalidation.Pending() &&
+                    device_session.CanSendDeviceCommands() &&
+                    h1_endpoint_identity_verified,
+                !m1_held_for_identity && !uart_echo_transaction.HasPending() &&
+                    !m1_transaction.HasPending() &&
+                    !control_transaction.HasPending(),
+                mqtt_client->IsConnected())) {
+          if (auto taken = deferred_serial_requests.Take()) {
+            message = mqtt::IncomingMessage{
+                .topic = experiment_set_topic,
+                .payload = experiment::SerializeDeferredRequest(*taken)};
+            replay_deferred = true;
+          }
+        }
+      }
+      if (!message) message = mqtt_client->TryPopMessage();
+      if (message) {
         if (message->topic == px4_latency_probe_topic &&
             controlled_device &&
             controlled_device->type == device::Type::kFlightController) {
@@ -1267,6 +1365,22 @@ int main(int argc, char** argv) {
                 message->payload, active_mqtt_binding->device_id);
             if (!parsed) {
               (*logger)->Warn("拒绝非法M1实验请求: " + parsed.error());
+            } else if (!replay_deferred && endpoint_revalidation.Pending() &&
+                       parsed->operation != experiment::M1Operation::kSetPiBaud) {
+              const auto queued = deferred_serial_requests.Enqueue(*parsed);
+              if (queued == experiment::DeferResult::kQueued) {
+                (*logger)->Info("F407身份待复核，已暂存一个M1串口请求: action_id=" +
+                                parsed->action_id);
+              } else if (queued != experiment::DeferResult::kDuplicate) {
+                const auto rejection = experiment::BuildDeferredRejection(
+                    *parsed, app_config->mqtt.topics.topic_namespace,
+                    queued == experiment::DeferResult::kConflict
+                        ? "duplicate_conflict" : "serial_unavailable",
+                    std::chrono::system_clock::now());
+                if (!experiment_ack_outbox.Enqueue(rejection)) {
+                  (*logger)->Error("M1待发请求拒绝ACK队列已满");
+                }
+              }
             } else {
               const auto endpoint = serial_affinity.Resolve(
                   active_mqtt_binding->device_id);
@@ -1314,10 +1428,16 @@ int main(int argc, char** argv) {
                                   (parsed->operation == experiment::M1Operation::kUartProbe &&
                                    !startup_baud_recovery.AllowM1Probe()),
                    .mqtt_connected = mqtt_client->IsConnected(),
-                   .source_system = endpoint ? endpoint->system_id : std::uint8_t{0},
+                   .source_system = current_identity
+                                        ? controlled_device->endpoint.system_id
+                                        : (endpoint ? endpoint->system_id : std::uint8_t{0}),
                    .source_component = kComponentId,
-                   .target_system = endpoint ? endpoint->system_id : std::uint8_t{0},
-                   .target_component = endpoint ? endpoint->component_id : std::uint8_t{0},
+                   .target_system = current_identity
+                                        ? controlled_device->endpoint.system_id
+                                        : (endpoint ? endpoint->system_id : std::uint8_t{0}),
+                   .target_component = current_identity
+                                           ? controlled_device->endpoint.component_id
+                                           : (endpoint ? endpoint->component_id : std::uint8_t{0}),
                    .pi_baud = applied_baud ? *applied_baud : app_config->serial.baud},
                   std::chrono::system_clock::now(), now);
               if (started.outbound || started.apply_pi_baud) {
@@ -1344,6 +1464,7 @@ int main(int argc, char** argv) {
                       active_serial_device.clear();
                       manual_serial_opened_at.reset();
                       pending_first_message.reset();
+                      endpoint_revalidation.Reset();
                       controlled_device.reset();
                       h1_endpoint_identity_verified = false;
                       device_session.SetLinkAvailable(false);
@@ -1392,6 +1513,21 @@ int main(int argc, char** argv) {
                 std::chrono::system_clock::now());
             if (!parsed) {
               (*logger)->Warn("拒绝非法H1回显请求: " + parsed.error());
+            } else if (!replay_deferred && endpoint_revalidation.Pending()) {
+              const auto queued = deferred_serial_requests.Enqueue(*parsed);
+              if (queued == experiment::DeferResult::kQueued) {
+                (*logger)->Info("F407身份待复核，已暂存一个H1回显请求: action_id=" +
+                                parsed->action_id);
+              } else if (queued != experiment::DeferResult::kDuplicate) {
+                const auto rejection = experiment::BuildDeferredRejection(
+                    *parsed, app_config->mqtt.topics.topic_namespace,
+                    queued == experiment::DeferResult::kConflict
+                        ? "duplicate_conflict" : "serial_unavailable",
+                    std::chrono::system_clock::now());
+                if (!experiment_ack_outbox.Enqueue(rejection)) {
+                  (*logger)->Error("H1待发请求拒绝ACK队列已满");
+                }
+              }
             } else {
               const auto applied_baud = link ? link->AppliedBaud()
                                              : std::expected<int, uart::UartError>{0};
@@ -1600,18 +1736,24 @@ int main(int argc, char** argv) {
       }
     }
 
-    if (uart_echo_transaction.HasPending() &&
-        (!device_session.CanSendDeviceCommands() ||
-         !h1_endpoint_identity_verified)) {
+    if (control_command::ShouldAbortEchoForIdentity(
+            uart_echo_transaction.HasPending(),
+            device_session.CanSendDeviceCommands() &&
+                h1_endpoint_identity_verified,
+            endpoint_revalidation.Pending())) {
       enqueue_echo_result(uart_echo_transaction.Abort(
           "identity_unavailable", std::chrono::system_clock::now()));
     }
     enqueue_echo_result(uart_echo_transaction.Tick(
         std::chrono::steady_clock::now(), std::chrono::system_clock::now()));
-    const auto m1_tick = m1_transaction.Tick(
-        std::chrono::steady_clock::now(), std::chrono::system_clock::now());
+    const auto m1_tick = (endpoint_revalidation.Pending() || m1_held_for_identity)
+        ? m1_transaction.TickWhilePaused(
+              std::chrono::steady_clock::now(), std::chrono::system_clock::now())
+        : m1_transaction.Tick(
+              std::chrono::steady_clock::now(), std::chrono::system_clock::now());
     enqueue_m1_result(m1_tick.publication);
     if (m1_tick.outbound) send_m1_frame(*m1_tick.outbound);
+    if (!m1_transaction.HasPending()) m1_held_for_identity = false;
     (void)experiment::FeedRecoveredAckWhenIdle(
         experiment_ack_outbox, recovered_echo_publications);
 

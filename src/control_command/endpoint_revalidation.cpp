@@ -9,6 +9,11 @@
 
 namespace control_command {
 
+bool ShouldAbortEchoForIdentity(bool has_pending, bool identity_ready,
+                                bool revalidation_pending) {
+  return has_pending && !identity_ready && !revalidation_pending;
+}
+
 HeartbeatObservation EndpointRevalidation::ObserveHeartbeat(
     const ControlledDeviceEndpoint& current,
     const ControlledDeviceEndpoint& observed, bool has_binding,

@@ -476,6 +476,20 @@ M1Step M1Transaction::Tick(SteadyClock::time_point now,
   return {};
 }
 
+M1Step M1Transaction::TickWhilePaused(SteadyClock::time_point now,
+                                      WallClock::time_point wall_now) {
+  if (!pending_) return {};
+  if (pending_->sent &&
+      (now - pending_->sent_at >= kResponseTimeout ||
+       wall_now >= pending_->request.expiry)) {
+    return Finish("result_uncertain", wall_now);
+  }
+  if (!pending_->sent && wall_now >= pending_->request.expiry) {
+    return Finish("action_expired", wall_now);
+  }
+  return {};
+}
+
 M1Step M1Transaction::Abort(std::string_view error_code,
                              WallClock::time_point wall_now) {
   if (!pending_) return {};

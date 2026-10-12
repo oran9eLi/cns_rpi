@@ -42,6 +42,7 @@ add_library(cns_rpi_core
     src/experiment/pi_link_inspection.cpp
     src/experiment/uart_echo_request.cpp
     src/experiment/m1_request.cpp
+    src/experiment/deferred_serial_request.cpp
     src/experiment/m1_protocol.cpp
     src/experiment/m1_transaction.cpp
     src/experiment/serial_affinity.cpp
@@ -178,6 +179,10 @@ add_test(NAME uart_echo_request COMMAND test_uart_echo_request)
 add_executable(test_m1_request tests/test_m1_request.cpp)
 target_link_libraries(test_m1_request PRIVATE cns_rpi_core)
 add_test(NAME m1_request COMMAND test_m1_request)
+
+add_executable(test_deferred_serial_request tests/test_deferred_serial_request.cpp)
+target_link_libraries(test_deferred_serial_request PRIVATE cns_rpi_core)
+add_test(NAME deferred_serial_request COMMAND test_deferred_serial_request)
 
 add_executable(test_m1_protocol tests/test_m1_protocol.cpp)
 target_link_libraries(test_m1_protocol PRIVATE cns_rpi_core)

@@ -92,3 +92,10 @@ TEST_CASE("三秒仅发一次告警且不会自动解除待复核") {
   CHECK_FALSE(transition.ShouldWarn(kStarted + 4s));
   CHECK(transition.Pending());
 }
+
+TEST_CASE("端点待复核时已发H1动作不因身份暂失而主动终止") {
+  CHECK_FALSE(control_command::ShouldAbortEchoForIdentity(true, false, true));
+  CHECK(control_command::ShouldAbortEchoForIdentity(true, false, false));
+  CHECK_FALSE(control_command::ShouldAbortEchoForIdentity(true, true, false));
+  CHECK_FALSE(control_command::ShouldAbortEchoForIdentity(false, false, false));
+}

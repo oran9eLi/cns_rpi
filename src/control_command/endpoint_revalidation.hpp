@@ -18,6 +18,10 @@ namespace control_command {
 enum class HeartbeatObservation { kUnchanged, kCandidate, kAmbiguous };
 enum class BasicIdObservation { kIgnored, kVerified, kConflict };
 
+/** @brief 身份失效时仅在非换号复核场景主动终止已发H1动作。 */
+bool ShouldAbortEchoForIdentity(bool has_pending, bool identity_ready,
+                                bool revalidation_pending);
+
 class EndpointRevalidation {
  public:
   using Clock = std::chrono::steady_clock;
