@@ -71,11 +71,15 @@ bool DeviceSession::ConfirmPersistedBinding(
 void DeviceSession::SetLinkAvailable(bool available) {
   link_available_ = available;
   if (!available) {
-    current_link_identity_verified_ = false;
-    current_identity_.reset();
-    if (tracker_) {
-      tracker_->InvalidateCurrentIdentity();
-    }
+    InvalidateCurrentIdentity();
+  }
+}
+
+void DeviceSession::InvalidateCurrentIdentity() {
+  current_link_identity_verified_ = false;
+  current_identity_.reset();
+  if (tracker_) {
+    tracker_->InvalidateCurrentIdentity();
   }
 }
 

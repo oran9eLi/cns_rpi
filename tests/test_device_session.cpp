@@ -78,6 +78,28 @@ TEST_CASE("断链重连后必须重新核验Basic ID才能恢复控制") {
   CHECK(session.CanSendDeviceCommands());
 }
 
+TEST_CASE("端点复核只撤销当前身份而不宣称MQTT或业务链断开") {
+  runtime_status::DeviceSession session(CachedBinding(), kStartedAt);
+  session.SetLinkAvailable(true);
+  REQUIRE(session.ObserveIdentity(CachedBinding()) ==
+          runtime_status::IdentityObservation::kVerified);
+  session.ObserveBusinessFrame(kStartedAt + 1s);
+
+  session.InvalidateCurrentIdentity();
+
+  REQUIRE(session.CurrentOnlineStatus().has_value());
+  CHECK(session.CurrentOnlineStatus()->control_status ==
+        runtime_status::ControlStatus::kOnline);
+  CHECK(session.CurrentOnlineStatus()->identity_status ==
+        runtime_status::IdentityStatus::kCached);
+  CHECK(session.CurrentOnlineStatus()->business_status ==
+        runtime_status::BusinessStatus::kOnline);
+  CHECK_FALSE(session.CanSendDeviceCommands());
+  CHECK(session.ObserveIdentity(CachedBinding()) ==
+        runtime_status::IdentityObservation::kVerified);
+  CHECK(session.CanSendDeviceCommands());
+}
+
 TEST_CASE("未绑定候选身份变化时拒绝持久化到另一身份") {
   runtime_status::DeviceSession session(std::nullopt, kStartedAt);
   auto changed = CachedBinding();

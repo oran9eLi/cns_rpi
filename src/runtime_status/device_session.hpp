@@ -42,6 +42,8 @@ class DeviceSession {
   bool ConfirmPersistedBinding(const device::Binding& persisted_binding);
 
   void SetLinkAvailable(bool available);
+  /** @brief 同一物理链路端点变化时撤销当前身份，不更改链路可用事实。 */
+  void InvalidateCurrentIdentity();
   bool CurrentLinkIdentityVerified() const;
   void ObserveBusinessFrame(Clock::time_point now);
   void Tick(Clock::time_point now);

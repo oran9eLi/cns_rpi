@@ -56,6 +56,7 @@ add_library(cns_rpi_core
     src/control_command/control_command.cpp
     src/control_command/control_transaction.cpp
     src/control_command/control_endpoint.cpp
+    src/control_command/endpoint_revalidation.cpp
     src/control_test/control_test_cli.cpp
     src/cellular/cellular_snapshot.cpp
     src/cellular/cellular_status.cpp
@@ -229,6 +230,10 @@ add_test(NAME control_transaction COMMAND test_control_transaction)
 add_executable(test_control_endpoint tests/test_control_endpoint.cpp)
 target_link_libraries(test_control_endpoint PRIVATE cns_rpi_core)
 add_test(NAME control_endpoint COMMAND test_control_endpoint)
+
+add_executable(test_endpoint_revalidation tests/test_endpoint_revalidation.cpp)
+target_link_libraries(test_endpoint_revalidation PRIVATE cns_rpi_core)
+add_test(NAME endpoint_revalidation COMMAND test_endpoint_revalidation)
 
 add_executable(test_cellular_status tests/test_cellular_status.cpp)
 target_link_libraries(test_cellular_status PRIVATE cns_rpi_core)
