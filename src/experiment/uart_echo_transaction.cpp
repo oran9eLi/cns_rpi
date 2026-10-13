@@ -278,6 +278,10 @@ EchoStart UartEchoTransaction::Start(const UartEchoRequest& request, EchoGate ga
   if (foreign_action_lookup_ && foreign_action_lookup_(request.action_id)) {
     return rejected("duplicate_conflict", "动作ID已被其他实验操作占用");
   }
+  // 先处理同动作重投，再回收已到期终态；未决记录即使过期也不能丢失。
+  std::erase_if(records_, [wall_now](const Record& record) {
+    return !record.terminal_payload.empty() && record.expiry <= wall_now;
+  });
   auto durable_rejected = [&](std::string_view code, std::string message) -> EchoStart {
     if (records_.size() >= kMaxRecords) {
       return rejected("result_uncertain", "动作去重记录已达上限");

@@ -2,6 +2,7 @@
 #include <doctest/doctest.h>
 
 #include <filesystem>
+#include <fstream>
 #include <nlohmann/json.hpp>
 #include <unistd.h>
 
@@ -188,6 +189,100 @@ TEST_CASE("M1外部拒绝先持久化且重投不再执行物理动作") {
   REQUIRE(replay.publication.has_value());
   CHECK(nlohmann::json::parse(replay.publication->payload).at("error_code") ==
         "serial_unavailable");
+  std::filesystem::remove(path);
+}
+
+TEST_CASE("M1满额时淘汰已过期终态后允许新动作并保持重启去重") {
+  const auto path = Journal();
+  const auto wall = Wall::time_point{std::chrono::seconds(1000)};
+  const auto t0 = Clock::time_point{std::chrono::seconds(100)};
+  experiment::M1Transaction tx(path, "cns", [] {
+    return std::expected<std::uint64_t, std::string>{kNonce};
+  });
+  REQUIRE(tx.Load());
+  auto old = Request(experiment::M1Operation::kSetF407Baud, wall);
+  old.expiry = wall + std::chrono::seconds(1);
+  for (int i = 0; i < 128; ++i) {
+    old.action_id = "m1-old-" + std::to_string(i);
+    old.request_id = old.action_id;
+    REQUIRE(tx.Start(old, Gate(), wall, t0, "serial_unavailable").publication);
+  }
+  const auto current = Request(experiment::M1Operation::kSetF407Baud,
+                               wall + std::chrono::seconds(1));
+  const auto started = tx.Start(current, Gate(), wall + std::chrono::seconds(1), t0);
+  REQUIRE(started.outbound);
+  CHECK_FALSE(started.publication);
+  {
+    std::ifstream input(path);
+    REQUIRE(input.good());
+    CHECK(nlohmann::json::parse(input).at("records").size() == 1);
+  }
+  experiment::M1Transaction restarted(path, "cns");
+  REQUIRE(restarted.Load());
+  CHECK(restarted.RecoveredPublications().empty());
+  const auto replay = restarted.Start(current, Gate(), wall + std::chrono::seconds(1), t0);
+  CHECK_FALSE(replay.outbound);
+  REQUIRE(replay.publication);
+  CHECK(nlohmann::json::parse(replay.publication->payload).at("error_code") ==
+        "result_uncertain");
+  const auto expired = restarted.Start(old, Gate(), wall + std::chrono::seconds(1), t0);
+  CHECK_FALSE(expired.outbound);
+  REQUIRE(expired.publication);
+  CHECK(nlohmann::json::parse(expired.publication->payload).at("error_code") ==
+        "action_expired");
+  std::filesystem::remove(path);
+}
+
+TEST_CASE("M1清理已过期终态时保留未过期终态与未完成记录") {
+  const auto path = Journal();
+  const auto wall = Wall::time_point{std::chrono::seconds(1000)};
+  const auto t0 = Clock::time_point{std::chrono::seconds(100)};
+  experiment::M1Transaction tx(path, "cns", [] {
+    return std::expected<std::uint64_t, std::string>{kNonce};
+  });
+  REQUIRE(tx.Load());
+  for (int i = 0; i < 126; ++i) {
+    auto old = Request(experiment::M1Operation::kSetF407Baud, wall);
+    old.action_id = "m1-old-" + std::to_string(i);
+    old.request_id = old.action_id;
+    old.expiry = wall + std::chrono::seconds(1);
+    REQUIRE(tx.Start(old, Gate(), wall, t0, "serial_unavailable").publication);
+  }
+  auto active = Request(experiment::M1Operation::kSetF407Baud, wall);
+  active.action_id = "m1-active";
+  active.request_id = active.action_id;
+  const auto active_ack = tx.Start(active, Gate(), wall, t0, "identity_unavailable");
+  REQUIRE(active_ack.publication);
+  auto unfinished = Request(experiment::M1Operation::kSetF407Baud, wall);
+  unfinished.action_id = "m1-unfinished";
+  unfinished.request_id = unfinished.action_id;
+  unfinished.expiry = wall + std::chrono::seconds(1);
+  REQUIRE(tx.Start(unfinished, Gate(), wall, t0).outbound);
+  experiment::M1Transaction restarted(path, "cns", [] {
+    return std::expected<std::uint64_t, std::string>{kNonce};
+  });
+  REQUIRE(restarted.Load());
+  const auto current = Request(experiment::M1Operation::kSetF407Baud,
+                               wall + std::chrono::seconds(1));
+  REQUIRE(restarted.Start(current, Gate(), wall + std::chrono::seconds(1), t0).outbound);
+  CHECK(restarted.HasActionId(active.action_id));
+  CHECK(restarted.HasActionId(unfinished.action_id));
+  const auto repeated = restarted.Start(active, Gate(), wall + std::chrono::seconds(1), t0);
+  REQUIRE(repeated.publication);
+  CHECK(repeated.publication->payload == active_ack.publication->payload);
+  const auto uncertain = restarted.Start(unfinished, Gate(), wall + std::chrono::seconds(1), t0);
+  CHECK_FALSE(uncertain.outbound);
+  REQUIRE(uncertain.publication);
+  CHECK(nlohmann::json::parse(uncertain.publication->payload).at("error_code") ==
+        "result_uncertain");
+  {
+    std::ifstream input(path);
+    REQUIRE(input.good());
+    CHECK(nlohmann::json::parse(input).at("records").size() == 3);
+  }
+  experiment::M1Transaction reloaded(path, "cns");
+  REQUIRE(reloaded.Load());
+  CHECK(reloaded.RecoveredPublications().size() == 1);
   std::filesystem::remove(path);
 }
 
