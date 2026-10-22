@@ -223,8 +223,9 @@ std::string Comparison(const Request& request) {
   return Json{{"device_id", request.device_id}, {"session_id", request.session_id},
               {"request_id", request.request_id}, {"lease_version", request.lease_version},
               {"operation", request.operation}, {"expires_at", request.expires_at},
-              {"state", request.state}, {"baud_rate", request.baud_rate},
-              {"enabled", request.enabled}}.dump();
+              {"state", request.state ? Json(*request.state) : Json(nullptr)},
+              {"baud_rate", request.baud_rate ? Json(*request.baud_rate) : Json(nullptr)},
+              {"enabled", request.enabled ? Json(*request.enabled) : Json(nullptr)}}.dump();
 }
 
 bool WriteAll(int fd, std::string_view value) {

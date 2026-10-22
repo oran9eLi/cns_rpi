@@ -90,6 +90,24 @@ TEST_CASE("临时换速只改变进程目标且重投不重复执行") {
   CHECK(changes == 1);
 }
 
+TEST_CASE("去重指纹兼容缺省可选字段且不混淆不同动作") {
+  experiment::LinkLabController lab("cns_rpi", kDevice, 115200);
+  int sends = 0, changes = 0;
+  auto request = Request("link_lab_restore");
+  const auto actions = Actions(sends, changes);
+  const auto first = Ack(lab.Handle(request.dump(), actions, kNow));
+  CHECK(first.at("status") == "completed");
+  request["command_id"] = "58ad6990-6d65-4d9a-9f53-82d611d0e3f4";
+  const auto replay = Ack(lab.Handle(request.dump(), actions, kNow + 1s));
+  CHECK(replay.at("status") == "completed");
+  CHECK(replay.at("fact") == first.at("fact"));
+  request["operation"] = "link_lab_set_status_reporting";
+  request["enabled"] = false;
+  const auto conflict = Ack(lab.Handle(request.dump(), actions, kNow + 2s));
+  CHECK(conflict.at("error_code") == "duplicate_conflict");
+  CHECK(lab.ReportingEnabled());
+}
+
 TEST_CASE("状态报送开关和恢复不依赖当前F407身份") {
   experiment::LinkLabController lab("cns_rpi", kDevice, 115200);
   int sends = 0, changes = 0;
