@@ -40,6 +40,7 @@ add_library(cns_rpi_core
     src/runtime_status/runtime_status.cpp
     src/runtime_status/device_session.cpp
     src/experiment/pi_link_inspection.cpp
+    src/experiment/link_lab.cpp
     src/experiment/uart_echo_request.cpp
     src/experiment/m1_request.cpp
     src/experiment/deferred_serial_request.cpp
@@ -171,6 +172,10 @@ add_test(NAME runtime_status COMMAND test_runtime_status)
 add_executable(test_pi_link_inspection tests/test_pi_link_inspection.cpp)
 target_link_libraries(test_pi_link_inspection PRIVATE cns_rpi_core)
 add_test(NAME pi_link_inspection COMMAND test_pi_link_inspection)
+
+add_executable(test_link_lab tests/test_link_lab.cpp)
+target_link_libraries(test_link_lab PRIVATE cns_rpi_core)
+add_test(NAME link_lab COMMAND test_link_lab)
 
 add_executable(test_uart_echo_request tests/test_uart_echo_request.cpp)
 target_link_libraries(test_uart_echo_request PRIVATE cns_rpi_core)

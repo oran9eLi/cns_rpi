@@ -43,6 +43,7 @@
 #include "control_command/control_transaction.hpp"
 #include "device/device_binding_store.hpp"
 #include "experiment/pi_link_inspection.hpp"
+#include "experiment/link_lab.hpp"
 #include "experiment/deferred_serial_request.hpp"
 #include "experiment/m1_request.hpp"
 #include "experiment/m1_transaction.hpp"
@@ -241,6 +242,16 @@ int main(int argc, char** argv) {
   runtime_status::PublicationState runtime_publication_state;
   experiment::PiLinkInspector pi_link_inspector(
       app_config->mqtt.topics.topic_namespace);
+  std::optional<experiment::LinkLabController> link_lab;
+  std::optional<std::uint64_t> link_lab_connection_generation;
+  if (persisted_binding && persisted_binding->device_type == device::Type::kCnsBox) {
+    link_lab.emplace(app_config->mqtt.topics.topic_namespace,
+                     persisted_binding->device_id, app_config->serial.baud,
+                     app_config->identity.binding_file.string() + ".link-lab-fence.json");
+    if (!link_lab->Ready()) {
+      (*logger)->Error("链路排障租约记录不可用，已禁止临时实验动作");
+    }
+  }
   experiment::AckOutbox experiment_ack_outbox;
   std::deque<experiment::Publication> recovered_echo_publications;
   bool h1_journal_ready = false;
@@ -495,6 +506,27 @@ int main(int argc, char** argv) {
     ambiguous_device_type = false;
     state_store.ResetDeviceState();
     px4_basic_id_requests_sent = 0;
+    silence_watchdog.Reset();
+    next_discovery = std::chrono::steady_clock::now();
+  };
+
+  auto reset_serial_for_link_lab = [&] {
+    discovery.CancelAndJoin();
+    enqueue_m1_result(m1_transaction.Abort(
+        "serial_unavailable", std::chrono::system_clock::now()).publication);
+    enqueue_echo_result(uart_echo_transaction.Abort(
+        "serial_unavailable", std::chrono::system_clock::now()));
+    fail_pending_control();
+    link.reset();
+    qgc_udp_bridge.reset();
+    active_serial_device.clear();
+    manual_serial_opened_at.reset();
+    pending_first_message.reset();
+    endpoint_revalidation.Reset();
+    controlled_device.reset();
+    h1_endpoint_identity_verified = false;
+    device_session.SetLinkAvailable(false);
+    state_store.ResetDeviceState();
     silence_watchdog.Reset();
     next_discovery = std::chrono::steady_clock::now();
   };
@@ -809,6 +841,7 @@ int main(int argc, char** argv) {
           startup_baud_recovery.IdentityVerified();
           if (const auto recovered = startup_baud_recovery.RecoveredBaud()) {
             app_config->serial.baud = *recovered;
+            if (link_lab) link_lab->SetConfiguredBaud(*recovered);
             recovered_baud_to_persist = *recovered;
             next_recovery_persist_attempt = now;
             (*logger)->Info("启动恢复已核验F407身份与基准波特率，准备持久化配置");
@@ -868,6 +901,20 @@ int main(int argc, char** argv) {
 
   while (!g_exit_requested) {
     auto now = std::chrono::steady_clock::now();
+    if (link_lab && link_lab->SessionActive() &&
+        (link_lab->SessionExpired(now) || !mqtt_client ||
+         !mqtt_client->IsConnected() ||
+         (link_lab_connection_generation &&
+          mqtt_client->ConnectionGeneration() !=
+              *link_lab_connection_generation))) {
+      const bool had_temporary_baud =
+          link_lab->CurrentBaud() != app_config->serial.baud;
+      link_lab->Abort();
+      link_lab_connection_generation.reset();
+      if (had_temporary_baud) reset_serial_for_link_lab();
+      last_cellular_heartbeat = std::chrono::steady_clock::time_point{};
+      (*logger)->Warn("实验控制链中断或租约到期，已清除Pi临时链路覆盖");
+    }
     if (!link) {
       if (auto attempt = discovery.TryTakeResult()) {
         if (attempt->found) {
@@ -907,9 +954,24 @@ int main(int argc, char** argv) {
       if (!link && !m1_transaction.HasPending() &&
           !discovery.IsRunning() && now >= next_discovery) {
         std::string probe_device = app_config->serial.device;
-        int probe_baud = startup_baud_recovery.ProbeBaud(
-            app_config->serial.baud);
-        if (startup_baud_recovery.UseTrustedEndpoint() && persisted_binding) {
+        const bool temporary_lab_baud =
+            link_lab && link_lab->CurrentBaud() != app_config->serial.baud;
+        int probe_baud = temporary_lab_baud
+                             ? link_lab->CurrentBaud()
+                             : startup_baud_recovery.ProbeBaud(app_config->serial.baud);
+        bool may_probe = true;
+        if (temporary_lab_baud) {
+          const auto endpoint = serial_affinity.Resolve(link_lab->DeviceId());
+          if (endpoint) {
+            probe_device = endpoint->path.string();
+          } else {
+            may_probe = false;
+            if (binding_error_log_limiter.ShouldLog(now)) {
+              (*logger)->Warn("链路排障临时换速缺少已核验串口拓扑，禁止自动扫描: " +
+                              endpoint.error());
+            }
+          }
+        } else if (startup_baud_recovery.UseTrustedEndpoint() && persisted_binding) {
           const auto endpoint = serial_affinity.Resolve(
               persisted_binding->device_id);
           if (endpoint) {
@@ -925,11 +987,15 @@ int main(int argc, char** argv) {
                 app_config->serial.baud);
           }
         }
-        (void)discovery.Start(
-            probe_device, probe_baud,
-            startup_baud_recovery.UseTrustedEndpoint()
-                ? kStartupRecoveryProbeTimeout
-                : kDiscoveryProbeTimeout);
+        if (may_probe) {
+          (void)discovery.Start(
+              probe_device, probe_baud,
+              startup_baud_recovery.UseTrustedEndpoint()
+                  ? kStartupRecoveryProbeTimeout
+                  : kDiscoveryProbeTimeout);
+        } else {
+          next_discovery = now + kDiscoveryRetryInterval;
+        }
       }
     }
 
@@ -1016,22 +1082,42 @@ int main(int argc, char** argv) {
       }
     }
 
-    if (link && rpi_system_id && !endpoint_revalidation.Pending() &&
-        startup_baud_recovery.AllowPeriodicOutput() &&
-        now - last_cellular_heartbeat >= app_config->cellular.heartbeat_interval) {
+    auto send_cellular_status = [&](std::optional<bool> explicit_offline) {
+      if (!link || !rpi_system_id || endpoint_revalidation.Pending() ||
+          !startup_baud_recovery.AllowPeriodicOutput()) return false;
+      const bool teaching_frame = explicit_offline.has_value() ||
+                                  (link_lab && link_lab->CellularOffline());
+      if (teaching_frame &&
+          (!device_session.CanSendDeviceCommands() ||
+           !h1_endpoint_identity_verified || !controlled_device ||
+           controlled_device->type != device::Type::kCnsBox)) {
+        return false;
+      }
       const auto cellular_snapshot = cellular::ReadStatusSnapshot(
           app_config->cellular.status_snapshot_path,
           app_config->cellular.status_snapshot_max_age);
-      const auto cellular_status = cellular::FromSnapshot(cellular_snapshot);
+      auto cellular_status = cellular::FromSnapshot(cellular_snapshot);
+      if (explicit_offline) {
+        if (*explicit_offline) cellular_status.online = false;
+      } else if (link_lab) {
+        cellular_status = link_lab->TeachingCellularStatus(cellular_status);
+      }
       const auto boot_ms = static_cast<std::uint32_t>(
-          std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count());
+          std::chrono::duration_cast<std::chrono::milliseconds>(
+              std::chrono::steady_clock::now().time_since_epoch()).count());
       const auto heartbeat = cellular::BuildRpiCellularHeartbeat(
           cellular_status, *rpi_system_id, kComponentId, boot_ms);
       if (!link->SendMessage(heartbeat)) {
         mark_link_disconnected();
+        return false;
       } else {
-        last_cellular_heartbeat = now;
+        last_cellular_heartbeat = std::chrono::steady_clock::now();
+        return true;
       }
+    };
+    if ((!link_lab || link_lab->ReportingEnabled()) &&
+        now - last_cellular_heartbeat >= app_config->cellular.heartbeat_interval) {
+      (void)send_cellular_status(std::nullopt);
     }
 
     // PX4 在普通遥测链路上既不主动发 BASIC_ID 也不主动发 AUTOPILOT_VERSION，
@@ -1347,7 +1433,8 @@ int main(int argc, char** argv) {
                     h1_endpoint_identity_verified,
                 !m1_held_for_identity && !uart_echo_transaction.HasPending() &&
                     !m1_transaction.HasPending() &&
-                    !control_transaction.HasPending(),
+                    !control_transaction.HasPending() &&
+                    (!link_lab || !link_lab->SessionActive()),
                 mqtt_client->IsConnected())) {
           if (auto taken = deferred_serial_requests.Take()) {
             message = mqtt::IncomingMessage{
@@ -1380,11 +1467,94 @@ int main(int argc, char** argv) {
           }
         } else if (!experiment_set_topic.empty() &&
                    message->topic == experiment_set_topic && !restart_requested) {
-          if (experiment::IsM1Operation(message->payload)) {
+          if (experiment::IsLinkLabOperation(message->payload)) {
+            if (!link_lab && active_mqtt_binding->device_type == device::Type::kCnsBox &&
+                device_session.HasPersistedBinding()) {
+              link_lab.emplace(app_config->mqtt.topics.topic_namespace,
+                               active_mqtt_binding->device_id, app_config->serial.baud,
+                               app_config->identity.binding_file.string() +
+                                   ".link-lab-fence.json");
+            }
+            if (!link_lab) {
+              (*logger)->Warn("拒绝链路排障动作：缺少已持久化主控箱身份");
+            } else if (experiment_ack_outbox.Size() >=
+                       experiment::AckOutbox::kCapacity) {
+              (*logger)->Error("链路排障ACK队列已满，暂不执行新动作");
+            } else {
+              const bool previous_cellular_offline = link_lab->CellularOffline();
+              const bool previous_reporting_enabled = link_lab->ReportingEnabled();
+              const auto result = link_lab->Handle(
+                  message->payload,
+                  {.send_cellular = [&](bool force_offline) {
+                     return send_cellular_status(force_offline);
+                   },
+                   .apply_baud = [&](int baud) -> std::optional<int> {
+                     if (!active_mqtt_binding ||
+                         active_mqtt_binding->device_type != device::Type::kCnsBox ||
+                         m1_transaction.HasPending() ||
+                         uart_echo_transaction.HasPending() ||
+                         control_transaction.HasPending()) {
+                       return std::nullopt;
+                     }
+                     const auto endpoint = serial_affinity.Resolve(
+                         active_mqtt_binding->device_id);
+                     if (!endpoint) {
+                       (*logger)->Warn("链路排障换速缺少已核验串口拓扑: " +
+                                       endpoint.error());
+                       return std::nullopt;
+                     }
+                     if (link && !active_serial_device.empty()) {
+                       std::error_code path_error;
+                       if (std::filesystem::equivalent(
+                               active_serial_device, endpoint->path, path_error) &&
+                           !path_error) {
+                         const auto applied = link->AppliedBaud();
+                         if (applied && *applied == baud) {
+                           startup_baud_recovery.Cancel();
+                           return *applied;
+                         }
+                       }
+                     }
+                     reset_serial_for_link_lab();
+                     auto opened = uart::MavlinkLink::Open(endpoint->path.string(), baud);
+                     if (!opened) {
+                       (*logger)->Warn("链路排障目标串口无法以请求波特率打开");
+                       return std::nullopt;
+                     }
+                     link.emplace(std::move(*opened));
+                     active_serial_device = endpoint->path.string();
+                     manual_serial_opened_at = std::chrono::steady_clock::now();
+                     const auto actual = link->AppliedBaud();
+                     if (!actual) {
+                       reset_serial_for_link_lab();
+                       return std::nullopt;
+                     }
+                     if (*actual == baud) startup_baud_recovery.Cancel();
+                     return *actual;
+                   }},
+                  std::chrono::system_clock::now(), std::chrono::steady_clock::now());
+              if (link_lab->SessionActive() && !link_lab_connection_generation) {
+                link_lab_connection_generation = mqtt_client->ConnectionGeneration();
+              }
+              if ((previous_cellular_offline && !link_lab->CellularOffline()) ||
+                  (!previous_reporting_enabled && link_lab->ReportingEnabled())) {
+                last_cellular_heartbeat = std::chrono::steady_clock::time_point{};
+              }
+              if (!result.diagnostic.empty()) {
+                (*logger)->Warn("拒绝链路排障请求: " + result.diagnostic);
+              }
+              if (result.publication &&
+                  !experiment_ack_outbox.Enqueue(*result.publication)) {
+                (*logger)->Error("链路排障ACK待发队列已满，终态无法发布");
+              }
+            }
+          } else if (experiment::IsM1Operation(message->payload)) {
             const auto parsed = experiment::ParseM1Request(
                 message->payload, active_mqtt_binding->device_id);
             if (!parsed) {
               (*logger)->Warn("拒绝非法M1实验请求: " + parsed.error());
+            } else if (link_lab && link_lab->SessionActive()) {
+              reject_deferred(*parsed, "serial_unavailable");
             } else if (!replay_deferred &&
                        deferred_serial_requests.Decide(
                            endpoint_revalidation.Pending(), identity_conflict_now(),
@@ -1514,6 +1684,9 @@ int main(int argc, char** argv) {
                     });
                 if (changed) {
                   app_config->serial.baud = changed->applied_baud;
+                  if (link_lab) {
+                    link_lab->SetConfiguredBaud(app_config->serial.baud);
+                  }
                   enqueue_m1_result(m1_transaction.OnPiBaudApplied(
                       changed->applied_baud, link.has_value(),
                       std::chrono::system_clock::now()));
@@ -1522,6 +1695,9 @@ int main(int argc, char** argv) {
                 } else {
                   if (changed.error().configuration_persisted) {
                     app_config->serial.baud = *started.apply_pi_baud;
+                    if (link_lab) {
+                      link_lab->SetConfiguredBaud(app_config->serial.baud);
+                    }
                     if (changed.error().code == "serial_reconfigure_failed") {
                       link.reset();
                       active_serial_device.clear();
@@ -1543,6 +1719,8 @@ int main(int argc, char** argv) {
                 std::chrono::system_clock::now());
             if (!parsed) {
               (*logger)->Warn("拒绝非法H1回显请求: " + parsed.error());
+            } else if (link_lab && link_lab->SessionActive()) {
+              reject_deferred(*parsed, "serial_unavailable");
             } else if (!replay_deferred &&
                        deferred_serial_requests.Decide(
                            endpoint_revalidation.Pending(), identity_conflict_now(),
