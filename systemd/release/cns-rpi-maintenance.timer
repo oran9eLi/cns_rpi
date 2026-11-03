@@ -1,0 +1,11 @@
+[Unit]
+Description=CNS maintenance poll every 60 seconds
+
+[Timer]
+OnBootSec=60s
+OnUnitInactiveSec=60s
+AccuracySec=1s
+Unit=cns-rpi-maintenance.service
+
+[Install]
+WantedBy=timers.target
