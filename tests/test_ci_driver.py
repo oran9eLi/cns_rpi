@@ -1,4 +1,6 @@
 import importlib.util
+import os
+import tempfile
 from pathlib import Path
 import subprocess
 import sys
@@ -20,5 +22,23 @@ class DriverTests(unittest.TestCase):
         self.assertEqual(broker.actions, ['stop','start'])
     def test_child_failure_propagates(self):
         self.assertEqual(driver.supervise([sys.executable,'-c','raise SystemExit(7)'], None, {}),7)
+
+class BuildShellTests(unittest.TestCase):
+    @unittest.skipIf(os.name != 'posix' or os.getuid() == 0, 'ordinary-user execution check')
+    def test_build_commands_execute_with_ordinary_identity_and_writable_logs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            (root/'test-logs').mkdir()
+            (root/'bin').mkdir()
+            command = '#!/bin/bash\nset -eu\ntest "$(id -u)" -ne 0\nprintf "%s\\n" "$0 $*" >> "$CALL_LOG"\nif [ "${1:-}" = -c ]; then echo 1.0.5; fi\n'
+            for name in ('cmake','python3'):
+                path=root/'bin'/name; path.write_text(command); path.chmod(0o755)
+            result=subprocess.run(['bash', str(ROOT/'scripts/ci/build_release.sh'), 'a'*40],cwd=root,
+                env={**os.environ, 'PATH':str(root/'bin')+':'+os.environ['PATH'], 'CALL_LOG':str(root/'calls.log')},capture_output=True,text=True)
+            self.assertEqual(result.returncode,0,result.stderr)
+            calls=(root/'calls.log').read_text()
+            self.assertIn('scripts/ci/run_tests.py --build build-ci', calls)
+            self.assertIn('--git-commit '+'a'*40, calls)
+            self.assertTrue((root/'test-logs/tests.log').exists())
 
 if __name__=='__main__': unittest.main()

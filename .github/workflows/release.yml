@@ -31,6 +31,12 @@ jobs:
         with:
           name: trixie-arm64-release
           path: dist
+      - uses: actions/download-artifact@v4
+        with:
+          name: trixie-arm64-test-logs
+          path: release-test-logs
+      - name: Archive test logs for Release
+        run: tar -czf dist/test-logs-trixie-arm64.tar.gz -C release-test-logs .
       - name: Publish verified release
         env:
           GH_TOKEN: ${{ github.token }}
