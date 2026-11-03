@@ -42,8 +42,11 @@ class Systemd:
     def status(self, unit):
         try:
             return self._run('is-active', unit).stdout.strip()
-        except subprocess.CalledProcessError:
-            return 'inactive'
+        except subprocess.CalledProcessError as error:
+            state = (error.stdout or '').strip()
+            return state if state in ('inactive', 'failed') else 'unknown'
+        except OSError:
+            return 'unknown'
 
     def _run(self, *args):
         return subprocess.run(['systemctl', *args], check=True, capture_output=True, text=True)
@@ -103,6 +106,8 @@ class Installer:
                 raise ValueError('archive checksum mismatch')
         releases = self.home / 'releases'
         releases.mkdir(parents=True, exist_ok=True)
+        for directory in (self.root/'opt', self.home, releases):
+            directory.chmod(0o755)
         with tempfile.TemporaryDirectory(dir=releases, prefix='.staging-') as tmp:
             target = Path(tmp)
             with tarfile.open(archive, 'r:*') as tar:
@@ -141,9 +146,13 @@ class Installer:
             if not isinstance(deps, list) or not all((isinstance(d, str) and re.fullmatch('[a-z0-9][a-z0-9+.-]*', d) for d in deps)):
                 raise ValueError('invalid runtime dependencies')
             destination = releases / (artifact.version + '-' + artifact.sha256[:16])
+            published = destination if destination.exists() else target
+            for directory in published.rglob('*'):
+                if directory.is_dir():
+                    directory.chmod(0o755)
+            published.chmod(0o755)
             if destination.exists():
                 return destination
-            target.chmod(0o755)
             os.replace(target, destination)
             return destination
 
@@ -248,11 +257,13 @@ class Installer:
         return self._activate(previous.resolve().parent, component, network_probe, backup if component == 'app' else self.config)
 
     def _activate(self, release, component, probe, source=None):
+        old = (self.home / LINKS[component]).resolve()
+        if old == (release / component).resolve():
+            return self._result('succeeded', component)
         try:
             candidate = self._candidate(release, source or self.config, component)
         except (OSError, ValueError, subprocess.CalledProcessError):
             return self._result('failed', component, 'configuration incompatible')
-        old = (self.home / LINKS[component]).resolve()
         snapshot = self.config.read_bytes()
         unit = UNITS[component]
         self.state.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -264,6 +275,11 @@ class Installer:
         pending.chmod(0o600)
         try:
             self.services.stop(unit)
+        except Exception:
+            candidate.unlink(missing_ok=True)
+            pending.unlink(missing_ok=True)
+            return self._result('failed', component, 'service stop failed before activation')
+        try:
             self._link(LINKS[component], release / component)
             if component == 'app':
                 os.replace(candidate, self.config)
@@ -281,6 +297,14 @@ class Installer:
         except Exception:
             try:
                 self.services.stop(unit)
+            except Exception:
+                try:
+                    stopped = self.services.status(unit) in ('inactive', 'failed')
+                except Exception:
+                    stopped = False
+                if not stopped:
+                    return self._result('needs_attention', component, 'candidate could not be stopped; previous release not restored')
+            try:
                 self._link(LINKS[component], old)
                 if component == 'app':
                     self.config.write_bytes(snapshot)
@@ -295,6 +319,8 @@ class Installer:
             if restored:
                 pending.unlink(missing_ok=True)
             return self._result('rolled_back' if restored else 'needs_attention', component, 'activation failed; previous component restored' if restored else 'activation and recovery observation failed')
+        finally:
+            candidate.unlink(missing_ok=True)
 
 
 def main(argv=None):

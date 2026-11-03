@@ -1,5 +1,6 @@
 import hashlib
 import io
+import os
 import json
 from pathlib import Path
 import tarfile
@@ -196,3 +197,56 @@ class InstallTests(unittest.TestCase):
         self.inst.apply(self.stage('v3'),'app',lambda:True)
         self.assertEqual((self.inst.state/'app-config.previous').read_bytes(),original)
         self.assertEqual(self.inst.rollback('app',lambda:True)['current_version'],'v1')
+
+    def test_restrictive_umask_keeps_all_release_paths_traversable(self):
+        old_mask = os.umask(0o077)
+        try:
+            release = self.stage('v1')
+            directories = [self.root/'opt', self.inst.home, self.inst.home/'releases', release]
+            directories.extend(p for p in release.rglob('*') if p.is_dir())
+            for path in directories:
+                self.assertEqual(path.stat().st_mode & 0o777, 0o755, str(path))
+            self.inst.bootstrap(release, self.config, self.maint)
+            self.inst.apply(self.stage('v2'), 'app', lambda: True)
+            self.assertEqual(self.inst.state.stat().st_mode & 0o777, 0o700)
+        finally:
+            os.umask(old_mask)
+
+    def test_reinstall_current_preserves_rollback_release_and_config(self):
+        self.bootstrap()
+        original = self.inst.config.read_bytes()
+        release = self.stage('v2')
+        for component in ('app', 'cellular'):
+            self.inst.apply(release, component, lambda: True)
+            self.services.calls.clear()
+            result = self.inst.apply(release, component, lambda: True)
+            self.assertEqual(result['previous_version'], 'v1')
+            self.assertEqual(self.services.calls, [])
+            self.assertEqual(self.inst.rollback(component, lambda: True)['current_version'], 'v1')
+        self.assertEqual(self.inst.config.read_bytes(), original)
+
+    def test_initial_stop_error_leaves_installation_unchanged(self):
+        self.bootstrap()
+        old = (self.inst.home/'current').resolve()
+        original = self.inst.config.read_bytes()
+        with patch.object(self.services, 'stop', side_effect=OSError('stop error')):
+            result = self.inst.apply(self.stage('v2'), 'app', lambda: True)
+        self.assertEqual(result['status'], 'failed')
+        self.assertEqual(result['error'], 'service stop failed before activation')
+        self.assertEqual((self.inst.home/'current').resolve(), old)
+        self.assertEqual(self.inst.config.read_bytes(), original)
+
+    def test_recovery_stop_error_uses_actual_service_state(self):
+        for state in ('inactive', 'active'):
+            with self.subTest(state=state):
+                self.bootstrap()
+                self.services.results = [False, True]
+                with patch.object(self.services, 'stop', side_effect=[None, OSError('stop error')]), patch.object(self.services, 'status', return_value=state, create=True):
+                    result = self.inst.apply(self.stage('v2'), 'app', lambda: True)
+                if state == 'inactive':
+                    self.assertEqual(result['status'], 'rolled_back')
+                    self.assertEqual(result['current_version'], 'v1')
+                else:
+                    self.assertEqual(result['status'], 'needs_attention')
+                    self.assertEqual(result['current_version'], 'v2')
+                    self.assertEqual(result['error'], 'candidate could not be stopped; previous release not restored')
