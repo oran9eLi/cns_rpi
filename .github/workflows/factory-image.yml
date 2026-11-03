@@ -39,6 +39,7 @@ jobs:
           ENROLLMENT_SERVER_URL: ${{ inputs.server_url || 'https://maintenance.example.invalid' }}
           BUSINESS_CONFIG: ${{ inputs.business_config || 'config/config.example.json' }}
         run: |
+          set -euo pipefail
           mkdir -p factory-output
           docker run --rm --privileged --platform linux/arm64 \
             -e ENROLLMENT_SERVER_URL -e BUSINESS_CONFIG \

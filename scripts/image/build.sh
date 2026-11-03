@@ -11,7 +11,7 @@ output=$(realpath -m "${2:?output directory required}")
 server_url=${3:?HTTPS enrollment server URL required}
 business_config=$(realpath "${4:-$repo/config/config.example.json}")
 work=$(realpath -m "${5:-$repo/build/factory-image}")
-mkdir -p "$output" "$work"
+mkdir -p "$output" "$work/rpi"
 shopt -s nullglob
 archives=("$dist"/cns-rpi-*-trixie-arm64.tar.gz)
 [[ ${#archives[@]} == 1 ]] || { echo 'Exactly one ARM64 release archive is required.' >&2; exit 1; }

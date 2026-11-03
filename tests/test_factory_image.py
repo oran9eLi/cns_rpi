@@ -8,6 +8,7 @@ import shutil
 import struct
 import subprocess
 import tempfile
+import textwrap
 import unittest
 from unittest.mock import patch
 
@@ -133,6 +134,19 @@ class FactoryImageTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.module().seed(Path('/'), self.archive, self.digest, 'a' * 40,
                                self.business, 'https://maintenance.example.invalid')
+
+    def test_workflow_propagates_builder_failure_through_log_pipeline(self):
+        workflow = (ROOT/'.github/workflows/factory-image.yml').read_text()
+        script = textwrap.dedent(workflow.split('        run: |\n', 1)[1].split('      - uses:', 1)[0])
+        commands = self.base/'commands'
+        commands.mkdir()
+        docker = commands/'docker'
+        docker.write_text('#!/bin/sh\nexit 23\n')
+        docker.chmod(0o755)
+        env = {**os.environ, 'PATH': str(commands)+os.pathsep+os.environ['PATH'],
+               'ENROLLMENT_SERVER_URL': 'https://example.invalid', 'BUSINESS_CONFIG': 'config.json'}
+        result = subprocess.run(['bash', '-c', script], cwd=self.base, env=env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 23, 'the log pipeline hid the image builder failure')
 
     def test_readback_rejects_field_identity_in_the_built_filesystem(self):
         path = ROOT / 'scripts/image/verify.py'
