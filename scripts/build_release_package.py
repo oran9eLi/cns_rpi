@@ -75,4 +75,3 @@ def main():
     print(build_package(args.source, args.build, args.output, args.version, commit, args.platform, metadata))
 
 if __name__ == '__main__': main()
-
