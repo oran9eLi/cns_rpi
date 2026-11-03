@@ -295,3 +295,9 @@ set_tests_properties(cellular_link_python PROPERTIES WORKING_DIRECTORY ${CMAKE_S
 add_test(NAME cellular_dialup_python
     COMMAND ${PYTHON3_EXECUTABLE} -m unittest -v tests.test_cellular_dialup)
 set_tests_properties(cellular_dialup_python PROPERTIES WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+foreach(maintenance_suite maintenance_install bootstrap_pi maintenance_client release_package ci_driver)
+  add_test(NAME ${maintenance_suite}_python
+    COMMAND ${PYTHON3_EXECUTABLE} -m unittest -v tests.test_${maintenance_suite})
+  set_tests_properties(${maintenance_suite}_python PROPERTIES WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+endforeach()

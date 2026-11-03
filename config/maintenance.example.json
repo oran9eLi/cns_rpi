@@ -1,0 +1,6 @@
+{
+  "schema_version": 1,
+  "server_url": "https://maintenance.example.com",
+  "node_id": "pi-001",
+  "token": "REPLACE_WITH_NODE_TOKEN"
+}
