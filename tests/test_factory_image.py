@@ -112,6 +112,8 @@ class FactoryImageTests(unittest.TestCase):
         self.module().write_config(self.archive, self.digest, 'a' * 40, output,
                                   self.business, 'https://maintenance.example.invalid')
         config = json.loads(output.read_text())
+        self.assertFalse(Path(config['include']['file']).is_absolute(),
+                         'image-gen rejects absolute include paths')
         manifest = json.loads((self.archive.parent / 'manifest.json').read_text())
         self.assertEqual(config['packages'], manifest['runtime_dependencies'])
         self.assertEqual(config['env']['CNS_RELEASE_ARCHIVE'], str(self.archive.resolve()))

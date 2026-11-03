@@ -52,7 +52,7 @@ def write_config(archive, sha256, source_commit, output, business_config, server
     enrollment_config(server_url)
     business_config = Path(business_config).resolve(strict=True)
     config = {
-        'include': {'file': str(ROOT / 'image/config/cns-rpi.yaml')},
+        'include': {'file': 'cns-rpi.yaml'},
         'packages': dependencies,
         'artefact': {'version': source_commit},
         'env': {'CNS_RELEASE_ARCHIVE': str(archive), 'CNS_RELEASE_SHA256': sha256,
