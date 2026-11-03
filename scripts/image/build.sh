@@ -8,7 +8,7 @@ repo=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 git config --global --add safe.directory "$repo"
 dist=$(realpath "${1:?release dist directory required}")
 output=$(realpath -m "${2:?output directory required}")
-server_url=${3:?HTTPS enrollment server URL required}
+server_url=${3:?HTTPS maintenance server URL required}
 business_config=$(realpath "${4:-$repo/config/config.example.json}")
 work=$(realpath -m "${5:-$repo/build/factory-image}")
 mkdir -p "$output" "$work/rpi"

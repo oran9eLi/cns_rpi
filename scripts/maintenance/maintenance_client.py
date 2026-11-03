@@ -9,13 +9,16 @@ import shutil
 import ssl
 import sys
 import tempfile
+import urllib.parse
 import urllib.error
 import urllib.request
 
 if __package__:
-    from .protocol import MaintenanceConfig, parse_config, parse_poll
+    from .protocol import MaintenanceConfig, parse_poll
+    from .device_access import load_device_config
 else:
-    from protocol import MaintenanceConfig, parse_config, parse_poll
+    from protocol import MaintenanceConfig, parse_poll
+    from device_access import load_device_config
 
 
 TERMINAL = {"succeeded", "failed", "rolled_back", "needs_attention"}
@@ -33,7 +36,7 @@ class HttpTransport:
         self.opener = urllib.request.build_opener(NoRedirect(), urllib.request.HTTPSHandler(context=context))
 
     def poll(self, payload: dict) -> dict:
-        url = self.config.server_url + "/api/maintenance/v1/nodes/" + self.config.node_id + "/poll"
+        url = self.config.server_url + "/api/maintenance/v1/devices/" + urllib.parse.quote(self.config.device_id, safe="") + "/poll"
         request = urllib.request.Request(url, data=json.dumps(payload).encode(), headers=self._headers(), method="POST")
         with self.opener.open(request, timeout=30) as response:
             return json.load(response)
@@ -44,7 +47,7 @@ class HttpTransport:
             shutil.copyfileobj(response, output)
 
     def _headers(self) -> dict:
-        return {"Authorization": "Bearer " + self.config.token, "Content-Type": "application/json"}
+        return {"Authorization": "Bearer " + self.config.device_key, "Content-Type": "application/json"}
 
 
 class MaintenanceClient:
@@ -108,7 +111,7 @@ class MaintenanceClient:
                 self._save()
                 result = self.installer.rollback(task.component, self._network_probe)
             self.job.update(result)
-            self.job["error"] = str(self.job.get("error") or "").replace(self.config.token, "[redacted]")[:512]
+            self.job["error"] = str(self.job.get("error") or "").replace(self.config.device_key, "[redacted]")[:512]
             self.job["phase"] = "completed"
         except Exception:
             mutated = self.job["phase"] == "installing"
@@ -143,7 +146,9 @@ def main() -> int:
     parser.add_argument("--config", type=Path, required=True)
     args = parser.parse_args()
     try:
-        config = parse_config(json.loads(args.config.read_text()))
+        config = load_device_config(args.config)
+        if config is None:
+            return 0
         if __package__:
             from .install_release import Installer
         else:

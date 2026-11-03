@@ -1,5 +1,7 @@
 # Raspberry Pi Web Update Implementation Plan
 
+> Identity and first-deployment details are superseded by `2026-11-03-factory-image.md` and the current server interface contract: F407 device_id, one device key, one poll endpoint; no extra node identity or enrollment API.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Pi can install a human-selected CI-built version after the routing server receives a Web-backend maintenance message, and reports the durable result.

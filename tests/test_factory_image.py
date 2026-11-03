@@ -48,10 +48,6 @@ class FactoryImageTests(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which('systemctl') and os.name == 'posix', 'requires Linux offline systemctl')
     def test_real_release_seeds_offline_links_and_units_without_field_identity(self):
-        shutil.copytree(ROOT / 'image/rootfs-overlay', self.root, dirs_exist_ok=True)
-        for path in self.root.rglob('*'):
-            if path.is_file():
-                path.chmod(0o644)
         unitdir = self.root / 'usr/lib/systemd/system'
         unitdir.mkdir(parents=True)
         (unitdir / 'NetworkManager.service').write_text('[Unit]\nDescription=Fixture network manager\n[Service]\nExecStart=/bin/true\n[Install]\nWantedBy=multi-user.target\n')
@@ -75,16 +71,23 @@ class FactoryImageTests(unittest.TestCase):
         helper = self.root / 'usr/local/libexec/cns-rpi-apply-config'
         self.assertFalse(os.path.isabs(os.readlink(helper)))
         self.assertEqual(helper.resolve(), release / 'app/scripts/cns-rpi-apply-config.py')
-        for name in ('etc/cns-rpi-maintenance.json', 'var/lib/cns-rpi/device_binding.json', 'var/lib/cns-rpi-maintenance/provisioned.json', 'boot/firmware/cns-provision.json'):
+        for name in ('etc/cns-rpi-enrollment.json', 'var/lib/cns-rpi-maintenance/access.json',
+                     'var/lib/cns-rpi-maintenance/enrollment.json', 'var/lib/cns-rpi/device_binding.json',
+                     'var/lib/cns-rpi-maintenance/provisioned.json', 'boot/firmware/cns-provision.json',
+                     'etc/systemd/system/cns-rpi-enrollment.service',
+                     'etc/systemd/system/cns-rpi-enrollment.timer',
+                     'etc/systemd/system/cns-rpi-maintenance.service.d/10-enrollment.conf'):
             self.assertFalse((self.root / name).exists(), name)
         config = self.root / 'var/lib/cns-rpi/config.json'
         self.assertEqual(json.loads(config.read_text()), json.loads(self.business.read_text()))
         self.assertEqual(config.stat().st_mode & 0o777, 0o600)
         self.assertEqual(config.stat().st_uid, os.getuid())
-        self.assertEqual(json.loads((self.root / 'etc/cns-rpi-enrollment.json').read_text()),
+        maintenance = self.root / 'etc/cns-rpi-maintenance.json'
+        self.assertEqual(json.loads(maintenance.read_text()),
                          {'schema_version': 1, 'server_url': 'https://maintenance.example.invalid',
                           'business_config': '/var/lib/cns-rpi/config.json'})
-        for name in ('cns-rpi.service', 'cellular-dialup.service', 'NetworkManager.service', 'cns-rpi-enrollment.timer'):
+        self.assertEqual(maintenance.stat().st_mode & 0o777, 0o644)
+        for name in ('cns-rpi.service', 'cellular-dialup.service', 'NetworkManager.service', 'cns-rpi-maintenance.timer'):
             result = subprocess.run(['systemctl', '--root', str(self.root), 'is-enabled', name], capture_output=True, text=True)
             self.assertEqual(result.stdout.strip(), 'enabled', name + result.stderr)
         masked = subprocess.run(['systemctl', '--root', str(self.root), 'is-enabled', 'iwd.service'], capture_output=True, text=True)
@@ -107,6 +110,11 @@ class FactoryImageTests(unittest.TestCase):
         self.assertEqual(record['source_commit'], 'a' * 40)
         self.assertEqual(record['hardware'], 'raspberry-pi-5')
         self.assertNotIn('business', record)
+        supplied = json.loads(maintenance.read_text())
+        supplied['device_key'] = 'must-not-ship'
+        maintenance.write_text(json.dumps(supplied))
+        with self.assertRaisesRegex(ValueError, 'unexpected credentials'):
+            verifier.verify_rootfs(self.root, 'a' * 40)
 
     def test_runtime_config_uses_embedded_manifest_dependencies_and_build_inputs(self):
         output = self.base / 'runtime.yaml'
@@ -120,6 +128,9 @@ class FactoryImageTests(unittest.TestCase):
         self.assertEqual(config['env']['CNS_RELEASE_ARCHIVE'], str(self.archive.resolve()))
         self.assertEqual(config['env']['CNS_SOURCE_COMMIT'], 'a' * 40)
         self.assertEqual(config['env']['CNS_RELEASE_SHA256'], self.digest)
+        self.assertEqual(config['env']['CNS_MAINTENANCE_SERVER_URL'],
+                         'https://maintenance.example.invalid')
+        self.assertNotIn('CNS_ENROLLMENT_SERVER_URL', config['env'])
 
     def test_wrong_source_or_checksum_cannot_generate_build_config(self):
         module = self.module()
@@ -144,7 +155,7 @@ class FactoryImageTests(unittest.TestCase):
         docker.write_text('#!/bin/sh\nexit 23\n')
         docker.chmod(0o755)
         env = {**os.environ, 'PATH': str(commands)+os.pathsep+os.environ['PATH'],
-               'ENROLLMENT_SERVER_URL': 'https://example.invalid', 'BUSINESS_CONFIG': 'config.json'}
+               'MAINTENANCE_SERVER_URL': 'https://example.invalid', 'BUSINESS_CONFIG': 'config.json'}
         result = subprocess.run(['bash', '-c', script], cwd=self.base, env=env, capture_output=True, text=True)
         self.assertEqual(result.returncode, 23, 'the log pipeline hid the image builder failure')
 
@@ -154,10 +165,16 @@ class FactoryImageTests(unittest.TestCase):
         spec = importlib.util.spec_from_file_location('image_verify', path)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        (self.root / 'etc').mkdir()
-        (self.root / 'etc/cns-rpi-maintenance.json').write_text('{"token":"must-not-ship"}')
-        with self.assertRaisesRegex(ValueError, 'field identity'):
-            module.verify_rootfs(self.root, 'a' * 40)
+        for name in ('var/lib/cns-rpi-maintenance/access.json',
+                     'var/lib/cns-rpi-maintenance/enrollment.json',
+                     'etc/cns-rpi-enrollment.json', 'var/lib/cns-rpi/device_binding.json'):
+            with self.subTest(name=name):
+                identity = self.root / name
+                identity.parent.mkdir(parents=True, exist_ok=True)
+                identity.write_text('{"device_key":"must-not-ship"}')
+                with self.assertRaisesRegex(ValueError, 'field identity'):
+                    module.verify_rootfs(self.root, 'a' * 40)
+                identity.unlink()
 
 
 if __name__ == '__main__':

@@ -5,11 +5,14 @@ import hashlib
 import json
 from pathlib import Path
 import sys
+from urllib.parse import urlsplit
 
 
 def verify_rootfs(root, source_commit):
     root = Path(root)
-    for name in ('etc/cns-rpi-maintenance.json', 'boot/firmware/cns-provision.json',
+    for name in ('etc/cns-rpi-enrollment.json', 'boot/firmware/cns-provision.json',
+                 'var/lib/cns-rpi-maintenance/access.json',
+                 'var/lib/cns-rpi-maintenance/enrollment.json',
                  'var/lib/cns-rpi/device_binding.json', 'var/lib/cns-rpi-maintenance/provisioned.json'):
         if (root / name).exists():
             raise ValueError('factory image contains field identity')
@@ -17,9 +20,18 @@ def verify_rootfs(root, source_commit):
     manifest = json.loads((current.resolve().parent / 'manifest.json').read_text())
     if manifest['git_commit'] != source_commit or manifest['platform'] != 'trixie-arm64':
         raise ValueError('installed release does not match source')
-    enrollment = json.loads((root / 'etc/cns-rpi-enrollment.json').read_text())
-    if set(enrollment) != {'schema_version', 'server_url', 'business_config'}:
-        raise ValueError('enrollment configuration contains unexpected credentials')
+    maintenance_path = root / 'etc/cns-rpi-maintenance.json'
+    maintenance = json.loads(maintenance_path.read_text())
+    if set(maintenance) != {'schema_version', 'server_url', 'business_config'}:
+        raise ValueError('maintenance configuration contains unexpected credentials')
+    server = urlsplit(maintenance['server_url'])
+    if (maintenance['schema_version'] != 1
+            or maintenance['business_config'] != '/var/lib/cns-rpi/config.json'
+            or server.scheme != 'https' or not server.hostname
+            or server.username or server.password or server.query or server.fragment):
+        raise ValueError('maintenance configuration values mismatch')
+    if maintenance_path.stat().st_mode & 0o777 != 0o644:
+        raise ValueError('maintenance configuration mode mismatch')
     config = root / 'var/lib/cns-rpi/config.json'
     business = json.loads(config.read_text())
     binding = business.get('identity', {}).get('binding_file')
@@ -49,7 +61,7 @@ def verify_rootfs(root, source_commit):
             raise ValueError('factory release links must resolve inside the image')
     return {'source_commit': source_commit, 'release_version': manifest['version'],
             'platform': manifest['platform'], 'hardware': 'raspberry-pi-5',
-            'server_url': enrollment['server_url'],
+            'server_url': maintenance['server_url'],
             'business_config_sha256': hashlib.sha256(config.read_bytes()).hexdigest(),
             'checks': ['release_source', 'no_field_identity', 'locked_account',
                        'no_sudo_membership', 'relative_release_links', 'config_permissions']}

@@ -36,7 +36,7 @@ class InstallerBoundary:
 
 @contextlib.contextmanager
 def maintenance_server():
-    state = {"requests": [], "downloads": [], "job": None, "ack": None, "artifact": b"a release fixture", "redirect": None, "drop_result": False}
+    state = {"requests": [], "downloads": [], "job": None, "ack": None, "artifact": b"a release fixture", "redirect": None, "drop_result": False, "access": "approved"}
 
     class Handler(http.server.BaseHTTPRequestHandler):
         def do_POST(self):
@@ -44,7 +44,7 @@ def maintenance_server():
             if state["drop_result"] and (state["requests"][-1][2].get("job") or {}).get("status") == "succeeded":
                 self.send_error(503)
                 return
-            payload = {"schema_version": 1, "acknowledged_job_id": state["ack"], "job": state["job"]}
+            payload = {"schema_version": 1, "access": state["access"], "acknowledged_job_id": state["ack"], "job": state["job"]}
             content = json.dumps(payload).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
@@ -97,14 +97,14 @@ class ProtocolTests(unittest.TestCase):
             good = install_job(server)
             for change in ({"component": "maintenance"}, {"action": "shell"}, {"job_id": "../other"}, {"sha256": "wrong"}, {"platform": "bookworm-arm64"}):
                 with self.subTest(change=change), self.assertRaises(ValueError):
-                    parse_poll({"schema_version": 1, "job": {**good, **change}}, server["url"])
+                    parse_poll({"schema_version": 1, "access": "approved", "job": {**good, **change}}, server["url"])
             with self.assertRaises(ValueError):
                 parse_poll({"schema_version": 2, "job": None}, server["url"])
 
-    def test_remote_plain_http_and_invalid_node_config_rejected(self):
-        raw = {"schema_version": 1, "server_url": "https://maintenance.example", "node_id": "pi-001", "token": "secret"}
-        self.assertEqual(parse_config(raw).node_id, "pi-001")
-        for change in ({"server_url": "http://maintenance.example"}, {"node_id": "../other"}, {"token": ""}):
+    def test_remote_plain_http_and_invalid_device_config_rejected(self):
+        raw = {"schema_version": 1, "server_url": "https://maintenance.example", "device_id": "pi-001", "device_key": "secret"}
+        self.assertEqual(parse_config(raw).device_id, "pi-001")
+        for change in ({"server_url": "http://maintenance.example"}, {"device_id": "../other"}, {"device_id": "."}, {"device_id": ".."}, {"device_id": "x" * 21}, {"device_key": ""}, {"device_key": "bad\nkey"}, {"device_key": "bad\x7fkey"}):
             with self.subTest(change=change), self.assertRaises(ValueError):
                 parse_config({**raw, **change})
 
@@ -117,7 +117,7 @@ class ClientTests(unittest.TestCase):
         self.installer = InstallerBoundary()
 
     def client(self, server):
-        config = parse_config({"schema_version": 1, "server_url": server["url"], "node_id": "pi-001", "token": "test-secret"})
+        config = parse_config({"schema_version": 1, "server_url": server["url"], "device_id": "pi-001", "device_key": "test-secret"})
         return MaintenanceClient(config, self.installer, self.state_dir)
 
     def state(self):
@@ -128,10 +128,28 @@ class ClientTests(unittest.TestCase):
             self.client(server).run_once()
             self.assertEqual(self.installer.installs, [])
             path, auth, report = server["requests"][0]
-            self.assertEqual(path, "/api/maintenance/v1/nodes/pi-001/poll")
+            self.assertEqual(path, "/api/maintenance/v1/devices/pi-001/poll")
             self.assertEqual(auth, "Bearer test-secret")
             self.assertEqual(report["schema_version"], 1)
             self.assertIsNone(report["job"])
+
+    def test_unapproved_response_never_executes_job(self):
+        with maintenance_server() as server:
+            for access in ('pending', 'rejected'):
+                server['access'] = access
+                self.client(server).run_once()
+                self.assertEqual(self.installer.installs, [])
+                server['job'] = install_job(server)
+                with self.assertRaises(ValueError):
+                    self.client(server).run_once()
+                self.assertEqual(self.installer.installs, [])
+                server['job'] = None
+
+    def test_device_id_is_encoded_in_poll_path(self):
+        with maintenance_server() as server:
+            config = parse_config({'schema_version': 1, 'server_url': server['url'], 'device_id': 'DCDW:001.test', 'device_key': 'test-secret'})
+            MaintenanceClient(config, self.installer, self.state_dir).run_once()
+            self.assertEqual(server['requests'][0][0], '/api/maintenance/v1/devices/DCDW%3A001.test/poll')
 
     def test_install_reports_terminal_result_and_redelivery_never_reinstalls(self):
         with maintenance_server() as server:
@@ -187,7 +205,7 @@ class ClientTests(unittest.TestCase):
         config = self.state_dir / "config.json"
         config.write_bytes(Path("config/config.example.json").read_bytes())
         maintenance = self.state_dir / "maintenance.json"
-        maintenance.write_text('{"token":"test-secret"}')
+        maintenance.write_text('{"device_key":"test-secret"}')
         initial = self.installer.stage(*helper.package("1.0.5"))
         self.installer.bootstrap(initial, config, maintenance)
         binding = self.installer.config.parent / "device_binding.json"

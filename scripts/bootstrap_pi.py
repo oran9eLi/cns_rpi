@@ -58,14 +58,14 @@ def main(argv=None):
     existing = Path('/etc/cns-rpi-maintenance.json')
     if existing.exists() and json.loads(existing.read_text()) != config:
         raise ValueError('maintenance configuration differs; change it explicitly before bootstrap')
-    if config.get('schema_version') != 1 or not all((isinstance(config.get(k), str) and config[k] for k in ('server_url', 'node_id', 'token'))) or (not re.fullmatch('[A-Za-z0-9_-]{1,64}', config['node_id'])):
+    if config.get('schema_version') != 1 or not isinstance(config.get('server_url'), str) or not config['server_url']:
         raise ValueError('invalid maintenance configuration')
     origin = config['server_url'].rstrip('/')
     parsed = urllib.parse.urlsplit(origin)
     if parsed.username or parsed.password or parsed.query or parsed.fragment or (parsed.scheme != 'https' and (not (parsed.scheme == 'http' and parsed.hostname in ('127.0.0.1', 'localhost', '::1')))):
         raise ValueError('HTTPS required')
     opener = urllib.request.build_opener(urllib.request.HTTPSHandler(context=ssl.create_default_context(cafile=config.get('ca_file'))), SameOriginRedirect(parsed[:2]))
-    headers = {'Authorization': 'Bearer ' + config['token'], 'X-CNS-Node-ID': config['node_id']}
+    headers = {}
     endpoint = origin + '/api/maintenance/v1/releases/' + urllib.parse.quote(args.version, safe='') + '?platform=trixie-arm64'
     with opener.open(urllib.request.Request(endpoint, headers=headers), timeout=30) as response:
         raw = json.load(response)

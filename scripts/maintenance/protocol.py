@@ -26,26 +26,37 @@ class Job:
 @dataclass(frozen=True)
 class MaintenanceConfig:
     server_url: str
-    node_id: str
-    token: str
+    device_id: str
+    device_key: str
     ca_file: str | None = None
 
 
 def parse_config(raw: dict) -> MaintenanceConfig:
+    url, ca_file = parse_server_config(raw)
+    device_id = parse_device_id(raw.get('device_id'))
+    device_key = _text(raw, 'device_key')
+    if '\x7f' in device_key:
+        raise ValueError('invalid device_key')
+    return MaintenanceConfig(url, device_id, device_key, ca_file)
+
+
+def parse_server_config(raw: dict) -> tuple[str, str | None]:
     _schema(raw)
-    url = _text(raw, "server_url").rstrip("/")
+    url = _text(raw, 'server_url').rstrip('/')
     _origin(url)
     parsed = urlsplit(url)
     if parsed.query or parsed.fragment:
-        raise ValueError("server_url must not contain query or fragment")
-    node_id = _identifier(raw, "node_id")
-    token = _text(raw, "token")
-    if any(char in token for char in "\r\n"):
-        raise ValueError("invalid token")
-    ca_file = raw.get("ca_file")
+        raise ValueError('server_url must not contain query or fragment')
+    ca_file = raw.get('ca_file')
     if ca_file is not None and (not isinstance(ca_file, str) or not ca_file):
-        raise ValueError("invalid ca_file")
-    return MaintenanceConfig(url, node_id, token, ca_file)
+        raise ValueError('invalid ca_file')
+    return url, ca_file
+
+
+def parse_device_id(value) -> str:
+    if not isinstance(value, str) or not re.fullmatch(r'[A-Za-z0-9_.:-]{1,20}', value) or value in ('.', '..'):
+        raise ValueError('invalid device_id')
+    return value
 
 
 def parse_artifact(raw: dict, allowed_origin: str) -> Artifact:
@@ -70,6 +81,13 @@ def parse_artifact(raw: dict, allowed_origin: str) -> Artifact:
 
 def parse_poll(raw: dict, allowed_origin: str) -> tuple[str | None, Job | None]:
     _schema(raw)
+    access = raw.get('access')
+    if access not in ('pending', 'approved', 'rejected'):
+        raise ValueError('invalid device access status')
+    if access != 'approved':
+        if raw.get('acknowledged_job_id') is not None or raw.get('job') is not None:
+            raise ValueError('unapproved device cannot receive a task or acknowledgement')
+        return None, None
     ack = raw.get("acknowledged_job_id")
     if ack is not None:
         ack = _identifier(raw, "acknowledged_job_id")

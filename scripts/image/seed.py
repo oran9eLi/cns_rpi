@@ -49,7 +49,7 @@ def write_config(archive, sha256, source_commit, output, business_config, server
             isinstance(name, str) and re.fullmatch('[a-z0-9][a-z0-9+.-]*', name)
             for name in dependencies):
         raise ValueError('invalid runtime dependencies')
-    enrollment_config(server_url)
+    maintenance_config(server_url)
     business_config = Path(business_config).resolve(strict=True)
     config = {
         'include': {'file': 'cns-rpi.yaml'},
@@ -57,7 +57,7 @@ def write_config(archive, sha256, source_commit, output, business_config, server
         'artefact': {'version': source_commit},
         'env': {'CNS_RELEASE_ARCHIVE': str(archive), 'CNS_RELEASE_SHA256': sha256,
                 'CNS_SOURCE_COMMIT': source_commit, 'CNS_BUSINESS_CONFIG': str(business_config),
-                'CNS_ENROLLMENT_SERVER_URL': server_url},
+                'CNS_MAINTENANCE_SERVER_URL': server_url},
     }
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     Path(output).write_text(json.dumps(config, indent=2) + '\n')
@@ -91,9 +91,9 @@ def seed(root, archive, sha256, source_commit, business_config, server_url):
                     "from cellular_dialup import load_cellular_config; "
                     "load_cellular_config('/var/lib/cns-rpi/config.json')"],
                    check=True, capture_output=True, text=True)
-    enrollment = root / 'etc/cns-rpi-enrollment.json'
-    enrollment.write_text(json.dumps(enrollment_config(server_url), indent=2) + '\n')
-    enrollment.chmod(0o644)
+    maintenance = root / 'etc/cns-rpi-maintenance.json'
+    maintenance.write_text(json.dumps(maintenance_config(server_url), indent=2) + '\n')
+    maintenance.chmod(0o644)
     business = json.loads(config.read_text())
     interface = business['cellular']['interface_name']
     profile = root / 'etc/NetworkManager/system-connections/cns-cellular.nmconnection'
@@ -106,7 +106,6 @@ def seed(root, archive, sha256, source_commit, business_config, server_url):
         (root / 'etc/systemd/network' / name).unlink(missing_ok=True)
     services._run('mask', *RETIRED_NETWORK_UNITS)
     services.enable('NetworkManager.service')
-    services.enable('cns-rpi-enrollment.timer')
     (root / 'etc/machine-id').write_text('')
     (root / 'var/lib/dbus/machine-id').unlink(missing_ok=True)
     (root / 'var/lib/systemd/random-seed').unlink(missing_ok=True)
@@ -115,11 +114,11 @@ def seed(root, archive, sha256, source_commit, business_config, server_url):
     return release
 
 
-def enrollment_config(server_url):
+def maintenance_config(server_url):
     url = urlsplit(server_url)
     if (url.scheme != 'https' or not url.hostname or url.username or url.password
             or url.query or url.fragment):
-        raise ValueError('an HTTPS enrollment server URL without credentials is required')
+        raise ValueError('an HTTPS maintenance server URL without credentials is required')
     return {'schema_version': 1, 'server_url': server_url,
             'business_config': '/var/lib/cns-rpi/config.json'}
 
