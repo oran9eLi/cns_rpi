@@ -20,6 +20,7 @@ SOURCE_FILES = {
     'scripts/maintenance/protocol.py': 'maintenance/protocol.py',
     'scripts/maintenance/install_release.py': 'maintenance/install_release.py',
     'scripts/maintenance/maintenance_client.py': 'maintenance/maintenance_client.py',
+    'scripts/maintenance/enrollment_client.py': 'maintenance/enrollment_client.py',
     'systemd/release/cns-rpi-maintenance.service': 'maintenance/systemd/cns-rpi-maintenance.service',
     'systemd/release/cns-rpi-maintenance.timer': 'maintenance/systemd/cns-rpi-maintenance.timer',
     'scripts/bootstrap_pi.py': 'maintenance/bootstrap_pi.py',

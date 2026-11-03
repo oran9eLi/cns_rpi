@@ -174,6 +174,29 @@ class InstallTests(unittest.TestCase):
         self.services.results = [False]
         self.assertEqual(self.bootstrap()['status'], 'needs_attention')
 
+    def test_prepare_installs_offline_layout_without_starting_services(self):
+        release = self.stage('v1')
+        self.inst.prepare(release)
+        self.assertFalse(any(call[0] in ('restart', 'stop', 'observe') for call in self.services.calls))
+        self.assertFalse(self.inst.config.exists())
+        self.assertFalse((self.root/'etc/cns-rpi-maintenance.json').exists())
+        for name in ('current', 'cellular-current', 'maintenance-current'):
+            self.assertTrue((self.inst.home/name).is_dir())
+        helper = self.root/'usr/local/libexec/cns-rpi-apply-config'
+        self.assertFalse(Path(os.readlink(helper)).is_absolute())
+        self.assertEqual(helper.resolve(), release/'app/scripts/cns-rpi-apply-config.py')
+
+    def test_configure_imports_without_starting_services(self):
+        self.inst.configure(self.stage('v1'), self.config, self.maint)
+        self.assertTrue(self.inst.config.exists())
+        self.assertEqual(self.services.calls, [])
+        self.assertFalse((self.inst.home/'current').exists())
+
+    def test_bootstrap_layout_and_health_still_run_after_split(self):
+        self.assertEqual(self.bootstrap()['status'], 'succeeded')
+        restarts = [call[1] for call in self.services.calls if call[0] == 'restart']
+        self.assertEqual(restarts, ['cns-rpi.service', 'cellular-dialup.service', 'cns-rpi-maintenance.timer'])
+
     def test_real_platform_boundary_rejects_script_and_missing_libraries(self):
         executable=self.base/'binary'
         executable.write_bytes(b'#!/bin/sh\n')

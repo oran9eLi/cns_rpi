@@ -212,7 +212,7 @@ class Installer:
                 shutil.copy2(release / component / 'systemd' / name, directory / name)
         self.services.reload()
 
-    def bootstrap(self, release, business_config, maintenance_config):
+    def configure(self, release, business_config, maintenance_config):
         dest = self.root / 'etc/cns-rpi-maintenance.json'
         if dest.exists() and json.loads(dest.read_text()) != json.loads(Path(maintenance_config).read_text()):
             raise ValueError('maintenance configuration differs; change it explicitly in a maintenance window')
@@ -228,15 +228,22 @@ class Installer:
         if self.root == Path('/'):
             shutil.chown(self.config.parent, user='dcdw', group='dcdw')
             shutil.chown(self.config, user='dcdw', group='dcdw')
+
+    def prepare(self, release):
         for component, link in LINKS.items():
             self._link(link, release / component)
         helper = self.root / 'usr/local/libexec/cns-rpi-apply-config'
         helper.parent.mkdir(parents=True, exist_ok=True)
         helper.unlink(missing_ok=True)
-        helper.symlink_to(self.home / 'current/scripts/cns-rpi-apply-config.py')
+        helper.symlink_to(os.path.relpath(self.home / 'current/scripts/cns-rpi-apply-config.py', helper.parent))
         self._units(release, LINKS)
         for unit in [*UNITS.values(), 'cns-rpi-maintenance.timer']:
             self.services.enable(unit)
+
+    def bootstrap(self, release, business_config, maintenance_config):
+        self.configure(release, business_config, maintenance_config)
+        self.prepare(release)
+        for unit in [*UNITS.values(), 'cns-rpi-maintenance.timer']:
             self.services.restart(unit)
         if not self.services.observe(UNITS['app'], release / 'app/bin/cns_rpi', 40):
             return self._result('needs_attention', 'app', 'initial application observation failed')

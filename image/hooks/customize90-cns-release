@@ -1,0 +1,6 @@
+#!/bin/bash
+set -euo pipefail
+python3 "$SRCROOT/../scripts/image/seed.py" seed \
+  --root "$1" --archive "$CNS_RELEASE_ARCHIVE" \
+  --sha256 "$CNS_RELEASE_SHA256" --source-commit "$CNS_SOURCE_COMMIT" \
+  --business-config "$CNS_BUSINESS_CONFIG" --server-url "$CNS_ENROLLMENT_SERVER_URL"

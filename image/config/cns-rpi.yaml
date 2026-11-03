@@ -1,0 +1,28 @@
+include:
+  file: trixie-minbase.yaml
+
+device:
+  layer: rpi5
+  user1: dcdw
+  user1sudo: none
+
+image:
+  name: cns-rpi-trixie-arm64-pi5
+  layer: image-rpios
+  rootfs_type: ext4
+  boot_part_size: 200%
+  root_part_size: 300%
+
+artefact:
+  context: factory
+  target_name: rootfs
+
+deploy:
+  compression: none
+
+ssh:
+  pubkey_only: y
+
+# Keep the filesystem mountable by a 4K-page CI kernel as well as the Pi 5 kernel.
+fs:
+  ext4_mkfs_args: -F -b 4096
