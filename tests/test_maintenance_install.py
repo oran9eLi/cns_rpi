@@ -221,7 +221,7 @@ class InstallTests(unittest.TestCase):
             self.services.calls.clear()
             result = self.inst.apply(release, component, lambda: True)
             self.assertEqual(result['previous_version'], 'v1')
-            self.assertEqual(self.services.calls, [])
+            self.assertTrue(any(call[0] == 'observe' for call in self.services.calls))
             self.assertEqual(self.inst.rollback(component, lambda: True)['current_version'], 'v1')
         self.assertEqual(self.inst.config.read_bytes(), original)
 
@@ -250,3 +250,24 @@ class InstallTests(unittest.TestCase):
                     self.assertEqual(result['status'], 'needs_attention')
                     self.assertEqual(result['current_version'], 'v2')
                     self.assertEqual(result['error'], 'candidate could not be stopped; previous release not restored')
+
+    def test_unhealthy_current_retry_must_observe_health_before_success(self):
+        self.bootstrap()
+        self.inst.apply(self.stage('v2'), 'app', lambda: True)
+        previous_config = (self.inst.state/'app-config.previous').read_bytes()
+        release = self.stage('v3')
+        self.services.results = [False]
+        with patch.object(self.services, 'stop', side_effect=[None, OSError('stop error')]), patch.object(self.services, 'status', return_value='active', create=True):
+            first = self.inst.apply(release, 'app', lambda: True)
+        self.assertEqual(first['status'], 'needs_attention')
+        self.assertEqual(first['current_version'], 'v3')
+        self.services.results = [False, False]
+        retry = self.inst.apply(release, 'app', lambda: True)
+        self.assertEqual(retry['status'], 'needs_attention')
+        self.assertEqual(retry['previous_version'], 'v1')
+        self.assertEqual((self.inst.state/'app-config.previous').read_bytes(), previous_config)
+        self.services.results = [True]
+        repaired = self.inst.apply(release, 'app', lambda: True)
+        self.assertEqual(repaired['status'], 'succeeded')
+        self.assertEqual(repaired['previous_version'], 'v1')
+        self.assertEqual((self.inst.state/'app-config.previous').read_bytes(), previous_config)

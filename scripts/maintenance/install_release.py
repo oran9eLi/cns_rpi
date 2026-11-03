@@ -258,8 +258,7 @@ class Installer:
 
     def _activate(self, release, component, probe, source=None):
         old = (self.home / LINKS[component]).resolve()
-        if old == (release / component).resolve():
-            return self._result('succeeded', component)
+        already_current = old == (release / component).resolve()
         try:
             candidate = self._candidate(release, source or self.config, component)
         except (OSError, ValueError, subprocess.CalledProcessError):
@@ -291,8 +290,11 @@ class Installer:
             self.services.restart(unit)
             if not self.services.observe(unit, release / 'app/bin/cns_rpi' if component == 'app' else None, 40 if component == 'app' else 180, probe if component == 'cellular' else None):
                 raise RuntimeError('observation failed')
-            self._link(component + '-previous', old)
-            os.replace(pending, backup)
+            if already_current:
+                pending.unlink(missing_ok=True)
+            else:
+                self._link(component + '-previous', old)
+                os.replace(pending, backup)
             return self._result('succeeded', component)
         except Exception:
             try:
