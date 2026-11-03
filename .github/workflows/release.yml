@@ -1,0 +1,39 @@
+name: Release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+jobs:
+  validate-tag:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Require exact CMake version tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python3 - <<'PY'
+          import os, re
+          version = re.search(r'project\(cns_rpi VERSION ([0-9.]+)', open('CMakeLists.txt').read()).group(1)
+          assert os.environ['RELEASE_TAG'] == 'v' + version, 'tag must exactly match CMake version'
+          PY
+  build:
+    needs: validate-tag
+    uses: ./.github/workflows/ci.yml
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: trixie-arm64-release
+          path: dist
+      - name: Publish verified release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: gh release create "$RELEASE_TAG" dist/* --verify-tag --generate-notes

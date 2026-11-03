@@ -51,10 +51,10 @@ class TestLoadCellularConfig(unittest.TestCase):
             path = f.name
         try:
             cfg = load_cellular_config(path)
-            self.assertEqual(cfg["apn"], "cmnet")
-            self.assertEqual(cfg["cid"], 1)
-            self.assertEqual(cfg["usb_interface_number"], "05")
-            self.assertEqual(cfg["at_port_wait_seconds"], 30)
+            self.assertEqual(cfg.apn, "cmnet")
+            self.assertEqual(cfg.cid, 1)
+            self.assertEqual(cfg.usb_interface_number, "05")
+            self.assertEqual(cfg.at_port_wait_seconds, 30)
         finally:
             os.unlink(path)
 
