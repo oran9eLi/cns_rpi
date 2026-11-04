@@ -14,8 +14,7 @@ namespace registration {
 
 namespace {
 
-/// 注册与常规遥测的协议版本。统一身份删除了字段并改变了 PX4 device_id 语义，
-/// 属于不兼容变更，从 2 升到 3(设计文档 §5.2)。
+/// 注册与完整遥测快照使用统一设备身份的第三版结构。
 constexpr int kSchemaVersion = 3;
 
 }  // namespace
@@ -28,14 +27,7 @@ std::string BuildOnlinePayload(const OnlineRegistration& input) {
       {"status", "online"},
   };
 
-  nlohmann::json capabilities = {"telemetry", "remote_id"};
-  if (input.device_type == device::Type::kCnsBox) {
-    capabilities.push_back("runtime_config");
-    capabilities.push_back("box_private_control");
-  } else if (input.device_type == device::Type::kFlightController) {
-    capabilities.push_back("px4_official_control");
-  }
-  payload["capabilities"] = std::move(capabilities);
+  payload["capabilities"] = {"telemetry", "remote_id", "runtime_config", "box_private_control"};
 
   if (input.school_name && !input.school_name->empty()) {
     payload["school_name"] = *input.school_name;
@@ -48,18 +40,6 @@ std::string BuildOnlinePayload(const OnlineRegistration& input) {
         {"manufacturer_code", input.product->manufacturer_code},
         {"model_code", input.product->model_code},
     };
-  }
-  if (input.version) {
-    nlohmann::json version = nlohmann::json::object();
-    if (input.version->hardware) {
-      version["hardware"] = *input.version->hardware;
-    }
-    if (input.version->firmware) {
-      version["firmware"] = *input.version->firmware;
-    }
-    if (!version.empty()) {
-      payload["version"] = std::move(version);
-    }
   }
   return payload.dump();
 }

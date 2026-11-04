@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""将旧版遥测配置幂等迁移为快照/实时双通道结构。"""
+"""将旧版配置幂等迁移为 F407 主控箱与快照/实时双通道结构。"""
 
 import json
 import os
@@ -80,6 +80,8 @@ def _is_new_configuration(root: object) -> bool:
         and _applied_command_ids_valid(runtime.get("applied_command_ids"))
         and "telemetry_publish_interval_ms" not in runtime
         and "px4_realtime" not in root
+        and "device" not in root
+        and "qgc_udp" not in root
         and "telemetry" not in topics
     )
 
@@ -94,7 +96,7 @@ def _configuration_shape(root: object) -> str:
         isinstance(topics, dict)
         and ("telemetry_snapshot" in topics or "telemetry_realtime" in topics)
     )
-    has_old = "px4_realtime" in root or (
+    has_old = (
         isinstance(runtime, dict) and "telemetry_publish_interval_ms" in runtime
     ) or (isinstance(topics, dict) and "telemetry" in topics)
     if has_new and has_old:
@@ -114,32 +116,21 @@ def _migrate(root: object) -> dict:
     runtime = root.get("runtime")
     mqtt = root.get("mqtt")
     topics = mqtt.get("topics") if isinstance(mqtt, dict) else None
-    old_realtime = root.get("px4_realtime", {})
     if not isinstance(runtime, dict) or not isinstance(topics, dict):
         raise ValueError("缺少runtime或mqtt.topics配置")
     if "telemetry_publish_interval_ms" not in runtime or "telemetry" not in topics:
         raise ValueError("旧版遥测配置不完整")
-    if not isinstance(old_realtime, dict):
-        raise ValueError("px4_realtime必须是对象")
-
     snapshot_ms = runtime["telemetry_publish_interval_ms"]
-    realtime_ms = old_realtime.get("publish_interval_ms", 100)
-    realtime_enabled = old_realtime.get("enabled", True)
     if not _integer(snapshot_ms, 100, 60000):
         raise ValueError("旧快照周期超出允许范围")
-    if realtime_ms == 50:
-        realtime_ms = 100
-    if not _integer(realtime_ms, 50, 1000) or not isinstance(realtime_enabled, bool):
-        raise ValueError("旧实时通道配置无法迁移")
 
     migrated = dict(root)
     migrated_runtime = dict(runtime)
     migrated_runtime.pop("telemetry_publish_interval_ms")
     migrated["runtime"] = migrated_runtime
-    migrated.pop("px4_realtime", None)
     migrated["telemetry_publish"] = {
         "snapshot": {"enabled": True, "interval_ms": snapshot_ms},
-        "realtime": {"enabled": realtime_enabled, "interval_ms": realtime_ms},
+        "realtime": {"enabled": True, "interval_ms": 100},
     }
 
     migrated_mqtt = dict(mqtt)
@@ -152,15 +143,35 @@ def _migrate(root: object) -> dict:
     return migrated
 
 
+def _remove_legacy_device_configuration(root: object) -> dict:
+    if not isinstance(root, dict):
+        raise ValueError("配置根节点必须是对象")
+    if "device" in root:
+        device = root["device"]
+        if not isinstance(device, dict) or device.get("mode", "auto") not in (
+            "auto", "cns_box"
+        ):
+            raise ValueError("当前仅支持 F407 主控箱，旧 device.mode 无法迁移")
+    if "qgc_udp" in root:
+        bridge = root["qgc_udp"]
+        if not isinstance(bridge, dict) or bridge.get("enabled", False) is not False:
+            raise ValueError("当前不支持 QGC 桥接，请先停用旧 qgc_udp 配置")
+    return {
+        key: value for key, value in root.items()
+        if key not in ("device", "qgc_udp", "px4_realtime")
+    }
+
+
 def migrate_file(path: Path) -> None:
     original = path.read_bytes()
     root = json.loads(original.decode("utf-8"))
-    if _configuration_shape(root) == "new":
+    migrated = _remove_legacy_device_configuration(root)
+    if _configuration_shape(migrated) == "old":
+        migrated = _migrate(migrated)
+        if not _is_new_configuration(migrated):
+            raise ValueError("迁移结果不符合新版遥测配置结构")
+    if migrated == root:
         return
-
-    migrated = _migrate(root)
-    if not _is_new_configuration(migrated):
-        raise ValueError("迁移结果不符合新版遥测配置结构")
     mode = stat.S_IMODE(path.stat().st_mode)
     temporary_path: Path | None = None
     try:

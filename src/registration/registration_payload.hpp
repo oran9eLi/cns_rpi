@@ -21,7 +21,6 @@ struct OnlineRegistration {
   std::optional<std::string> school_name;
   std::optional<std::string> dcdw_label;
   std::optional<device::ProductInfo> product;
-  std::optional<device::VersionInfo> version;
 };
 
 std::string BuildOnlinePayload(const OnlineRegistration& input);

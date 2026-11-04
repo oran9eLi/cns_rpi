@@ -67,7 +67,7 @@ class MigrateTelemetryConfigTest(unittest.TestCase):
             {"suffix": "telemetry/realtime/v1", "qos": 0},
         )
 
-    def test_preserves_non_default_old_realtime_interval(self):
+    def test_discards_obsolete_realtime_settings_and_uses_current_defaults(self):
         old = {
             "runtime": {
                 "telemetry_publish_interval_ms": 1500,
@@ -84,7 +84,47 @@ class MigrateTelemetryConfigTest(unittest.TestCase):
 
         self.assertEqual(result.returncode, 0, result.stderr)
         realtime = json.loads(path.read_text(encoding="utf-8"))["telemetry_publish"]["realtime"]
-        self.assertEqual(realtime, {"enabled": False, "interval_ms": 200})
+        self.assertEqual(realtime, {"enabled": True, "interval_ms": 100})
+
+    def test_removes_compatible_device_and_disabled_bridge_from_current_config(self):
+        current = json.loads(
+            (SCRIPT.parents[1] / "config" / "config.example.json").read_text(encoding="utf-8")
+        )
+        for mode in ("auto", "cns_box"):
+            with self.subTest(mode=mode):
+                current["device"] = {"mode": mode}
+                current["qgc_udp"] = {"enabled": False, "port": 14550}
+                current["px4_realtime"] = {"enabled": False, "publish_interval_ms": 200}
+                temporary, path = self.write_config(current)
+                self.addCleanup(temporary.cleanup)
+
+                result = self.run_migration(path)
+
+                self.assertEqual(result.returncode, 0, result.stderr)
+                migrated = json.loads(path.read_text(encoding="utf-8"))
+                for key in ("device", "qgc_udp", "px4_realtime"):
+                    self.assertNotIn(key, migrated)
+                self.assertEqual(migrated["telemetry_publish"], current["telemetry_publish"])
+
+    def test_rejects_unsupported_device_or_enabled_bridge_without_rewriting(self):
+        for legacy in (
+            {"device": {"mode": "px4"}},
+            {"device": {"mode": "unknown"}},
+            {"qgc_udp": {"enabled": True}},
+        ):
+            with self.subTest(legacy=legacy):
+                current = json.loads(
+                    (SCRIPT.parents[1] / "config" / "config.example.json").read_text(encoding="utf-8")
+                )
+                current.update(legacy)
+                temporary, path = self.write_config(current)
+                self.addCleanup(temporary.cleanup)
+                before = path.read_bytes()
+
+                result = self.run_migration(path)
+
+                self.assertEqual(result.returncode, 1)
+                self.assertEqual(path.read_bytes(), before)
 
     def test_new_configuration_is_not_rewritten(self):
         new = {

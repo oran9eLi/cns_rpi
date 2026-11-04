@@ -6,11 +6,9 @@
 
 适用范围：CNS 设备、硬件部上位机、管控中心、`cns_server` 与目标 RPi 之间的配置命令流转，以及 RPi 运行参数持久化和 systemd 重启生效流程。
 
-> 术语更新（2026-08-03）：本文原先用 `vendor_id` 指代 topic 中的设备寻址字段，
-> 现统一为 `device_id`，来源是 `OPEN_DRONE_ID_BASIC_ID.uas_id`。对主控箱取值不变
-> （原厂商唯一产品识别码本身就是它的 Remote ID），对 PX4 则从旧的 `PX4U2-*`/
-> `PX4U1-*` 改为 Basic ID。见
-> `docs/2026-08-03-主控箱与PX4统一身份数据结构设计.md`。
+> 当前设备寻址字段为 `device_id`，来源是 F407 `OPEN_DRONE_ID_BASIC_ID.uas_id`，
+> 其值为主控箱厂商唯一产品识别码。设备类型固定为 `cns_box`，不提供第二套业务身份。
+> 详见 `docs/设备标识符.md`。
 
 ## 1. 背景与目标
 

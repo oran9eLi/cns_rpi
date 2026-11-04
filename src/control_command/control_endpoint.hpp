@@ -28,31 +28,30 @@ struct ControlledDeviceEndpoint {
  * @brief 独立判断单个 HEARTBEAT 的设备类型，不受当前锁定端点影响。
  */
 std::optional<ControlledDeviceEndpoint> ClassifyControlledDeviceHeartbeat(
-    const mavlink_message_t& message, device::DetectionMode mode);
+    const mavlink_message_t& message);
 
 /**
- * @brief 从心跳中识别主控箱或 PX4 飞控。
+ * @brief 从心跳中识别 F407 主控箱。
  *
- * 自动模式使用严格特征避免误识别：主控箱必须是 USART6 组件 193 的
- * ONBOARD_CONTROLLER，PX4 必须声明 MAV_AUTOPILOT_PX4。
+ * 主控箱必须是 USART6 组件 193 的 ONBOARD_CONTROLLER，
+ * 且声明 MAV_AUTOPILOT_INVALID。
  */
 std::optional<ControlledDeviceEndpoint> ObserveControlledDeviceHeartbeat(
     const mavlink_message_t& message,
-    std::optional<ControlledDeviceEndpoint> current_endpoint,
-    device::DetectionMode mode);
+    std::optional<ControlledDeviceEndpoint> current_endpoint);
 
 /**
  * @brief 判断消息是否属于已确认设备。
  *
  * 遥测与 Remote ID 允许来自同一 MAVLink system 的其他 component；
- * 心跳、AUTOPILOT_VERSION 和命令应答必须来自已确认 component。
+ * 心跳和命令应答必须来自已确认 component。
  */
 bool IsMessageFromControlledDevice(
     const mavlink_message_t& message,
     const ControlledDeviceEndpoint& controlled_device);
 
-// 主控箱控制测试程序保留的兼容入口。
-std::optional<MavlinkEndpoint> ObserveFlightControllerHeartbeat(
+// 主控箱控制测试程序使用的端点学习入口。
+std::optional<MavlinkEndpoint> ObserveCnsBoxHeartbeat(
     const mavlink_message_t& message,
     std::optional<MavlinkEndpoint> current_endpoint);
 

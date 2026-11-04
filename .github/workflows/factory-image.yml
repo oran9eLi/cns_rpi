@@ -1,0 +1,58 @@
+name: Factory image
+on:
+  workflow_dispatch:
+    inputs:
+      server_url:
+        description: HTTPS maintenance server URL (no credentials)
+        required: true
+        type: string
+      business_config:
+        description: Tracked common business config path (no per-device identity)
+        default: config/config.example.json
+        required: true
+        type: string
+  push:
+    branches: [codex/rpi-web-update]
+    paths:
+      - image/**
+      - scripts/image/**
+      - .github/workflows/factory-image.yml
+permissions:
+  contents: read
+jobs:
+  release-package:
+    uses: ./.github/workflows/ci.yml
+  image:
+    needs: release-package
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: trixie-arm64-release
+          path: dist
+      - name: Build factory image from the tested source commit
+        env:
+          MAINTENANCE_SERVER_URL: ${{ inputs.server_url || 'https://maintenance.example.invalid' }}
+          BUSINESS_CONFIG: ${{ inputs.business_config || 'config/config.example.json' }}
+        run: |
+          set -euo pipefail
+          mkdir -p factory-output
+          docker run --rm --privileged --platform linux/arm64 \
+            -e MAINTENANCE_SERVER_URL -e BUSINESS_CONFIG \
+            -v "$PWD:/work" -w /work debian:trixie bash -c '
+              set -euo pipefail
+              apt-get update
+              apt-get install -y --no-install-recommends git ca-certificates python3
+              bash scripts/image/build.sh dist factory-output "$MAINTENANCE_SERVER_URL" "$BUSINESS_CONFIG"
+            ' 2>&1 | tee factory-output/build.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: factory-image-pi5-${{ github.sha }}
+          path: factory-output/
+          if-no-files-found: error
+          retention-days: 14

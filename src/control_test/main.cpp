@@ -85,7 +85,7 @@ int Run(int argc, char** argv) {
   auto link = std::move(attempt.found->link);
 
   std::optional<control_command::MavlinkEndpoint> endpoint =
-      control_command::ObserveFlightControllerHeartbeat(
+      control_command::ObserveCnsBoxHeartbeat(
           attempt.found->first_message, std::nullopt);
   const auto heartbeat_deadline =
       std::chrono::steady_clock::now() + kHeartbeatWaitTimeout;
@@ -96,7 +96,7 @@ int Run(int argc, char** argv) {
       return kUartError;
     }
     if (message->has_value()) {
-      endpoint = control_command::ObserveFlightControllerHeartbeat(**message, endpoint);
+      endpoint = control_command::ObserveCnsBoxHeartbeat(**message, endpoint);
     }
   }
   if (!endpoint) {

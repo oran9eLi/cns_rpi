@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(cns_rpi VERSION 1.0.5 LANGUAGES CXX)
+project(cns_rpi VERSION 1.0.6 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -19,18 +19,15 @@ pkg_check_modules(MOSQUITTO REQUIRED IMPORTED_TARGET libmosquitto)
 # 这样 tests/ 下的单测能直接链接这些代码，不用把 main() 也一起拖进测试二进制。
 add_library(cns_rpi_core
     src/logging/logger.cpp
-    src/latency/px4_latency.cpp
     src/uart/serial_port.cpp
     src/uart/mavlink_link.cpp
     src/uart/mavlink_port_discovery.cpp
-    src/network/qgc_udp_bridge.cpp
     src/config/app_config.cpp
     src/config/startup_summary.cpp
     src/state/state_store.cpp
     src/protocol/telemetry_decoder.cpp
     src/protocol/extension_decoder.cpp
     src/protocol/identity.cpp
-    src/protocol/px4_identity.cpp
     src/device/device_binding_store.cpp
     src/payload/json_serializer.cpp
     src/telemetry/publisher.cpp
@@ -105,10 +102,6 @@ add_executable(test_mavlink_port_discovery tests/test_mavlink_port_discovery.cpp
 target_link_libraries(test_mavlink_port_discovery PRIVATE cns_rpi_core)
 add_test(NAME mavlink_port_discovery COMMAND test_mavlink_port_discovery)
 
-add_executable(test_qgc_udp_bridge tests/test_qgc_udp_bridge.cpp)
-target_link_libraries(test_qgc_udp_bridge PRIVATE cns_rpi_core)
-add_test(NAME qgc_udp_bridge COMMAND test_qgc_udp_bridge)
-
 add_executable(test_app_config tests/test_app_config.cpp)
 target_link_libraries(test_app_config PRIVATE cns_rpi_core)
 add_test(NAME app_config COMMAND test_app_config)
@@ -152,10 +145,6 @@ add_test(NAME mqtt_topic COMMAND test_mqtt_topic)
 add_executable(test_telemetry_publisher tests/test_telemetry_publisher.cpp)
 target_link_libraries(test_telemetry_publisher PRIVATE cns_rpi_core)
 add_test(NAME telemetry_publisher COMMAND test_telemetry_publisher)
-
-add_executable(test_px4_latency tests/test_px4_latency.cpp)
-target_link_libraries(test_px4_latency PRIVATE cns_rpi_core)
-add_test(NAME px4_latency COMMAND test_px4_latency)
 
 add_executable(test_registration_payload tests/test_registration_payload.cpp)
 target_link_libraries(test_registration_payload PRIVATE cns_rpi_core)
@@ -295,3 +284,9 @@ set_tests_properties(cellular_link_python PROPERTIES WORKING_DIRECTORY ${CMAKE_S
 add_test(NAME cellular_dialup_python
     COMMAND ${PYTHON3_EXECUTABLE} -m unittest -v tests.test_cellular_dialup)
 set_tests_properties(cellular_dialup_python PROPERTIES WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+foreach(maintenance_suite maintenance_install bootstrap_pi maintenance_client release_package ci_driver device_access factory_image)
+  add_test(NAME ${maintenance_suite}_python
+    COMMAND ${PYTHON3_EXECUTABLE} -m unittest -v tests.test_${maintenance_suite})
+  set_tests_properties(${maintenance_suite}_python PROPERTIES WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+endforeach()

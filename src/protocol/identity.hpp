@@ -48,7 +48,7 @@ std::string ExtractUasId(const std::uint8_t (&uas_id)[20]);
 /**
  * @brief 校验 uas_id 能否直接当作 device_id 用于 MQTT topic 与 Client ID。
  *
- * 见设计文档 §3.3：主控箱和 PX4 共用这一套校验，不区分设备类型。字符集限制在
+ * F407 设备编号的字符集限制在
  * ASCII 字母数字加 `-_.:`，因此 MQTT 通配符 `+`/`#` 和层级分隔符 `/` 天然被拒。
  * 长度上限 20 字节来自 MAVLink 字段宽度本身。
  */
@@ -58,14 +58,14 @@ bool IsValidUasId(const std::string& uas_id);
  * @brief 判断 device_id 是否带主控箱的 DCDWCNS1 产品前缀。
  *
  * 只用于尽早发现固件身份配置错误并告警，不参与 device_type 判断，
- * 也不作为拒绝建立 MQTT 会话的理由(设计文档 §3.3)。
+ * 也不作为拒绝建立 MQTT 会话的理由。
  */
 bool HasCnsBoxProductPrefix(const std::string& device_id);
 
 /**
  * @brief 从主控箱 device_id 的前 8 字节拆出产品信息。
  * @return 前缀匹配时返回 {DCDW, CNS1}；不匹配返回 nullopt，不猜测、不补默认值。
- * @details 依据设计文档 §4.2：主控箱 device_id 的结构是
+ * @details 主控箱 device_id 的结构是
  * `厂商码(4) | 产品型号码(4) | 唯一序列(12)`，产品信息本来就编码在身份里，
  * 不需要固件再单独发一条消息。
  */

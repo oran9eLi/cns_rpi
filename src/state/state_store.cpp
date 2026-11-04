@@ -200,21 +200,6 @@ void StateStore::UpdateProduct(const device::ProductInfo& value) {
   state_.product = value;
 }
 
-void StateStore::UpdateAutopilotVersionMetadata(
-    const std::optional<device::ProductInfo>& product,
-    const std::optional<device::VersionInfo>& version) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  state_.autopilot_version_received = true;
-  // PX4 报不出来的字段保持原值：主控箱路径先写入的 product 不该被一条
-  // 全 0 的 AUTOPILOT_VERSION 抹掉(实际不会共存，但语义上不做破坏性覆盖)。
-  if (product) {
-    state_.product = *product;
-  }
-  if (version) {
-    state_.version = *version;
-  }
-}
-
 void StateStore::ResetDeviceState() {
   std::lock_guard<std::mutex> lock(mutex_);
   state_ = TelemetryState{};

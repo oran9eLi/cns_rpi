@@ -33,16 +33,6 @@ std::string BuildRuntimeStatusTopic(const std::string& topic_namespace,
   return BuildDeviceTopic(topic_namespace, device_id, suffix);
 }
 
-std::string BuildPx4LatencyProbeTopic(const std::string& topic_namespace,
-                                      const std::string& device_id) {
-  return BuildDeviceTopic(topic_namespace, device_id, "px4/latency/probe/v1");
-}
-
-std::string BuildPx4LatencyAckTopic(const std::string& topic_namespace,
-                                    const std::string& device_id) {
-  return BuildDeviceTopic(topic_namespace, device_id, "px4/latency/ack/v1");
-}
-
 std::string BuildConfigSetTopic(const std::string& topic_namespace,
                                 const std::string& device_id, const std::string& suffix) {
   return BuildDeviceTopic(topic_namespace, device_id, suffix);

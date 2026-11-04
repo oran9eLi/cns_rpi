@@ -47,15 +47,11 @@ TEST_CASE("同一F407换system_id后只登记候选而不直接放行") {
         control_command::BasicIdObservation::kVerified);
 }
 
-TEST_CASE("未绑定和非主控箱不进入平滑换号") {
+TEST_CASE("未绑定或组件号不匹配时不进入平滑换号") {
   control_command::EndpointRevalidation transition;
   CHECK(transition.ObserveHeartbeat(Box(76), Box(77), false, kStarted) ==
         control_command::HeartbeatObservation::kUnchanged);
   CHECK_FALSE(transition.Pending());
-  auto px4 = Box(77);
-  px4.type = device::Type::kFlightController;
-  CHECK(transition.ObserveHeartbeat(Box(76), px4, true, kStarted) ==
-        control_command::HeartbeatObservation::kUnchanged);
   CHECK(transition.ObserveHeartbeat(Box(76), Box(77, 194), true, kStarted) ==
         control_command::HeartbeatObservation::kUnchanged);
 }

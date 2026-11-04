@@ -91,8 +91,8 @@ TEST_CASE("仅持久化主控箱身份订阅固定实验Topic与QoS2") {
   CHECK(subscription->second == 2);
   CHECK_FALSE(experiment::DeviceSubscription("cns_rpi", std::nullopt));
   CHECK_FALSE(experiment::DeviceSubscription(
-      "cns_rpi", device::Binding{.device_id = "PX4ID",
-                                   .device_type = device::Type::kFlightController}));
+      "cns_rpi", device::Binding{.device_id = "bad/id",
+                                   .device_type = device::Type::kCnsBox}));
 }
 
 TEST_CASE("串口状态不能确认时原样返回unknown") {

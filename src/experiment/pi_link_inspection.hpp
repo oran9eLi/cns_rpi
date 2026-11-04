@@ -44,7 +44,7 @@ struct Outcome {
   std::string diagnostic;
 };
 
-/// 仅对已持久化的主控箱绑定生成 QoS 2 订阅；PX4 和无绑定设备不认领实验 Topic。
+/// 仅对已持久化的主控箱绑定生成 QoS 2 订阅，无绑定设备不认领实验 Topic。
 std::optional<std::pair<std::string, int>> DeviceSubscription(
     const std::string& topic_namespace,
     const std::optional<device::Binding>& persisted_binding);

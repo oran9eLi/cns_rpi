@@ -1,5 +1,7 @@
 # M3c 身份帧解码 Implementation Plan
 
+> 历史记录：本文仅描述当时版本或计划。当前源码仅支持 F407 主控箱，功能与部署请以 README、V1 设计及现行协议为准；本文不作为当前实施或验收依据。
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** 解码 `OPEN_DRONE_ID_*` 系列（BASIC_ID/LOCATION/SYSTEM/OPERATOR_ID/SELF_ID）身份帧、从帧头 `sysid` 解析 DCDW 角色号、读取 RPi 硬件序列号，三者写入 `state_store`，供后续里程碑（M4 JSON 序列化、M5 MQTT topic 寻址）使用。

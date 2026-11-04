@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "server_url": "https://maintenance.example.com",
+  "business_config": "/var/lib/cns-rpi/config.json"
+}

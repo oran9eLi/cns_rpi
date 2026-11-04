@@ -18,8 +18,6 @@
 #include <string_view>
 #include <vector>
 
-#include "device/device_type.hpp"
-
 namespace config {
 
 /// 配置加载失败的原因。
@@ -36,21 +34,6 @@ std::string_view ConfigErrorMessage(ConfigError error);
 struct SerialConfig {
   std::string device;  ///< `auto` 或明确字符设备路径，例如 "/dev/ttyUSB0"
   int baud = 0;        ///< 波特率
-};
-
-struct DeviceConfig {
-  device::DetectionMode mode{device::DetectionMode::kAuto};
-};
-
-/// PX4 专用的同一局域网 QGC 自动发现配置；配置段缺失时保持关闭以兼容旧设备。
-struct QgcUdpConfig {
-  bool enabled{false};
-  std::vector<std::string> lan_interfaces{"wlan0", "eth0"};
-  int listen_port{14540};
-  int qgc_port{14550};
-  std::chrono::milliseconds discovery_interval{1000};
-  std::chrono::milliseconds peer_timeout{5000};
-  bool allow_commands{true};
 };
 
 struct TelemetryChannelConfig {
@@ -128,8 +111,6 @@ struct CellularConfig {
 
 struct AppConfig {
   SerialConfig serial;
-  DeviceConfig device;
-  QgcUdpConfig qgc_udp;
   TelemetryPublishConfig telemetry_publish;
   MqttConfig mqtt;
   LoggingConfig logging;

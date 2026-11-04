@@ -11,23 +11,14 @@ bool IsValidSystemId(std::uint8_t system_id) {
 bool IsCnsBoxHeartbeat(const mavlink_message_t& message,
                        const mavlink_heartbeat_t& heartbeat) {
   return message.compid == kStm32Usart6ComponentId &&
-         heartbeat.type == MAV_TYPE_ONBOARD_CONTROLLER;
-}
-
-bool IsPx4Heartbeat(const mavlink_message_t& message,
-                    const mavlink_heartbeat_t& heartbeat,
-                    device::DetectionMode mode) {
-  if (heartbeat.autopilot == MAV_AUTOPILOT_PX4) {
-    return true;
-  }
-  return mode == device::DetectionMode::kPx4 &&
-         message.compid == MAV_COMP_ID_AUTOPILOT1;
+         heartbeat.type == MAV_TYPE_ONBOARD_CONTROLLER &&
+         heartbeat.autopilot == MAV_AUTOPILOT_INVALID;
 }
 
 }  // namespace
 
 std::optional<ControlledDeviceEndpoint> ClassifyControlledDeviceHeartbeat(
-    const mavlink_message_t& message, device::DetectionMode mode) {
+    const mavlink_message_t& message) {
   if (message.msgid != MAVLINK_MSG_ID_HEARTBEAT ||
       !IsValidSystemId(message.sysid)) {
     return std::nullopt;
@@ -36,10 +27,7 @@ std::optional<ControlledDeviceEndpoint> ClassifyControlledDeviceHeartbeat(
   mavlink_heartbeat_t heartbeat{};
   mavlink_msg_heartbeat_decode(&message, &heartbeat);
 
-  const bool allow_cns_box =
-      mode == device::DetectionMode::kAuto ||
-      mode == device::DetectionMode::kCnsBox;
-  if (allow_cns_box && IsCnsBoxHeartbeat(message, heartbeat)) {
+  if (IsCnsBoxHeartbeat(message, heartbeat)) {
     return ControlledDeviceEndpoint{
         .endpoint =
             MavlinkEndpoint{.system_id = message.sysid,
@@ -47,27 +35,16 @@ std::optional<ControlledDeviceEndpoint> ClassifyControlledDeviceHeartbeat(
         .type = device::Type::kCnsBox};
   }
 
-  const bool allow_px4 =
-      mode == device::DetectionMode::kAuto ||
-      mode == device::DetectionMode::kPx4;
-  if (allow_px4 && IsPx4Heartbeat(message, heartbeat, mode)) {
-    return ControlledDeviceEndpoint{
-        .endpoint =
-            MavlinkEndpoint{.system_id = message.sysid,
-                            .component_id = message.compid},
-        .type = device::Type::kFlightController};
-  }
   return std::nullopt;
 }
 
 std::optional<ControlledDeviceEndpoint> ObserveControlledDeviceHeartbeat(
     const mavlink_message_t& message,
-    std::optional<ControlledDeviceEndpoint> current_endpoint,
-    device::DetectionMode mode) {
+    std::optional<ControlledDeviceEndpoint> current_endpoint) {
   if (current_endpoint) {
     return current_endpoint;
   }
-  return ClassifyControlledDeviceHeartbeat(message, mode);
+  return ClassifyControlledDeviceHeartbeat(message);
 }
 
 bool IsMessageFromControlledDevice(
@@ -79,7 +56,6 @@ bool IsMessageFromControlledDevice(
 
   switch (message.msgid) {
     case MAVLINK_MSG_ID_HEARTBEAT:
-    case MAVLINK_MSG_ID_AUTOPILOT_VERSION:
     case MAVLINK_MSG_ID_COMMAND_ACK:
       return message.compid == controlled_device.endpoint.component_id;
     default:
@@ -87,15 +63,14 @@ bool IsMessageFromControlledDevice(
   }
 }
 
-std::optional<MavlinkEndpoint> ObserveFlightControllerHeartbeat(
+std::optional<MavlinkEndpoint> ObserveCnsBoxHeartbeat(
     const mavlink_message_t& message,
     std::optional<MavlinkEndpoint> current_endpoint) {
   if (current_endpoint) {
     return current_endpoint;
   }
-  const auto observed = ObserveControlledDeviceHeartbeat(
-      message, std::nullopt, device::DetectionMode::kCnsBox);
-  if (!observed || observed->type != device::Type::kCnsBox) {
+  const auto observed = ClassifyControlledDeviceHeartbeat(message);
+  if (!observed) {
     return std::nullopt;
   }
   return observed->endpoint;

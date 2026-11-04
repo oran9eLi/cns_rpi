@@ -112,7 +112,6 @@ bool IsFreshEchoBusinessFrame(const mavlink_message_t& message,
       message.sysid != system_id || message.compid != component_id) return false;
   switch (message.msgid) {
     case MAVLINK_MSG_ID_HEARTBEAT:
-    case MAVLINK_MSG_ID_AUTOPILOT_VERSION:
     case MAVLINK_MSG_ID_OPEN_DRONE_ID_BASIC_ID:
     case MAVLINK_MSG_ID_OPEN_DRONE_ID_LOCATION:
     case MAVLINK_MSG_ID_OPEN_DRONE_ID_SYSTEM:

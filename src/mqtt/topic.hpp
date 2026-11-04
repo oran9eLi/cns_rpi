@@ -19,8 +19,7 @@ namespace mqtt {
  * @brief 拼设备注册 topic。
  * @param topic_namespace 来自 mqtt.topics.namespace。
  * @param device_id 受控设备主键，来自 OPEN_DRONE_ID_BASIC_ID.uas_id
- * （主控箱和 PX4 同一来源，见 docs/2026-08-03-主控箱与PX4统一身份数据结构设计.md
- * §2.1；调用方需保证已经有值才调用本函数）。
+ * （来自 F407；调用方需保证已经有值才调用本函数）。
  * @param suffix 来自 mqtt.topics.registration.suffix。
  * @return "{namespace}/{device_id}/{suffix}"，不重复做配置校验。
  */
@@ -36,14 +35,6 @@ std::string BuildTelemetryTopic(const std::string& topic_namespace, const std::s
 std::string BuildRuntimeStatusTopic(const std::string& topic_namespace,
                                     const std::string& device_id,
                                     const std::string& suffix);
-
-/// 服务端向 PX4 树莓派发送真实 RTT 探测的 QoS 0 topic。
-std::string BuildPx4LatencyProbeTopic(const std::string& topic_namespace,
-                                      const std::string& device_id);
-
-/// PX4 树莓派原样返回 RTT 探测关联标识符的 QoS 0 topic。
-std::string BuildPx4LatencyAckTopic(const std::string& topic_namespace,
-                                    const std::string& device_id);
 
 /// 拼服务器向设备下发配置命令的 topic。
 std::string BuildConfigSetTopic(const std::string& topic_namespace,

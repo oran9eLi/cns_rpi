@@ -25,14 +25,14 @@ mavlink_message_t CommandAck(std::uint8_t system_id, std::uint8_t component_id,
 
 }  // namespace
 
-TEST_CASE("只从飞控心跳学习STM32端点") {
+TEST_CASE("只从F407主控箱心跳学习STM32端点") {
   std::optional<control_command::MavlinkEndpoint> endpoint;
-  endpoint = control_command::ObserveFlightControllerHeartbeat(
+  endpoint = control_command::ObserveCnsBoxHeartbeat(
       Heartbeat(7, MAV_COMP_ID_ONBOARD_COMPUTER, MAV_TYPE_ONBOARD_CONTROLLER,
                 MAV_AUTOPILOT_INVALID), endpoint);
   CHECK_FALSE(endpoint.has_value());
 
-  endpoint = control_command::ObserveFlightControllerHeartbeat(
+  endpoint = control_command::ObserveCnsBoxHeartbeat(
       Heartbeat(7, control_command::kStm32Usart6ComponentId,
                 MAV_TYPE_ONBOARD_CONTROLLER, MAV_AUTOPILOT_INVALID), endpoint);
   REQUIRE(endpoint.has_value());
@@ -41,18 +41,18 @@ TEST_CASE("只从飞控心跳学习STM32端点") {
 }
 
 TEST_CASE("STM32动态sysid只接受1到250") {
-  const auto invalid_zero = control_command::ObserveFlightControllerHeartbeat(
+  const auto invalid_zero = control_command::ObserveCnsBoxHeartbeat(
       Heartbeat(0, control_command::kStm32Usart6ComponentId,
                 MAV_TYPE_ONBOARD_CONTROLLER, MAV_AUTOPILOT_INVALID), std::nullopt);
   CHECK_FALSE(invalid_zero.has_value());
 
-  const auto valid_max = control_command::ObserveFlightControllerHeartbeat(
+  const auto valid_max = control_command::ObserveCnsBoxHeartbeat(
       Heartbeat(250, control_command::kStm32Usart6ComponentId,
                 MAV_TYPE_ONBOARD_CONTROLLER, MAV_AUTOPILOT_INVALID), std::nullopt);
   REQUIRE(valid_max.has_value());
   CHECK(valid_max->system_id == 250);
 
-  const auto invalid_high = control_command::ObserveFlightControllerHeartbeat(
+  const auto invalid_high = control_command::ObserveCnsBoxHeartbeat(
       Heartbeat(251, control_command::kStm32Usart6ComponentId,
                 MAV_TYPE_ONBOARD_CONTROLLER, MAV_AUTOPILOT_INVALID), std::nullopt);
   CHECK_FALSE(invalid_high.has_value());
@@ -61,7 +61,7 @@ TEST_CASE("STM32动态sysid只接受1到250") {
 TEST_CASE("已学习端点不被其他心跳覆盖") {
   std::optional<control_command::MavlinkEndpoint> endpoint =
       control_command::MavlinkEndpoint{7, control_command::kStm32Usart6ComponentId};
-  endpoint = control_command::ObserveFlightControllerHeartbeat(
+  endpoint = control_command::ObserveCnsBoxHeartbeat(
       Heartbeat(8, control_command::kStm32Usart6ComponentId,
                 MAV_TYPE_ONBOARD_CONTROLLER, MAV_AUTOPILOT_INVALID), endpoint);
   REQUIRE(endpoint.has_value());
@@ -94,67 +94,60 @@ TEST_CASE("COMMAND_ACK必须匹配来源和目标") {
       endpoint, 7, MAV_COMP_ID_ONBOARD_COMPUTER));
 }
 
-TEST_CASE("auto mode identifies cns box and px4 with strict heartbeat signatures") {
-  const auto cns_box = control_command::ObserveControlledDeviceHeartbeat(
+TEST_CASE("非主控箱心跳不会抢占端点且随后可学习F407主控箱") {
+  std::optional<control_command::ControlledDeviceEndpoint> endpoint;
+  for (const auto& message : {
+           Heartbeat(2, MAV_COMP_ID_AUTOPILOT1, MAV_TYPE_QUADROTOR,
+                     MAV_AUTOPILOT_PX4),
+           Heartbeat(2, MAV_COMP_ID_AUTOPILOT1, MAV_TYPE_QUADROTOR,
+                     MAV_AUTOPILOT_ARDUPILOTMEGA),
+           Heartbeat(2, MAV_COMP_ID_ONBOARD_COMPUTER,
+                     MAV_TYPE_ONBOARD_CONTROLLER, MAV_AUTOPILOT_INVALID),
+           Heartbeat(2, control_command::kStm32Usart6ComponentId,
+                     MAV_TYPE_QUADROTOR, MAV_AUTOPILOT_INVALID),
+           Heartbeat(2, control_command::kStm32Usart6ComponentId,
+                     MAV_TYPE_ONBOARD_CONTROLLER, MAV_AUTOPILOT_PX4),
+           Heartbeat(2, control_command::kStm32Usart6ComponentId,
+                     MAV_TYPE_ONBOARD_CONTROLLER, MAV_AUTOPILOT_ARDUPILOTMEGA),
+       }) {
+    endpoint = control_command::ObserveControlledDeviceHeartbeat(
+        message, endpoint);
+    CHECK_FALSE(endpoint.has_value());
+    CHECK_FALSE(control_command::ClassifyControlledDeviceHeartbeat(message)
+                    .has_value());
+  }
+
+  endpoint = control_command::ObserveControlledDeviceHeartbeat(
       Heartbeat(7, control_command::kStm32Usart6ComponentId,
                 MAV_TYPE_ONBOARD_CONTROLLER, MAV_AUTOPILOT_INVALID),
-      std::nullopt, device::DetectionMode::kAuto);
-  REQUIRE(cns_box.has_value());
-  CHECK(cns_box->type == device::Type::kCnsBox);
-
-  const auto px4 = control_command::ObserveControlledDeviceHeartbeat(
-      Heartbeat(2, MAV_COMP_ID_AUTOPILOT1, MAV_TYPE_QUADROTOR,
-                MAV_AUTOPILOT_PX4),
-      std::nullopt, device::DetectionMode::kAuto);
-  REQUIRE(px4.has_value());
-  CHECK(px4->type == device::Type::kFlightController);
-  CHECK(px4->endpoint.system_id == 2);
-  const auto independently_classified =
-      control_command::ClassifyControlledDeviceHeartbeat(
-          Heartbeat(2, MAV_COMP_ID_AUTOPILOT1, MAV_TYPE_QUADROTOR,
-                    MAV_AUTOPILOT_PX4),
-          device::DetectionMode::kAuto);
-  REQUIRE(independently_classified.has_value());
-  CHECK(independently_classified->type ==
-        device::Type::kFlightController);
-
-  CHECK_FALSE(control_command::ObserveControlledDeviceHeartbeat(
-                  Heartbeat(9, MAV_COMP_ID_AUTOPILOT1, MAV_TYPE_QUADROTOR,
-                            MAV_AUTOPILOT_ARDUPILOTMEGA),
-                  std::nullopt, device::DetectionMode::kAuto)
-                  .has_value());
+      endpoint);
+  REQUIRE(endpoint.has_value());
+  CHECK(endpoint->type == device::Type::kCnsBox);
+  CHECK(endpoint->endpoint.system_id == 7);
+  CHECK(endpoint->endpoint.component_id == control_command::kStm32Usart6ComponentId);
 }
 
-TEST_CASE("explicit mode only accepts its configured device family") {
-  CHECK_FALSE(control_command::ObserveControlledDeviceHeartbeat(
-                  Heartbeat(2, MAV_COMP_ID_AUTOPILOT1, MAV_TYPE_QUADROTOR,
-                            MAV_AUTOPILOT_PX4),
-                  std::nullopt, device::DetectionMode::kCnsBox)
-                  .has_value());
-
-  const auto forced_px4 = control_command::ObserveControlledDeviceHeartbeat(
-      Heartbeat(2, MAV_COMP_ID_AUTOPILOT1, MAV_TYPE_QUADROTOR,
-                MAV_AUTOPILOT_INVALID),
-      std::nullopt, device::DetectionMode::kPx4);
-  REQUIRE(forced_px4.has_value());
-  CHECK(forced_px4->type == device::Type::kFlightController);
-}
-
-TEST_CASE("controlled system accepts telemetry components but pins control messages") {
+TEST_CASE("已确认F407主控箱只接受同system遥测并锁定控制组件") {
   const control_command::ControlledDeviceEndpoint controlled{
-      .endpoint = {.system_id = 2, .component_id = MAV_COMP_ID_AUTOPILOT1},
-      .type = device::Type::kFlightController};
+      .endpoint = {.system_id = 7,
+                   .component_id = control_command::kStm32Usart6ComponentId},
+      .type = device::Type::kCnsBox};
 
   mavlink_message_t telemetry{};
   mavlink_msg_global_position_int_pack(
-      2, MAV_COMP_ID_GPS, &telemetry, 1, 0, 0, 0, 0, 0, 0, 0, 0);
+      7, MAV_COMP_ID_GPS, &telemetry, 1, 0, 0, 0, 0, 0, 0, 0, 0);
   CHECK(control_command::IsMessageFromControlledDevice(telemetry, controlled));
 
   CHECK_FALSE(control_command::IsMessageFromControlledDevice(
-      Heartbeat(2, MAV_COMP_ID_GPS, MAV_TYPE_GPS, MAV_AUTOPILOT_INVALID),
+      Heartbeat(7, MAV_COMP_ID_GPS, MAV_TYPE_GPS, MAV_AUTOPILOT_INVALID),
       controlled));
   CHECK_FALSE(control_command::IsMessageFromControlledDevice(
-      Heartbeat(3, MAV_COMP_ID_AUTOPILOT1, MAV_TYPE_QUADROTOR,
-                MAV_AUTOPILOT_PX4),
+      Heartbeat(8, control_command::kStm32Usart6ComponentId,
+                MAV_TYPE_ONBOARD_CONTROLLER, MAV_AUTOPILOT_INVALID),
       controlled));
+  CHECK_FALSE(control_command::IsMessageFromControlledDevice(
+      CommandAck(7, MAV_COMP_ID_GPS, 7, MAV_COMP_ID_ONBOARD_COMPUTER), controlled));
+  CHECK(control_command::IsMessageFromControlledDevice(
+      CommandAck(7, control_command::kStm32Usart6ComponentId,
+                 7, MAV_COMP_ID_ONBOARD_COMPUTER), controlled));
 }

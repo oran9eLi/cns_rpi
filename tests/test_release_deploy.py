@@ -138,6 +138,8 @@ else:
         old.pop("telemetry_publish")
         old["runtime"]["telemetry_publish_interval_ms"] = 1700
         old["px4_realtime"] = {"enabled": True, "publish_interval_ms": 50}
+        old["device"] = {"mode": "auto"}
+        old["qgc_udp"] = {"enabled": False}
         topics = old["mqtt"]["topics"]
         topics.pop("telemetry_snapshot")
         topics.pop("telemetry_realtime")
@@ -150,6 +152,8 @@ else:
         current = json.loads(self.config.read_text())
         self.assertEqual(current["telemetry_publish"]["snapshot"]["interval_ms"], 1700)
         self.assertEqual(current["telemetry_publish"]["realtime"]["interval_ms"], 100)
+        for key in ("device", "qgc_udp", "px4_realtime"):
+            self.assertNotIn(key, current)
         self.assertFalse(self.legacy.exists())
         self.assertTrue(self.legacy.with_suffix(".json.migrated").exists())
         for service in ("cns-rpi.service", "cellular-dialup.service"):
@@ -183,6 +187,24 @@ else:
         self.assertFalse(self.config.exists())
         self.assertTrue(self.legacy.exists())
         self.assertEqual(self.commands(), [])
+
+    def test_unsupported_legacy_config_does_not_initialize_or_start_services(self):
+        for legacy in (
+            {"device": {"mode": "px4"}},
+            {"device": {"mode": "unknown"}},
+            {"qgc_udp": {"enabled": True}},
+        ):
+            with self.subTest(legacy=legacy):
+                current = dict(self.example)
+                current.update(legacy)
+                self.legacy.write_text(json.dumps(current), encoding="utf-8")
+
+                result = self.run_deploy()
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(self.config.exists())
+                self.assertTrue(self.legacy.exists())
+                self.assertEqual(self.commands(), [])
 
     def test_invalid_existing_config_is_preserved_without_starting_services(self):
         self.config.parent.mkdir()

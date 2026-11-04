@@ -24,16 +24,15 @@ TEST_CASE("空TelemetryState输出v3骨架和学校信息") {
 
 TEST_CASE("遥测不再输出identity/endpoint/gateway三个对象及其字段") {
   state::TelemetryState state{};
-  state.device_type = device::Type::kFlightController;
-  state.device_id = "PX4RID123456789ABCDE";
+  state.device_type = device::Type::kCnsBox;
+  state.device_id = "DCDWCNS1S2MEAG1VTA0C";
   state.device_system_id = 2;
-  state.device_component_id = MAV_COMP_ID_AUTOPILOT1;
+  state.device_component_id = 193;
   state.dcdw_label = "DCDW-007";
-  state.product = device::ProductInfo{.manufacturer_code = "26",
-                                      .model_code = "7"};
-  state.version = device::VersionInfo{.hardware = "42", .firmware = "1.17.3"};
+  state.product = device::ProductInfo{.manufacturer_code = "DCDW",
+                                      .model_code = "CNS1"};
   mavlink_open_drone_id_basic_id_t basic_id{};
-  std::memcpy(basic_id.uas_id, "PX4RID123456789ABCDE", 20);
+  std::memcpy(basic_id.uas_id, "DCDWCNS1S2MEAG1VTA0C", 20);
   state.open_drone_id_basic_id = basic_id;
 
   const auto text = payload::ToJson(state, "NNUTC").dump();
@@ -47,9 +46,8 @@ TEST_CASE("遥测不再输出identity/endpoint/gateway三个对象及其字段")
                               "\"sysid\":", "\"compid\":", "\"uas_id\":"}) {
     CHECK(text.find(removed) == std::string::npos);
   }
-  // 产品与版本只走 retained registration，不在按节拍刷新的遥测里重复。
+  // 产品信息只走 retained registration，不在按节拍刷新的遥测里重复。
   CHECK_FALSE(json.contains("product"));
-  CHECK_FALSE(json.contains("version"));
   // 校名和角色号平铺在顶层。
   CHECK(json["school_name"] == "NNUTC");
   CHECK(json["dcdw_label"] == "DCDW-007");
@@ -131,23 +129,23 @@ TEST_CASE("实时帧同时容纳主控箱电机与飞行动态字段") {
   CHECK_FALSE(json.contains("drone_id"));
 }
 
-TEST_CASE("PX4遥测v3的device_id就是Basic ID,身份只出现一次") {
+TEST_CASE("主控箱遥测v3的device_id就是Basic ID,身份只出现一次") {
   state::TelemetryState state{};
-  state.device_type = device::Type::kFlightController;
-  state.device_id = "PX4RID123456789ABCDE";
+  state.device_type = device::Type::kCnsBox;
+  state.device_id = "DCDWCNS1S2MEAG1VTA0C";
   state.device_system_id = 2;
-  state.device_component_id = MAV_COMP_ID_AUTOPILOT1;
+  state.device_component_id = 193;
   mavlink_open_drone_id_basic_id_t basic_id{};
   basic_id.id_type = 1;
   basic_id.ua_type = 2;
-  std::memcpy(basic_id.uas_id, "PX4RID123456789ABCDE", 20);
+  std::memcpy(basic_id.uas_id, "DCDWCNS1S2MEAG1VTA0C", 20);
   state.open_drone_id_basic_id = basic_id;
 
   const auto json = payload::ToJson(state, "");
 
   CHECK(json["schema_version"] == 3);
-  CHECK(json["device_id"] == "PX4RID123456789ABCDE");
-  CHECK(json["device_type"] == "flight_controller");
+  CHECK(json["device_id"] == "DCDWCNS1S2MEAG1VTA0C");
+  CHECK(json["device_type"] == "cns_box");
   CHECK_FALSE(json.contains("school_name"));
   // basic_id 保留标准属性，但不重复输出 uas_id。
   CHECK(json["drone_id"]["basic_id"]["id_type"] == 1);
@@ -159,8 +157,8 @@ TEST_CASE("heartbeat字段按原始数字透传,未收到时telemetry.heartbeat�
   state::TelemetryState state{};
   mavlink_heartbeat_t hb{};
   hb.custom_mode = 0;
-  hb.type = 2;
-  hb.autopilot = 12;
+  hb.type = 18;
+  hb.autopilot = 8;
   hb.base_mode = 81;
   hb.system_status = 4;
   hb.mavlink_version = 3;
@@ -170,8 +168,8 @@ TEST_CASE("heartbeat字段按原始数字透传,未收到时telemetry.heartbeat�
 
   REQUIRE(json.contains("telemetry"));
   REQUIRE(json["telemetry"].contains("heartbeat"));
-  CHECK(json["telemetry"]["heartbeat"]["type"] == 2);
-  CHECK(json["telemetry"]["heartbeat"]["autopilot"] == 12);
+  CHECK(json["telemetry"]["heartbeat"]["type"] == 18);
+  CHECK(json["telemetry"]["heartbeat"]["autopilot"] == 8);
   CHECK(json["telemetry"]["heartbeat"]["base_mode"] == 81);
   CHECK(json["telemetry"]["heartbeat"]["system_status"] == 4);
   CHECK(json["telemetry"]["heartbeat"]["mavlink_version"] == 3);

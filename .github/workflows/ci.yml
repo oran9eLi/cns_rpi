@@ -1,0 +1,49 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: ['**']
+  workflow_call:
+permissions:
+  contents: read
+jobs:
+  trixie-arm64:
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test on native trixie ARM64
+        run: |
+          mkdir -p test-logs dist
+          docker run --rm \
+            -e BUILD_UID="$(id -u)" -e BUILD_GID="$(id -g)" \
+            -v "$PWD:/work" -w /work debian:trixie bash -c '
+            set -euo pipefail
+            apt-get update
+            apt-get install -y --no-install-recommends build-essential cmake ninja-build pkg-config libmosquitto-dev nlohmann-json3-dev doctest-dev mosquitto python3 python3-serial ca-certificates git
+            groupadd --gid "$BUILD_GID" cnsci
+            useradd --uid "$BUILD_UID" --gid "$BUILD_GID" \
+              --create-home --shell /bin/bash cnsci
+            runuser -u cnsci -- bash scripts/ci/build_release.sh "'"$GITHUB_SHA"'"
+          '
+      - name: Runtime-only trixie ARM64 smoke
+        run: |
+          docker run --rm -v "$PWD:/work:ro" -w /work debian:trixie bash -c '
+            set -euo pipefail
+            apt-get update
+            apt-get install -y --no-install-recommends python3
+            deps=$(python3 -c "import json; print(\" \".join(json.load(open(\"dist/manifest.json\"))[\"runtime_dependencies\"]))")
+            apt-get install -y --no-install-recommends $deps
+            python3 scripts/ci/runtime_smoke.py dist/*.tar.gz
+          '
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trixie-arm64-test-logs
+          path: |
+            test-logs/
+            build-ci/Testing/Temporary/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: trixie-arm64-release
+          path: dist/
+          if-no-files-found: error
