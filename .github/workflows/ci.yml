@@ -14,12 +14,15 @@ jobs:
       - name: Build and test on native trixie ARM64
         run: |
           mkdir -p test-logs dist
-          docker run --rm -v "$PWD:/work" -w /work debian:trixie bash -c '
+          docker run --rm \
+            -e BUILD_UID="$(id -u)" -e BUILD_GID="$(id -g)" \
+            -v "$PWD:/work" -w /work debian:trixie bash -c '
             set -euo pipefail
             apt-get update
             apt-get install -y --no-install-recommends build-essential cmake ninja-build pkg-config libmosquitto-dev nlohmann-json3-dev doctest-dev mosquitto python3 python3-serial ca-certificates git
-            useradd --create-home --shell /bin/bash cnsci
-            chown -R cnsci:cnsci /work
+            groupadd --gid "$BUILD_GID" cnsci
+            useradd --uid "$BUILD_UID" --gid "$BUILD_GID" \
+              --create-home --shell /bin/bash cnsci
             runuser -u cnsci -- bash scripts/ci/build_release.sh "'"$GITHUB_SHA"'"
           '
       - name: Runtime-only trixie ARM64 smoke
