@@ -10,7 +10,7 @@ V1 is implemented and deployed. Milestones M1–M6 plus the runtime config-comma
 
 ```bash
 cmake -S . -B build && cmake --build build   # -Wall -Wextra enforced
-ctest --test-dir build                       # 27 test targets, doctest
+ctest --test-dir build --output-on-failure
 ```
 
 Dependencies: `nlohmann_json` (>=3.2.0), `libmosquitto` (via pkg-config), `doctest`, `python3`. On a fresh Pi run `scripts/install_deps.sh` first — it switches apt to the TUNA mirror and installs the build dependencies.
@@ -50,13 +50,13 @@ Vendor the official `mavlink/c_library_v2` headers (`common`/`standard`/`minimal
 
 Multiple identifiers exist for different owners; don't conflate them:
 
-- **`device_id` — the single business key, always `OPEN_DRONE_ID_BASIC_ID.uas_id`**, for both device types (`docs/2026-08-03-主控箱与PX4统一身份数据结构设计.md`). It addresses MQTT topics, the MQTT Client ID, registration, telemetry and command routing. There is no second identifier: `vendor_id`, `remote_id`, PX4 `uid`/`uid2`, `gateway_id` and `rpi_serial` were all deleted from state and from the wire protocol — do not reintroduce them.
+- **`device_id` — the single business key, received passively from the F407 `OPEN_DRONE_ID_BASIC_ID.uas_id`** (`docs/设备标识符.md`). It addresses MQTT topics, the MQTT Client ID, registration, telemetry and command routing. There is no second identifier: `vendor_id`, `remote_id`, `gateway_id` and `rpi_serial` were all deleted from state and from the wire protocol — do not reintroduce them.
 - **The RPi owns no business identity.** It is a MAVLink↔MQTT gateway; swapping or reimaging it must not change any `device_id`. `/proc/cpuinfo` serial is no longer read.
 - `DCDW-XXX` — school-facing label, derived from firmware's `PX4LITE_UNIT_ID`. Unique only *within one school*, routinely repeats across schools. Never use as a global key.
 - For the CNS box, that `uas_id` *is* the vendor unique product ID (`DCDWCNS1` + 12-char SN), structured per GB/T 41300 (MFC+PMC+SN, 20 chars, charset `0-9A-Z` minus `O`/`I`). SN is a SHA-256-truncated hash of the STM32 chip's 96-bit UID. `DCDW`/`CNS1` are product metadata parsed out of the prefix — not identity, not a firmware version.
 - **SN is computed on STM32, not RPi** — because RemoteID broadcast (`STM32 → UART4 → ESP32-S3`, does not pass through RPi) needs the value locally before it ever talks to RPi. RPi receives the already-computed SN and reuses it verbatim; it must not recompute it.
 - RemoteID's GB 46750 "唯一产品识别码" field reuses this same vendor ID/SN — one hash, not two.
-- **PX4 does not send `OPEN_DRONE_ID_BASIC_ID` on the normal telemetry link** — the RPi must request it (`MAV_CMD_REQUEST_MESSAGE`, param1=12900) on a 2 s cadence until identity is ready. `AUTOPILOT_VERSION` uses the same mechanism but its own stop condition (product/version received); never gate it on `device_id`, which now arrives first. Until a valid `uas_id` arrives no MQTT session is created at all — a PX4 with no UAS ID configured stays fully offline by design.
+- **The only supported endpoint is the F407 CNS box**, with `MAV_TYPE_ONBOARD_CONTROLLER` and `MAV_AUTOPILOT_INVALID`. Do not add device detection modes, ground-station UDP bridging, flight-controller identity/version requests or latency probe topics. First-time MQTT setup requires a valid F407 identity; a persistent binding can restore the control channel while the live identity is being verified. Product metadata comes from the F407 identity prefix; registration carries no inferred hardware/firmware version. Firmware-native `Px4Lite` / `px4lite_*` names are unrelated to gateway device modes and must remain intact.
 
 ## Collaboration conventions (docs/协作规则.md)
 

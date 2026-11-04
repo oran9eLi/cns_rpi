@@ -54,8 +54,6 @@ TEST_CASE("主程序只编排Logger且不记录原始遥测JSON") {
   CHECK(text.find("telemetry_publisher->Tick") != std::string::npos);
   CHECK(text.find("遥测快照通道") != std::string::npos);
   CHECK(text.find("遥测实时通道") != std::string::npos);
-  CHECK(text.find("PX4实时遥测已启用") == std::string::npos);
-  CHECK(text.find("last_px4_realtime_publish") == std::string::npos);
 
   const auto configured_business_code = Between(
       text, "if (!logger) {", "return EXIT_SUCCESS;");
@@ -94,8 +92,8 @@ TEST_CASE("主程序在收到命令与应答时记录日志") {
   // 收到配置命令与回执。
   CHECK(text.find("收到配置命令: command_id=") != std::string::npos);
   CHECK(text.find("配置命令回执: command_id=") != std::string::npos);
-  // 收到飞控命令。
-  CHECK(text.find("收到飞控命令: command_id=") != std::string::npos);
+  // 收到主控箱命令。
+  CHECK(text.find("收到主控箱命令: command_id=") != std::string::npos);
   // 收到当前受控设备的 COMMAND_ACK 应答，且日志取自事务处理结果而非丢弃。
   const auto ack_branch = Between(text, "IsExpectedCommandAck(",
                                   "const bool decoded_standard");

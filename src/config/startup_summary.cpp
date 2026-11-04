@@ -13,9 +13,7 @@ std::string BuildStartupSummary(const AppConfig& config) {
       << (config.telemetry_publish.realtime.enabled ? "已启用" : "已禁用")
       << "/周期" << config.telemetry_publish.realtime.interval.count()
       << "毫秒，心跳发送周期=" << config.runtime.heartbeat_interval.count()
-      << "毫秒，设备接入模式="
-      << device::DetectionModeName(config.device.mode)
-      << "，MQTT重连初始等待="
+      << "毫秒，受控设备=F407主控箱，MQTT重连初始等待="
       << config.mqtt.connection.reconnect.delay_seconds
       << "秒，MQTT重连最大等待="
       << config.mqtt.connection.reconnect.delay_max_seconds

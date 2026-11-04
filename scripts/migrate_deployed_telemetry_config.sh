@@ -22,8 +22,8 @@ cp -- "${CONFIG_PATH}" "${CANDIDATE}"
 python3 "${MIGRATOR}" "${CANDIDATE}"
 
 if cmp -s -- "${CANDIDATE}" "${CONFIG_PATH}"; then
-  echo "  - 现场配置已经是快照/实时通道结构"
+  echo "  - 现场配置已经是 F407 主控箱与快照/实时通道结构"
 else
   "${APPLY_HELPER}" "${CANDIDATE}" "${CONFIG_PATH}"
-  echo "  - 已通过配置 helper 原子应用遥测通道迁移"
+  echo "  - 已通过配置 helper 原子应用主控箱配置迁移"
 fi

@@ -97,7 +97,7 @@ TEST_CASE("损坏或不合法的绑定文件返回错误") {
            std::string{"{bad json"},
            std::string{R"({"schema_version":2,"device_id":"DCDWCNS1GHC0G6LF8MY6","device_type":"cns_box"})"},
            std::string{R"({"schema_version":1,"device_id":"bad/id","device_type":"cns_box"})"},
-           std::string{R"({"schema_version":1,"device_id":"PX4-DEVICE","device_type":"flight_controller"})"},
+           std::string{R"({"schema_version":1,"device_id":"DCDWCNS1GHC0G6LF8MY6","device_type":"unknown"})"},
        }) {
     WriteText(path, content);
     const auto loaded = device::LoadBinding(path);

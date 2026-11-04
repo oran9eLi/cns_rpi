@@ -43,6 +43,8 @@ SEVERITY_WARNING = 1
 
 TUNNEL_PT_ALARM_TABLE = 0x8001
 TUNNEL_PT_MESSAGE_LOG = 0x8002
+# F407 在 USART6 上将帧头组件号固定改写为 193。
+F407_UART6_COMPONENT_ID = 193
 
 # 演示用厂商唯一产品识别码（DCDWCNS1 + 12 字符 SN，GB/T 41300 字符集，不代表真实设备）
 DEMO_VENDOR_ID = b"DCDWCNS1ABCDEFGH1234"
@@ -55,13 +57,14 @@ def build_connection(port: str, baud: int, source_system: int):
         port,
         baud=baud,
         source_system=source_system,
+        source_component=F407_UART6_COMPONENT_ID,
         dialect="common",
     )
 
 
 def send_heartbeat(conn):
     conn.mav.heartbeat_send(
-        type=mavutil.mavlink.MAV_TYPE_GENERIC,
+        type=mavutil.mavlink.MAV_TYPE_ONBOARD_CONTROLLER,
         autopilot=mavutil.mavlink.MAV_AUTOPILOT_INVALID,
         base_mode=0,
         custom_mode=0,

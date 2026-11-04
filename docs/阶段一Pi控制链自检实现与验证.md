@@ -6,7 +6,7 @@
 
 ## Pi 侧实现边界
 
-- 已持久化绑定的主控箱才在现有 MQTT 客户端订阅 `{namespace}/{device_id}/experiment/set`，QoS 2；重连沿用客户端原有订阅恢复路径。PX4、未绑定设备不认领该 Topic。
+- 已持久化绑定的主控箱才在现有 MQTT 客户端订阅 `{namespace}/{device_id}/experiment/set`，QoS 2；重连沿用客户端原有订阅恢复路径。未绑定设备不认领该 Topic。
 - 仅接受严格 schema v1 的 `inspect_pi_link`。校验目标与绑定、UUID、租约版本、UTC 毫秒有效期、固定字段和长度；结构无法安全关联命令时只记录中文诊断，不猜测 ACK。
 - 只读采样使用当前进程的运行三态、MQTT 连接状态及现有串口对象。`identity_status=cached` 和 `business_status=offline` 不阻断本项检查；`conflict|unbound` 拒绝。`serial_port_open=true` 只表示主线程持有已打开的串口端点，不能证明 UART6 参数匹配或 F407 已响应。主线程尚未接管端点时，后台自动发现可能持有候选串口，因此报告 `unknown`，不猜测为 `false`。
 - 向 `{namespace}/{device_id}/experiment/ack` 发布 `completed|rejected` 终态，QoS 2、非 retained。发布调用失败时有界保留原 ACK，连接恢复后重发原文，不重新采样。异步发布调用被 MQTT 库接受但进程立即退出的极端窗口不保证终态已到达 Broker，应由 Server 按超时或待核验收敛。

@@ -172,12 +172,8 @@ struct TelemetryState {
   /// 从 MAVLink 帧头 sysid 格式化的 DCDW-XXX 角色号，帧头字段，不是 payload 字段。
   std::optional<std::string> dcdw_label;
 
-  /// 产品与版本元数据，不是身份：不进 topic、不做主键，只随注册幂等上报。
+  /// 产品元数据从主控箱编号前缀提取，只随注册上报。
   std::optional<device::ProductInfo> product;
-  std::optional<device::VersionInfo> version;
-  /// 是否已收到过 AUTOPILOT_VERSION。PX4 可能把 vendor_id/product_id/版本全报 0，
-  /// 那时 product/version 仍是 nullopt，只有这个标志能让主循环停止重复请求。
-  bool autopilot_version_received = false;
 };
 
 /**
@@ -231,12 +227,8 @@ class StateStore {
   void UpdateOpenDroneIdOperatorId(const mavlink_open_drone_id_operator_id_t& value);
   void UpdateOpenDroneIdSelfId(const mavlink_open_drone_id_self_id_t& value);
   void UpdateDcdwLabel(const std::string& value);
-  /// 直接写入产品信息(主控箱从 device_id 前缀推出，不经 AUTOPILOT_VERSION)。
+  /// 直接写入从主控箱 device_id 前缀提取的产品信息。
   void UpdateProduct(const device::ProductInfo& value);
-  /// 写入 AUTOPILOT_VERSION 提取出的产品与版本，并置位"已收到"标志。
-  void UpdateAutopilotVersionMetadata(
-      const std::optional<device::ProductInfo>& product,
-      const std::optional<device::VersionInfo>& version);
 
   /**
    * @brief 清除当前受控设备产生的全部状态。

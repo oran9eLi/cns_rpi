@@ -70,6 +70,8 @@ class MigrateDeployedConfigTest(unittest.TestCase):
 
     def test_old_configuration_is_applied_through_helper_on_readonly_directory(self):
         old = {
+            "device": {"mode": "auto"},
+            "qgc_udp": {"enabled": False},
             "runtime": {
                 "telemetry_publish_interval_ms": 1000,
                 "heartbeat_interval_ms": 1000,
@@ -86,9 +88,32 @@ class MigrateDeployedConfigTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         migrated = json.loads(self.config_path.read_text(encoding="utf-8"))
         self.assertEqual(migrated["telemetry_publish"]["realtime"]["interval_ms"], 100)
+        for key in ("device", "qgc_udp", "px4_realtime"):
+            self.assertNotIn(key, migrated)
         self.assertTrue(self.marker.exists())
         self.assertEqual(stat.S_IMODE(self.config_dir.stat().st_mode), 0o555)
         self.assertEqual(list(self.staging_dir.iterdir()), [])
+
+    def test_unsupported_device_or_enabled_bridge_does_not_call_helper(self):
+        for legacy in (
+            {"device": {"mode": "px4"}},
+            {"device": {"mode": "unknown"}},
+            {"qgc_udp": {"enabled": True}},
+        ):
+            with self.subTest(legacy=legacy):
+                current = json.loads(
+                    (ROOT / "config" / "config.example.json").read_text(encoding="utf-8")
+                )
+                current.update(legacy)
+                self.config_path.write_text(json.dumps(current), encoding="utf-8")
+                before = self.config_path.read_bytes()
+
+                result = self.run_wrapper()
+
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(self.config_path.read_bytes(), before)
+                self.assertFalse(self.marker.exists())
+                self.assertEqual(list(self.staging_dir.iterdir()), [])
 
     def test_current_configuration_does_not_call_helper_or_rewrite_target(self):
         current = {

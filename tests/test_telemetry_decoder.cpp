@@ -8,7 +8,7 @@
 
 namespace {
 constexpr std::uint8_t kSystemId = 1;
-constexpr std::uint8_t kComponentId = 1;
+constexpr std::uint8_t kComponentId = 193;
 }  // namespace
 
 TEST_CASE("HEARTBEAT解码写入store") {
@@ -229,29 +229,45 @@ TEST_CASE("SERVO_OUTPUT_RAW decodes first four PWM pulse widths") {
   CHECK(snapshot.motor_pulse->pwm_us[3] == 2000);
 }
 
-TEST_CASE("AUTOPILOT_VERSION stores PX4 hardware identity fields") {
-  std::uint8_t flight_custom_version[8] = {};
-  std::uint8_t middleware_custom_version[8] = {};
-  std::uint8_t os_custom_version[8] = {};
-  std::uint8_t uid2[18] = {};
-  uid2[0] = 0xAA;
-  mavlink_message_t message{};
-  mavlink_msg_autopilot_version_pack(
-      2, MAV_COMP_ID_AUTOPILOT1, &message, 0,
-      (1U << 24) | (17U << 16), 0, 0, 3,
-      flight_custom_version, middleware_custom_version, os_custom_version,
-      26, 7, 0x0123456789ABCDEFULL, uid2);
+TEST_CASE("F407会话忽略AUTOPILOT_VERSION且继续解码普通遥测") {
   state::StateStore store;
+  store.UpdateControlledDevice(device::Type::kCnsBox, kSystemId, kComponentId);
+  CHECK(store.UpdateDeviceId("DCDWCNS1S2MEAG1VTA0C") ==
+        state::DeviceIdUpdate::kAccepted);
+  store.UpdateProduct(
+      device::ProductInfo{.manufacturer_code = "DCDW", .model_code = "CNS1"});
 
-  CHECK(protocol::DecodeAndStore(message, store));
+  mavlink_autopilot_version_t version{};
+  version.vendor_id = 26;
+  version.product_id = 7;
+  version.flight_sw_version = (1U << 24) | (17U << 16);
+  mavlink_message_t version_message{};
+  mavlink_msg_autopilot_version_encode(kSystemId, kComponentId,
+                                        &version_message, &version);
+
+  CHECK_FALSE(protocol::DecodeAndStore(version_message, store));
+
+  mavlink_message_t heartbeat_message{};
+  mavlink_msg_heartbeat_pack(kSystemId, kComponentId, &heartbeat_message,
+                             MAV_TYPE_ONBOARD_CONTROLLER, MAV_AUTOPILOT_INVALID,
+                             0, 0, MAV_STATE_ACTIVE);
+  CHECK(protocol::DecodeAndStore(heartbeat_message, store));
+  mavlink_attitude_t attitude{};
+  attitude.roll = 0.25F;
+  attitude.pitch = -0.5F;
+  mavlink_message_t attitude_message{};
+  mavlink_msg_attitude_encode(kSystemId, kComponentId, &attitude_message,
+                               &attitude);
+  CHECK(protocol::DecodeAndStore(attitude_message, store));
+
   const auto snapshot = store.Snapshot();
-  // 只保留产品与版本元数据：uid/uid2 标识飞控硬件，不是受控设备身份，
-  // 解码后即被丢弃，state 里没有任何字段能再取到它们。
-  CHECK(snapshot.autopilot_version_received);
   REQUIRE(snapshot.product.has_value());
-  CHECK(snapshot.product->manufacturer_code == "26");
-  CHECK(snapshot.product->model_code == "7");
-  REQUIRE(snapshot.version.has_value());
-  CHECK(snapshot.version->firmware == "1.17.0");
-  CHECK_FALSE(snapshot.device_id.has_value());
+  CHECK(snapshot.product->manufacturer_code == "DCDW");
+  CHECK(snapshot.product->model_code == "CNS1");
+  CHECK(snapshot.device_id == "DCDWCNS1S2MEAG1VTA0C");
+  REQUIRE(snapshot.heartbeat.has_value());
+  CHECK(snapshot.heartbeat->type == MAV_TYPE_ONBOARD_CONTROLLER);
+  REQUIRE(snapshot.attitude.has_value());
+  CHECK(snapshot.attitude->roll == doctest::Approx(0.25F));
+  CHECK(snapshot.attitude->pitch == doctest::Approx(-0.5F));
 }
