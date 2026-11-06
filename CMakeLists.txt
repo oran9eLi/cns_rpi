@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(cns_rpi VERSION 1.0.6 LANGUAGES CXX)
+project(cns_rpi VERSION 1.0.7 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -37,6 +37,9 @@ add_library(cns_rpi_core
     src/runtime_status/runtime_status.cpp
     src/runtime_status/device_session.cpp
     src/experiment/pi_link_inspection.cpp
+    src/experiment/video_request.cpp
+    src/experiment/video_experiment.cpp
+    src/video/video_manager.cpp
     src/experiment/link_lab.cpp
     src/experiment/uart_echo_request.cpp
     src/experiment/m1_request.cpp
@@ -161,6 +164,18 @@ add_test(NAME runtime_status COMMAND test_runtime_status)
 add_executable(test_pi_link_inspection tests/test_pi_link_inspection.cpp)
 target_link_libraries(test_pi_link_inspection PRIVATE cns_rpi_core)
 add_test(NAME pi_link_inspection COMMAND test_pi_link_inspection)
+
+add_executable(test_video_request tests/test_video_request.cpp)
+target_link_libraries(test_video_request PRIVATE cns_rpi_core)
+add_test(NAME video_request COMMAND test_video_request)
+
+add_executable(test_video_manager tests/test_video_manager.cpp)
+target_link_libraries(test_video_manager PRIVATE cns_rpi_core)
+add_test(NAME video_manager COMMAND test_video_manager)
+
+add_executable(test_video_experiment tests/test_video_experiment.cpp)
+target_link_libraries(test_video_experiment PRIVATE cns_rpi_core)
+add_test(NAME video_experiment COMMAND test_video_experiment)
 
 add_executable(test_link_lab tests/test_link_lab.cpp)
 target_link_libraries(test_link_lab PRIVATE cns_rpi_core)

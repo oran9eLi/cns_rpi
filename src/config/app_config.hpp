@@ -109,6 +109,14 @@ struct CellularConfig {
   std::chrono::seconds status_snapshot_max_age{30};
 };
 
+/// 视频能力显式启用；工具与暂存目录只由设备配置指定，不由远程动作覆盖。
+struct VideoConfig {
+  bool enabled{false};
+  std::string executable{"/usr/bin/rpicam-vid"};
+  std::string ffprobe{"/usr/bin/ffprobe"};
+  std::filesystem::path work_directory{"/tmp/cns-rpi-video"};
+};
+
 struct AppConfig {
   SerialConfig serial;
   TelemetryPublishConfig telemetry_publish;
@@ -117,6 +125,7 @@ struct AppConfig {
   IdentityConfig identity;
   RuntimeConfig runtime;
   CellularConfig cellular;
+  VideoConfig video;
 };
 
 /**

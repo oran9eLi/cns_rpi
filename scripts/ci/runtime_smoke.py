@@ -16,6 +16,7 @@ def main():
     if 'VERSION_CODENAME=trixie' not in Path('/etc/os-release').read_text(): raise SystemExit('smoke test requires trixie')
     for compiler in ('/usr/bin/g++','/usr/bin/gcc','/usr/bin/cmake'):
         if Path(compiler).exists(): raise SystemExit('runtime smoke container contains build tools')
+    subprocess.run(['ffprobe', '-version'], check=True, stdout=subprocess.DEVNULL, timeout=20)
     with tempfile.TemporaryDirectory() as directory:
         with tarfile.open(args.archive) as tar:
             manifest=json.load(tar.extractfile('manifest.json'))

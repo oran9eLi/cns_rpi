@@ -24,6 +24,10 @@
 
 服务器/Web 对接、真实 ARM64 CI 发布和实体 Pi/纯 5G 验收需分别记录；仓库代码与本地测试不代表它们已完成。
 
+## G2 视频实验
+
+`v1.0.7` 增加摄像头检测、有限试采集、SRT 推流启停及状态查询，沿用同一 F407 身份和实验 MQTT 通道。`video` 默认关闭；启用前需在 Pi 上准备支持 libav/SRT 的 `rpicam-vid`，发布安装依赖中的 `ffmpeg` 提供 `ffprobe`。参数、操作及结果字段见 [G2 接口](docs/G2树莓派视频实验接口与本地验证.md)，升级变化及验收边界见 [v1.0.7 发布说明](docs/V1.0.7发布说明.md)。
+
 ## 源码开发部署
 
 目标为 Raspberry Pi 5、Raspberry Pi OS 64-bit（trixie / Debian 13）、用户 `dcdw`，仓库路径固定为 `/home/dcdw/cns_rpi`。用户须具备 sudo 权限；未配置免密 sudo 时，交互执行脚本会请求密码。

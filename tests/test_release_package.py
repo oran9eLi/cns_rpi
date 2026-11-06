@@ -40,6 +40,7 @@ class ReleasePackageTests(unittest.TestCase):
             manifest = json.load(tar.extractfile('manifest.json'))
             self.assertEqual(manifest['platform'], 'trixie-arm64')
             self.assertEqual(manifest['git_commit'], 'a' * 40)
+            self.assertIn('ffmpeg', manifest['runtime_dependencies'])
             self.assertEqual(set(tar.getnames()), set(manifest['files']) | {'manifest.json'})
             for name, digest in manifest['files'].items():
                 self.assertEqual(hashlib.sha256(tar.extractfile(name).read()).hexdigest(), digest)

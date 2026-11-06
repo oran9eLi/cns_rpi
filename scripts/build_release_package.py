@@ -25,7 +25,7 @@ SOURCE_FILES = {
     'systemd/release/cns-rpi-maintenance.timer': 'maintenance/systemd/cns-rpi-maintenance.timer',
     'scripts/bootstrap_pi.py': 'maintenance/bootstrap_pi.py',
 }
-RUNTIME_DEPENDENCIES = ['libc6', 'libstdc++6', 'libgcc-s1', 'libmosquitto1', 'python3', 'python3-serial', 'ca-certificates', 'iproute2', 'iputils-ping', 'procps', 'udev', 'network-manager']
+RUNTIME_DEPENDENCIES = ['libc6', 'libstdc++6', 'libgcc-s1', 'libmosquitto1', 'python3', 'python3-serial', 'ca-certificates', 'iproute2', 'iputils-ping', 'procps', 'udev', 'network-manager', 'ffmpeg']
 
 def validate_elf(path):
     header = path.read_bytes()[:64]

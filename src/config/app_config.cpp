@@ -68,6 +68,20 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
   AppConfig cfg;
   std::size_t max_file_size_kb = 0;
   try {
+    if (root.contains("video")) {
+      const auto& video = root.at("video");
+      if (!video.is_object()) return std::unexpected(ConfigError::kInvalidValue);
+      if (video.contains("enabled")) cfg.video.enabled = video.at("enabled").get<bool>();
+      if (video.contains("executable")) {
+        cfg.video.executable = video.at("executable").get<std::string>();
+      }
+      if (video.contains("ffprobe")) {
+        cfg.video.ffprobe = video.at("ffprobe").get<std::string>();
+      }
+      if (video.contains("work_directory")) {
+        cfg.video.work_directory = video.at("work_directory").get<std::string>();
+      }
+    }
     const auto& serial = root.at("serial");
     cfg.serial.device = serial.at("device").get<std::string>();
     cfg.serial.baud = serial.at("baud").get<int>();
@@ -230,6 +244,13 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
       topics.config_ack.qos != 2 || !IsValidTopicPath(topics.control_set.suffix) ||
       !IsValidTopicPath(topics.control_ack.suffix) || topics.control_set.qos != 2 ||
       topics.control_ack.qos != 2) {
+    return std::unexpected(ConfigError::kInvalidValue);
+  }
+
+  if (cfg.video.executable.empty() ||
+      !std::filesystem::path(cfg.video.executable).is_absolute() ||
+      cfg.video.ffprobe.empty() || !std::filesystem::path(cfg.video.ffprobe).is_absolute() ||
+      cfg.video.work_directory.empty() || !cfg.video.work_directory.is_absolute()) {
     return std::unexpected(ConfigError::kInvalidValue);
   }
 

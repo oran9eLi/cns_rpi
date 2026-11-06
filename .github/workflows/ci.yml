@@ -19,7 +19,7 @@ jobs:
             -v "$PWD:/work" -w /work debian:trixie bash -c '
             set -euo pipefail
             apt-get update
-            apt-get install -y --no-install-recommends build-essential cmake ninja-build pkg-config libmosquitto-dev nlohmann-json3-dev doctest-dev mosquitto python3 python3-serial ca-certificates git
+            apt-get install -y --no-install-recommends build-essential cmake ninja-build pkg-config libmosquitto-dev nlohmann-json3-dev doctest-dev mosquitto python3 python3-serial ca-certificates git ffmpeg
             groupadd --gid "$BUILD_GID" cnsci
             useradd --uid "$BUILD_UID" --gid "$BUILD_GID" \
               --create-home --shell /bin/bash cnsci

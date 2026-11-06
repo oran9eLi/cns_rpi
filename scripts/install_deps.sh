@@ -104,7 +104,7 @@ step 2 "安装构建依赖：build-essential cmake git（先 apt update 刷新�
 sudo apt update
 sudo apt install -y build-essential cmake git pkg-config libmosquitto-dev \
   nlohmann-json3-dev doctest-dev python3 python3-serial iproute2 iputils-ping \
-  util-linux udev sudo
+  util-linux udev sudo ffmpeg
 
 step 3 "配置 git 全局镜像重写（原因：RPi 直连 GitHub 网络不通/不稳定）"
 git config --global url."https://ghfast.top/https://github.com/".insteadOf "https://github.com/"

@@ -1,4 +1,10 @@
 {
+  "video": {
+    "enabled": false,
+    "executable": "/usr/bin/rpicam-vid",
+    "ffprobe": "/usr/bin/ffprobe",
+    "work_directory": "/tmp/cns-rpi-video"
+  },
   "serial": {
     "device": "auto",
     "baud": 115200
