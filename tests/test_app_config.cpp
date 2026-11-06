@@ -64,6 +64,34 @@ std::string ValidConfigWithSerialDevice(const std::string& device) {
 
 }  // namespace
 
+TEST_CASE("视频配置在入口拒绝错误类型与相对工具路径") {
+  for (const auto& video : {
+           R"({"enabled":"yes"})", R"({"executable":"rpicam-vid"})",
+           R"({"ffprobe":"ffprobe"})", R"({"work_directory":"relative"})",
+           R"("not-an-object")"}) {
+    const auto content = ReplaceOnce(ValidConfig(), "\"serial\":",
+        "\"video\":" + std::string(video) + ",\"serial\":");
+    const auto result = config::LoadAppConfig(WriteTempConfig(content));
+    CHECK_FALSE(result.has_value());
+    if (!result) CHECK(result.error() == config::ConfigError::kInvalidValue);
+  }
+}
+
+TEST_CASE("旧配置不启用视频且显式视频工具配置会保留") {
+  const auto old = config::LoadAppConfig(WriteTempConfig(ValidConfig()));
+  REQUIRE(old);
+  CHECK_FALSE(old->video.enabled);
+  CHECK(old->video.executable == "/usr/bin/rpicam-vid");
+  const auto content = ReplaceOnce(ValidConfig(), "\"serial\":",
+      R"("video":{"enabled":true,"executable":"/opt/rpicam-vid","ffprobe":"/opt/ffprobe","work_directory":"/run/cns-rpi/video"},"serial":)");
+  const auto enabled = config::LoadAppConfig(WriteTempConfig(content));
+  REQUIRE(enabled);
+  CHECK(enabled->video.enabled);
+  CHECK(enabled->video.executable == "/opt/rpicam-vid");
+  CHECK(enabled->video.ffprobe == "/opt/ffprobe");
+  CHECK(enabled->video.work_directory == "/run/cns-rpi/video");
+}
+
 TEST_CASE("auto是合法串口配置值") {
   auto result = config::LoadAppConfig(
       WriteTempConfig(ValidConfigWithSerialDevice("auto")));

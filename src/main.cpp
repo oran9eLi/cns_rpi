@@ -43,6 +43,8 @@
 #include "control_command/control_transaction.hpp"
 #include "device/device_binding_store.hpp"
 #include "experiment/pi_link_inspection.hpp"
+#include "experiment/video_experiment.hpp"
+#include "experiment/video_request.hpp"
 #include "experiment/link_lab.hpp"
 #include "experiment/deferred_serial_request.hpp"
 #include "experiment/m1_request.hpp"
@@ -242,6 +244,10 @@ int main(int argc, char** argv) {
   runtime_status::PublicationState runtime_publication_state;
   experiment::PiLinkInspector pi_link_inspector(
       app_config->mqtt.topics.topic_namespace);
+  video::Manager video_manager({app_config->video.executable, app_config->video.ffprobe,
+                                app_config->video.work_directory});
+  experiment::VideoExperiment video_experiment(
+      app_config->mqtt.topics.topic_namespace, app_config->video.enabled, video_manager);
   std::optional<experiment::LinkLabController> link_lab;
   std::optional<std::uint64_t> link_lab_connection_generation;
   if (persisted_binding && persisted_binding->device_type == device::Type::kCnsBox) {
@@ -1786,6 +1792,26 @@ int main(int argc, char** argv) {
                 }
               }
             }
+          } else if (experiment::IsVideoOperation(message->payload)) {
+            if (experiment_ack_outbox.Size() >= experiment::AckOutbox::kCapacity) {
+              (*logger)->Warn("实验ACK队列已满，视频动作未执行，等待平台重投");
+            } else {
+              const auto* current_binding = device_session.ActiveBinding();
+              const std::optional<device::Binding> bound_identity =
+                  device_session.HasPersistedBinding() && current_binding
+                      ? std::optional<device::Binding>{*current_binding} : std::nullopt;
+              const auto outcome = video_experiment.Handle(
+                  message->topic, message->payload, bound_identity,
+                  [&]() -> std::optional<experiment::Observation> {
+                    const auto status = device_session.CurrentOnlineStatus();
+                    if (!status) return std::nullopt;
+                    return experiment::Observation{.runtime = *status,
+                        .serial_port_open = std::nullopt,
+                        .mqtt_connected = mqtt_client->IsConnected()};
+                  }, std::chrono::system_clock::now(), now);
+              if (!outcome.diagnostic.empty()) (*logger)->Warn("视频动作未执行: " + outcome.diagnostic);
+              if (outcome.publication) (void)experiment_ack_outbox.Enqueue(*outcome.publication);
+            }
           } else {
             const auto* current_binding = device_session.ActiveBinding();
             const std::optional<device::Binding> bound_identity =
@@ -1830,11 +1856,12 @@ int main(int argc, char** argv) {
                 });
           } else if (control_transaction.HasPending() ||
                      uart_echo_transaction.HasPending() ||
-                     m1_transaction.HasPending()) {
+                     m1_transaction.HasPending() || video_experiment.Busy() ||
+                     experiment_ack_outbox.Size() != 0) {
             result.ack = config_command::BuildRejectedAck(
                 parsed->command_id,
                 {.code = "control_command_busy",
-                 .message = "存在未结束的飞控命令，暂不修改运行参数"});
+                 .message = "存在进行中的设备动作或未交付实验结果，暂不修改运行参数"});
           } else {
             auto current = config_command::LoadConfigJson(config_path);
             if (!current) {
@@ -1972,6 +1999,11 @@ int main(int argc, char** argv) {
     enqueue_m1_result(m1_tick.publication);
     if (m1_tick.outbound) send_m1_frame(*m1_tick.outbound);
     if (!m1_transaction.HasPending()) m1_held_for_identity = false;
+    if (auto result = video_experiment.Tick(
+            std::chrono::system_clock::now(), std::chrono::steady_clock::now(),
+            experiment_ack_outbox.Size() < experiment::AckOutbox::kCapacity)) {
+      (void)experiment_ack_outbox.Enqueue(std::move(*result));
+    }
     (void)experiment::FeedRecoveredAckWhenIdle(
         experiment_ack_outbox, recovered_echo_publications);
 
