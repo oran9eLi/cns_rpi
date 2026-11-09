@@ -7,7 +7,7 @@
  * @details
  * MQTT 配置按 connection/auth/topics 分组，配置加载阶段完成类型、范围和
  * topic 单段合法性校验，运行循环只消费已经验证的值。
- * 依赖边界：只依赖 nlohmann/json，不包含 uart/、mqtt/ 等其他模块头文件。
+ * 依赖边界：只使用配置与资料值类型，不包含 uart/、mqtt/ 等运行模块头文件。
  */
 
 #include <expected>
@@ -17,6 +17,8 @@
 #include <string>
 #include <string_view>
 #include <vector>
+
+#include "device_status/metadata.hpp"
 
 namespace config {
 
@@ -123,6 +125,7 @@ struct AppConfig {
   MqttConfig mqtt;
   LoggingConfig logging;
   IdentityConfig identity;
+  device_status::Metadata device_status;
   RuntimeConfig runtime;
   CellularConfig cellular;
   VideoConfig video;

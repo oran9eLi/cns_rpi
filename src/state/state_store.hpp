@@ -172,7 +172,7 @@ struct TelemetryState {
   /// 从 MAVLink 帧头 sysid 格式化的 DCDW-XXX 角色号，帧头字段，不是 payload 字段。
   std::optional<std::string> dcdw_label;
 
-  /// 产品元数据从主控箱编号前缀提取，只随注册上报。
+  /// 产品元数据从主控箱编号前缀提取，供注册和常规状态上报使用。
   std::optional<device::ProductInfo> product;
 };
 

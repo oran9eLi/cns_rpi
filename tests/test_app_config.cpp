@@ -64,6 +64,66 @@ std::string ValidConfigWithSerialDevice(const std::string& device) {
 
 }  // namespace
 
+TEST_CASE("常规资料缺省沿用已确定名称类型与能力列表") {
+  const auto result = config::LoadAppConfig(WriteTempConfig(ValidConfig()));
+  REQUIRE(result);
+  CHECK(result->device_status.device_name == "CNS 一代实训平台");
+  CHECK(result->device_status.device_type == "xn_box");
+  CHECK(result->device_status.capabilities == std::vector<std::string>{
+      "telemetry", "remote_id", "runtime_config", "box_private_control"});
+  CHECK_FALSE(result->device_status.dcdw_label.has_value());
+  CHECK_FALSE(result->device_status.product.has_value());
+}
+
+TEST_CASE("本地常规资料覆盖值和中文学校名称从真实配置加载") {
+  auto content = ReplaceOnce(ValidConfig(), "\"serial\":",
+      R"("device_status":{"device_name":"教学平台甲","device_type":"custom_box","dcdw_label":"实验箱甲","capabilities":["telemetry","lab"],"product":{"manufacturer_code":"TEST","model_code":"CNS2"}},"serial":)");
+  content = ReplaceOnce(content, "NNUTC", "示例职业技术学院");
+  const auto result = config::LoadAppConfig(WriteTempConfig(content));
+  REQUIRE(result);
+  CHECK(result->identity.school_name == "示例职业技术学院");
+  CHECK(result->device_status.device_name == "教学平台甲");
+  CHECK(result->device_status.device_type == "custom_box");
+  REQUIRE(result->device_status.dcdw_label);
+  CHECK(*result->device_status.dcdw_label == "实验箱甲");
+  CHECK(result->device_status.capabilities == std::vector<std::string>{"telemetry", "lab"});
+  REQUIRE(result->device_status.product);
+  CHECK(result->device_status.product->manufacturer_code == "TEST");
+  CHECK(result->device_status.product->model_code == "CNS2");
+}
+
+TEST_CASE("显式空能力列表保留为空而不回填默认值") {
+  const auto content = ReplaceOnce(ValidConfig(), "\"serial\":",
+      R"("device_status":{"capabilities":[]},"serial":)");
+  const auto result = config::LoadAppConfig(WriteTempConfig(content));
+  REQUIRE(result);
+  CHECK(result->device_status.capabilities.empty());
+  CHECK(result->device_status.device_name == "CNS 一代实训平台");
+}
+
+TEST_CASE("常规资料入口拒绝非法形状空字符串与只读字段") {
+  for (const auto& metadata : {
+           R"(null)", R"([])", R"("metadata")",
+           R"({"device_name":""})", R"({"device_name":1})",
+           R"({"device_type":""})", R"({"dcdw_label":null})",
+           R"({"dcdw_label":""})", R"({"capabilities":"telemetry"})",
+           R"({"capabilities":[1]})", R"({"capabilities":[""]})",
+           R"({"product":null})", R"({"product":{}})",
+           R"({"product":{"manufacturer_code":"DCDW"}})",
+           R"({"product":{"manufacturer_code":"","model_code":"CNS1"}})",
+           R"({"product":{"manufacturer_code":"DCDW","model_code":2}})",
+           R"({"device_id":"other"})", R"({"model_version":"9.9.9"})",
+           R"({"online":"1"})", R"({"school_id":"另一学校"})",
+           R"({"device_status":"1"})", R"({"unknown":"value"})"}) {
+    CAPTURE(metadata);
+    const auto content = ReplaceOnce(ValidConfig(), "\"serial\":",
+        "\"device_status\":" + std::string(metadata) + ",\"serial\":");
+    const auto result = config::LoadAppConfig(WriteTempConfig(content));
+    CHECK_FALSE(result.has_value());
+    if (!result) CHECK(result.error() == config::ConfigError::kInvalidValue);
+  }
+}
+
 TEST_CASE("视频配置在入口拒绝错误类型与相对工具路径") {
   for (const auto& video : {
            R"({"enabled":"yes"})", R"({"executable":"rpicam-vid"})",

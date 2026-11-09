@@ -76,8 +76,13 @@
     "max_file_size_kb": 1024
   },
   "identity": {
-    "school_name": "SEU",
+    "school_name": "示例职业技术学院",
     "binding_file": "/var/lib/cns-rpi/device_binding.json"
+  },
+  "device_status": {
+    "device_name": "CNS 一代实训平台",
+    "device_type": "xn_box",
+    "capabilities": ["telemetry", "remote_id", "runtime_config", "box_private_control"]
   },
   "runtime": {
     "heartbeat_interval_ms": 1000,

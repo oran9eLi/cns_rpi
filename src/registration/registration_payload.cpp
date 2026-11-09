@@ -10,6 +10,8 @@
 
 #include <nlohmann/json.hpp>
 
+#include "device/capabilities.hpp"
+
 namespace registration {
 
 namespace {
@@ -27,7 +29,7 @@ std::string BuildOnlinePayload(const OnlineRegistration& input) {
       {"status", "online"},
   };
 
-  payload["capabilities"] = {"telemetry", "remote_id", "runtime_config", "box_private_control"};
+  payload["capabilities"] = device::kCnsBoxCapabilities;
 
   if (input.school_name && !input.school_name->empty()) {
     payload["school_name"] = *input.school_name;
