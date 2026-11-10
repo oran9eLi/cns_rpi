@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(cns_rpi VERSION 1.0.7 LANGUAGES CXX)
+project(cns_rpi VERSION 1.0.8 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -29,6 +29,8 @@ add_library(cns_rpi_core
     src/protocol/extension_decoder.cpp
     src/protocol/identity.cpp
     src/device/device_binding_store.cpp
+    src/device_status/device_status.cpp
+    src/device_status/health_tracker.cpp
     src/payload/json_serializer.cpp
     src/telemetry/publisher.cpp
     src/mqtt/topic.cpp
@@ -192,6 +194,22 @@ add_test(NAME registration_payload COMMAND test_registration_payload)
 add_executable(test_registration_state tests/test_registration_state.cpp)
 target_link_libraries(test_registration_state PRIVATE cns_rpi_core)
 add_test(NAME registration_state COMMAND test_registration_state)
+
+add_executable(test_device_status tests/test_device_status.cpp)
+target_link_libraries(test_device_status PRIVATE cns_rpi_core)
+add_test(NAME device_status COMMAND test_device_status)
+
+add_executable(test_device_health tests/test_device_health.cpp)
+target_link_libraries(test_device_health PRIVATE cns_rpi_core)
+add_test(NAME device_health COMMAND test_device_health)
+
+add_executable(test_device_status_process tests/test_device_status_process.cpp)
+target_link_libraries(test_device_status_process PRIVATE cns_rpi_mqtt)
+target_compile_definitions(test_device_status_process PRIVATE
+    SOURCE_DIR="${CMAKE_SOURCE_DIR}" CNS_RPI_EXECUTABLE="$<TARGET_FILE:cns_rpi>"
+    EXPECTED_RPI_VERSION="${PROJECT_VERSION}")
+add_dependencies(test_device_status_process cns_rpi)
+add_test(NAME device_status_process COMMAND test_device_status_process)
 
 add_executable(test_runtime_status tests/test_runtime_status.cpp)
 target_link_libraries(test_runtime_status PRIVATE cns_rpi_core)

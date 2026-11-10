@@ -9,6 +9,7 @@
 #include <fstream>
 #include <optional>
 #include <unordered_set>
+#include <utility>
 
 #include <nlohmann/json.hpp>
 
@@ -36,6 +37,43 @@ bool IsValidCommandId(const std::string& command_id) {
 
 bool IsValidLogLevel(const std::string& level) {
   return level == "debug" || level == "info" || level == "warn" || level == "error";
+}
+
+bool ParseDeviceStatusMetadata(const nlohmann::json& input,
+                               device_status::Metadata& metadata) {
+  if (!input.is_object()) return false;
+  for (const auto& [key, value] : input.items()) {
+    if (key == "device_name") {
+      metadata.device_name = value.get<std::string>();
+      if (metadata.device_name.empty()) return false;
+    } else if (key == "device_type") {
+      metadata.device_type = value.get<std::string>();
+      if (metadata.device_type.empty()) return false;
+    } else if (key == "dcdw_label") {
+      metadata.dcdw_label = value.get<std::string>();
+      if (metadata.dcdw_label->empty()) return false;
+    } else if (key == "capabilities") {
+      metadata.capabilities = value.get<std::vector<std::string>>();
+      for (const auto& capability : metadata.capabilities) {
+        if (capability.empty()) return false;
+      }
+    } else if (key == "product") {
+      if (!value.is_object() || !value.contains("manufacturer_code") ||
+          !value.contains("model_code")) {
+        return false;
+      }
+      device::ProductInfo product{
+          .manufacturer_code = value.at("manufacturer_code").get<std::string>(),
+          .model_code = value.at("model_code").get<std::string>()};
+      if (product.manufacturer_code.empty() || product.model_code.empty()) {
+        return false;
+      }
+      metadata.product = std::move(product);
+    } else {
+      return false;
+    }
+  }
+  return true;
 }
 
 bool IsValidBaud(int baud) {
@@ -142,6 +180,10 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
   std::size_t max_file_size_kb = 0;
   try {
     if (root.contains("gnss") && !ReadGnssConfig(root.at("gnss"), cfg.gnss)) {
+      return std::unexpected(ConfigError::kInvalidValue);
+    }
+    if (root.contains("device_status") &&
+        !ParseDeviceStatusMetadata(root.at("device_status"), cfg.device_status)) {
       return std::unexpected(ConfigError::kInvalidValue);
     }
     if (root.contains("rtk_base") && !ReadRtkBaseConfig(root.at("rtk_base"), cfg.rtk_base)) {

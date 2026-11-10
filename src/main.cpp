@@ -68,6 +68,8 @@
 #include "registration/registration_payload.hpp"
 #include "registration/registration_state.hpp"
 #include "runtime_status/device_session.hpp"
+#include "device_status/device_status.hpp"
+#include "device_status/health_tracker.hpp"
 #include "rtk/experiment_service.hpp"
 #include "state/state_store.hpp"
 #include "telemetry/publisher.hpp"
@@ -112,35 +114,6 @@ registration::OnlineRegistration MakeOnlineRegistration(
       .dcdw_label = metadata_matches ? snapshot.dcdw_label : std::nullopt,
       .product = metadata_matches ? snapshot.product : std::nullopt,
   };
-}
-
-std::string RuntimeStatusSummary(const runtime_status::Snapshot& snapshot) {
-  const auto business = [&] {
-    switch (snapshot.business_status) {
-      case runtime_status::BusinessStatus::kOnline:
-        return "在线";
-      case runtime_status::BusinessStatus::kOffline:
-        return "离线";
-      case runtime_status::BusinessStatus::kUnknown:
-        return "未知";
-    }
-    return "未知";
-  }();
-  const auto identity = [&] {
-    switch (snapshot.identity_status) {
-      case runtime_status::IdentityStatus::kVerified:
-        return "已核验";
-      case runtime_status::IdentityStatus::kCached:
-        return "已缓存";
-      case runtime_status::IdentityStatus::kConflict:
-        return "冲突";
-      case runtime_status::IdentityStatus::kUnbound:
-        return "未绑定";
-    }
-    return "未绑定";
-  }();
-  return "控制链=在线，业务=" + std::string(business) +
-         "，身份=" + identity;
 }
 
 bool WriteRtkStatus(const std::filesystem::path& target,
@@ -250,6 +223,16 @@ int main(int argc, char** argv) {
   state::StateStore state_store;
   const auto started_at = std::chrono::steady_clock::now();
   runtime_status::DeviceSession device_session(persisted_binding, started_at);
+  device_status::HealthTracker device_health(
+      app_config->identity.binding_file.string() + ".health.json");
+  std::string health_device_id;
+  auto last_health_save = started_at;
+  auto save_device_health = [&] {
+    std::string error;
+    if (!device_health.Save(&error)) {
+      (*logger)->Warn("保存设备健康进度失败: " + error);
+    }
+  };
   std::optional<rtk::ExperimentService> rtk_service;
   std::vector<std::string> rtk_serial_devices;
   if (app_config->rtk_base.enabled) {
@@ -276,7 +259,7 @@ int main(int argc, char** argv) {
   auto last_cellular_heartbeat = started_at;
   std::optional<mqtt::MqttClient> mqtt_client;
   registration::RegistrationState registration_state;
-  runtime_status::PublicationState runtime_publication_state;
+  device_status::PublicationState runtime_publication_state;
   experiment::PiLinkInspector pi_link_inspector(
       app_config->mqtt.topics.topic_namespace);
   video::Manager video_manager({app_config->video.executable, app_config->video.ffprobe,
@@ -396,12 +379,12 @@ int main(int argc, char** argv) {
   std::optional<PendingExperimentAck> pending_gnss_batch;
   auto next_gnss_attempt = started_at;
   bool runtime_publish_failure_logged = false;
-  std::optional<bool> mqtt_will_has_persisted_binding;
   std::optional<device::Binding> active_mqtt_binding;
   std::string registration_topic;
   std::string offline_payload;
   std::string runtime_status_topic;
   std::string runtime_offline_payload;
+  std::string runtime_will_health_status;
   std::string telemetry_snapshot_topic;
   std::string telemetry_realtime_topic;
   std::optional<telemetry::Publisher> telemetry_publisher;
@@ -492,13 +475,13 @@ int main(int argc, char** argv) {
     }
     mqtt_client.reset();
     registration_state = registration::RegistrationState{};
-    runtime_publication_state = runtime_status::PublicationState{};
+    runtime_publication_state = device_status::PublicationState{};
     runtime_publish_failure_logged = false;
-    mqtt_will_has_persisted_binding.reset();
     active_mqtt_binding.reset();
     registration_topic.clear();
     runtime_status_topic.clear();
     runtime_offline_payload.clear();
+    runtime_will_health_status.clear();
     telemetry_snapshot_topic.clear();
     telemetry_realtime_topic.clear();
     telemetry_publisher.reset();
@@ -1124,25 +1107,40 @@ int main(int argc, char** argv) {
     }
     auto mqtt_snapshot = state_store.Snapshot();
 
-    if (mqtt_client && active_mqtt_binding &&
-        runtime_status::LastWillNeedsRefresh(
-            mqtt_will_has_persisted_binding,
-            device_session.HasPersistedBinding())) {
-      const auto refreshed_will = runtime_status::BuildLastWillPublication(
-          app_config->mqtt.topics.topic_namespace,
-          app_config->mqtt.topics.runtime_status.suffix,
-          active_mqtt_binding->device_id,
-          device_session.HasPersistedBinding());
-      if (refreshed_will) {
-        runtime_status_topic = refreshed_will->topic;
-        runtime_offline_payload = refreshed_will->payload;
-        (*logger)->Info(
-            "设备绑定持久化状态已变化，重建MQTT连接以更新运行三态遗嘱");
-        close_mqtt_session(/*publish_offline=*/true);
-      } else {
-        (*logger)->Warn("更新MQTT运行三态遗嘱失败: " +
-                        refreshed_will.error());
+    if (const auto* binding = device_session.ActiveBinding()) {
+      if (health_device_id != binding->device_id) {
+        if (!health_device_id.empty()) save_device_health();
+        std::string error;
+        if (!device_health.Load(binding->device_id, &error)) {
+          (*logger)->Warn("恢复设备健康进度失败: " + error);
+        }
+        health_device_id = binding->device_id;
+        last_health_save = now;
       }
+      const auto previous_health = device_health.Status();
+      const bool live_identity_matches =
+          device_session.CurrentLinkIdentityVerified() &&
+          mqtt_snapshot.device_id == health_device_id;
+      device_health.Update(live_identity_matches ? mqtt_snapshot.module_status
+                                                : std::nullopt,
+                           now);
+      if (device_session.HasPersistedBinding() &&
+          (device_health.Status() != previous_health ||
+           now - last_health_save >= std::chrono::seconds(60))) {
+        save_device_health();
+        last_health_save = now;
+      }
+      // Broker 的遗嘱只能在 CONNECT 时设置，健康等级变化后需重建会话。
+      if (mqtt_client && runtime_will_health_status != device_health.Status()) {
+        (*logger)->Info("设备健康状态变化，刷新MQTT断线遗嘱");
+        close_mqtt_session(/*publish_offline=*/false);
+      }
+    }
+
+    if (mqtt_client && active_mqtt_binding &&
+        device_session.HasPersistedBinding() && experiment_set_topic.empty()) {
+      (*logger)->Info("设备身份绑定已持久化，重建MQTT连接以启用实验订阅");
+      close_mqtt_session(/*publish_offline=*/true);
     }
 
     if (!mqtt_client) {
@@ -1198,48 +1196,45 @@ int main(int argc, char** argv) {
           }
           offline_payload = registration::BuildOfflinePayload(
               candidate_binding->device_id, candidate_binding->device_type);
-          const auto runtime_will = runtime_status::BuildLastWillPublication(
-              topics.topic_namespace, topics.runtime_status.suffix,
-              candidate_binding->device_id, device_session.HasPersistedBinding());
-          if (!runtime_will) {
-            (*logger)->Warn("生成MQTT运行三态遗嘱失败: " + runtime_will.error());
-          }
-          if (runtime_will) {
-            runtime_status_topic = runtime_will->topic;
-            runtime_offline_payload = runtime_will->payload;
-            mqtt::WillOptions mqtt_will{
-                .topic = runtime_will->topic,
-                .payload = runtime_will->payload,
-                .qos = runtime_will->qos,
-                .retain = runtime_will->retain};
-            mqtt_client = mqtt::MqttClient::Open({
-              .broker_host = app_config->mqtt.connection.host,
-              .broker_port = app_config->mqtt.connection.port,
-              .client_id = registration::BuildClientId(
-                  app_config->mqtt.connection.client_id_prefix,
-                  candidate_binding->device_id),
-              .username = app_config->mqtt.auth.username,
-              .password = app_config->mqtt.auth.password,
-              .keepalive_seconds = app_config->mqtt.connection.keepalive_seconds,
-              .reconnect_delay_seconds = app_config->mqtt.connection.reconnect.delay_seconds,
-              .reconnect_delay_max_seconds =
-                  app_config->mqtt.connection.reconnect.delay_max_seconds,
-              .will = std::move(mqtt_will),
-              .subscriptions = [&]() {
-                std::vector<std::pair<std::string, int>> subscriptions{
-                    {config_set_topic, topics.config_set.qos},
-                    {control_set_topic, topics.control_set.qos}};
-                if (experiment_subscription) {
-                  subscriptions.push_back(*experiment_subscription);
-                }
-                return subscriptions;
-              }(),
-            }, **logger);
-          }
+          runtime_status_topic = mqtt::BuildRuntimeStatusTopic(
+              topics.topic_namespace, candidate_binding->device_id,
+              topics.runtime_status.suffix);
+          runtime_offline_payload = device_status::BuildPayload(
+              MakeOnlineRegistration(*candidate_binding, snapshot,
+                                     app_config->identity.school_name),
+              CNS_RPI_VERSION, false, app_config->device_status,
+              device_health.Status());
+          runtime_will_health_status = device_health.Status();
+          mqtt::WillOptions mqtt_will{
+              .topic = runtime_status_topic,
+              .payload = runtime_offline_payload,
+              .qos = 1,
+              .retain = true};
+          mqtt_client = mqtt::MqttClient::Open({
+            .broker_host = app_config->mqtt.connection.host,
+            .broker_port = app_config->mqtt.connection.port,
+            .client_id = registration::BuildClientId(
+                app_config->mqtt.connection.client_id_prefix,
+                candidate_binding->device_id),
+            .username = app_config->mqtt.auth.username,
+            .password = app_config->mqtt.auth.password,
+            .keepalive_seconds = app_config->mqtt.connection.keepalive_seconds,
+            .reconnect_delay_seconds = app_config->mqtt.connection.reconnect.delay_seconds,
+            .reconnect_delay_max_seconds =
+                app_config->mqtt.connection.reconnect.delay_max_seconds,
+            .will = std::move(mqtt_will),
+            .subscriptions = [&]() {
+              std::vector<std::pair<std::string, int>> subscriptions{
+                  {config_set_topic, topics.config_set.qos},
+                  {control_set_topic, topics.control_set.qos}};
+              if (experiment_subscription) {
+                subscriptions.push_back(*experiment_subscription);
+              }
+              return subscriptions;
+            }(),
+          }, **logger);
           if (mqtt_client) {
             active_mqtt_binding = *candidate_binding;
-            mqtt_will_has_persisted_binding =
-                device_session.HasPersistedBinding();
             telemetry_publisher.emplace(
                 std::vector<telemetry::ChannelDefinition>{
                     {{"遥测快照通道", telemetry_snapshot_topic,
@@ -1304,9 +1299,9 @@ int main(int argc, char** argv) {
 
     if (mqtt_client && active_mqtt_binding) {
       auto snapshot = state_store.Snapshot();
-      auto online_payload = registration::BuildOnlinePayload(
-          MakeOnlineRegistration(*active_mqtt_binding, snapshot,
-                                 app_config->identity.school_name));
+      const auto metadata = MakeOnlineRegistration(
+          *active_mqtt_binding, snapshot, app_config->identity.school_name);
+      auto online_payload = registration::BuildOnlinePayload(metadata);
       if (rtk_service) {
         auto registration = nlohmann::json::parse(online_payload);
         registration["capabilities"].push_back("rtk_base");
@@ -1325,35 +1320,30 @@ int main(int argc, char** argv) {
           (*logger)->Warn("MQTT注册发布失败，下一轮重试");
         }
       }
-    }
-
-    // 运行三态发布开始：只在状态变化或连接上升沿发送，失败不改变其他业务流程。
-    if (mqtt_client && active_mqtt_binding) {
-      const auto runtime_snapshot = device_session.CurrentOnlineStatus();
-      if (runtime_snapshot && runtime_publication_state.ShouldPublish(
-                                  mqtt_client->IsConnected(),
-                                  mqtt_client->ConnectionGeneration(),
-                                  *runtime_snapshot)) {
-        const auto publication = runtime_status::BuildPublication(
-            app_config->mqtt.topics.topic_namespace,
-            app_config->mqtt.topics.runtime_status.suffix, *runtime_snapshot);
-        if (publication && mqtt_client->Publish(
-                               publication->topic, publication->payload,
-                               publication->qos, publication->retain)) {
-          runtime_publication_state.MarkPublished(*runtime_snapshot);
+      const auto status_payload = device_status::BuildPayload(
+          metadata, CNS_RPI_VERSION, true, app_config->device_status,
+          device_health.Status());
+      runtime_offline_payload = device_status::BuildPayload(
+          metadata, CNS_RPI_VERSION, false, app_config->device_status,
+          device_health.Status());
+      const auto connection_generation = mqtt_client->ConnectionGeneration();
+      if (runtime_publication_state.ShouldPublish(
+              mqtt_client->IsConnected(), connection_generation,
+              status_payload, now)) {
+        if (mqtt_client->Publish(runtime_status_topic, status_payload,
+                                 /*qos=*/1, /*retain=*/true)) {
+          runtime_publication_state.MarkPublished(
+              connection_generation, status_payload, now);
           if (runtime_publish_failure_logged) {
-            (*logger)->Info("MQTT运行三态发布已恢复");
+            (*logger)->Info("MQTT常规状态发布已恢复");
           }
           runtime_publish_failure_logged = false;
-          (*logger)->Info("运行三态已发布: " +
-                          RuntimeStatusSummary(*runtime_snapshot));
         } else if (!runtime_publish_failure_logged) {
-          (*logger)->Warn("MQTT运行三态发布失败，连接恢复后重试");
+          (*logger)->Warn("MQTT常规状态发布失败，下一轮重试");
           runtime_publish_failure_logged = true;
         }
       }
     }
-    // 运行三态发布结束。
 
     if (mqtt_client && active_mqtt_binding) {
       std::optional<mqtt::IncomingMessage> message;
@@ -2103,12 +2093,16 @@ int main(int argc, char** argv) {
   }
 
   gnss_experiment.TransportLost("process_stopping", std::chrono::system_clock::now());
+  if (!health_device_id.empty() && device_session.HasPersistedBinding()) {
+    device_health.Update(std::nullopt, std::chrono::steady_clock::now());
+    save_device_health();
+  }
   if (mqtt_client && mqtt_client->IsConnected()) {
     if (!runtime_status_topic.empty() && !runtime_offline_payload.empty() &&
         !mqtt_client->PublishAndWait(
             runtime_status_topic, runtime_offline_payload, /*qos=*/1,
             /*retain=*/true, std::chrono::seconds(2))) {
-      (*logger)->Warn("MQTT运行三态离线状态发布超时");
+      (*logger)->Warn("MQTT常规离线状态发布超时");
     }
     if (!registration_topic.empty() && !offline_payload.empty() &&
         !mqtt_client->PublishAndWait(

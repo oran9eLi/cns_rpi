@@ -322,8 +322,13 @@ class GatewayTest(unittest.TestCase):
                     p.get("status") == "online" and p.get("device_type") == "cns_box",
                     after=cached_begin), "已持久化箱子身份未能在F407缺席时注册", app, app_log)
                 self.wait(lambda: message(lambda t, p: t.endswith("/runtime/status/v1") and
-                    p.get("identity_status") == "cached", after=cached_begin),
-                    "F407缺席时没有保留cached运行身份", app, app_log)
+                    p.get("device_id") == BOX_ID and p.get("online") == "0",
+                    after=cached_begin), "F407缺席时没有继续发布常规在线状态", app, app_log)
+                cached_status = message(lambda t, p: t.endswith("/runtime/status/v1"),
+                                        after=cached_begin)[1]
+                self.assertEqual(set(cached_status), {"device_id", "school_id", "dcdw_label",
+                    "model_version", "device_name", "device_type", "capabilities", "product",
+                    "online", "device_status"})
                 cached_observation = lambda t, p: (
                     "/telemetry/" in t and
                     p.get("telemetry", {}).get("rtk", {}).get("box_identity_verified") is False and
@@ -474,9 +479,19 @@ class GatewayTest(unittest.TestCase):
                 other_box_thread.start()
                 streamers.append(other_box_thread)
                 conflict_begin = len(received)
-                self.wait(lambda: message(lambda t, p: t.endswith("/runtime/status/v1") and
-                    p.get("identity_status") == "conflict", after=conflict_begin),
-                    "不同F407身份出现后未报告conflict", app, app_log)
+                self.wait(lambda: "F407身份与持久化绑定冲突" in Path(app_log.name).read_text(),
+                    "不同F407身份出现后未检测到冲突", app, app_log)
+                request["command_id"] = "00000000-0000-4000-8000-000000000030"
+                request["request_id"] = request["action_id"] = "00000000-0000-4000-8000-000000000031"
+                request["operation"] = "inspect_pi_link"
+                request.pop("parameters", None)
+                send()
+                conflict_ack = lambda t, p: t.endswith("/experiment/ack") and p.get("command_id") == request["command_id"]
+                self.wait(lambda: message(conflict_ack, after=conflict_begin),
+                    "身份冲突后的自检未返回拒绝回执", app, app_log)
+                rejected = message(conflict_ack, after=conflict_begin)[1]
+                self.assertEqual(rejected["status"], "rejected")
+                self.assertEqual(rejected["error_code"], "identity_unavailable")
                 message(lambda t, p: False)
                 after_conflict = len(received)
                 first_sample = status()["base"]["survey_in"]["sample_sequence"]
