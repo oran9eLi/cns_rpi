@@ -1,0 +1,130 @@
+{
+  "observed_at": "2026-11-09T02:36:59.866384+00:00",
+  "service": {
+    "MainPID": "8480",
+    "NRestarts": "0",
+    "ActiveState": "active",
+    "SubState": "running",
+    "UnitFileState": "enabled"
+  },
+  "binary_sha256": "ca9abd849b4c3d012789c215199c598aa8b8ca5d9a9cdf96bbdd73847a22c24c",
+  "running_binary_matches": true,
+  "other_config_unchanged": true,
+  "binding_unit_helper_unchanged": true,
+  "cellular_service_unchanged": true,
+  "cellular_service": {
+    "MainPID": "690",
+    "NRestarts": "0",
+    "ActiveState": "active",
+    "SubState": "running",
+    "ActiveEnterTimestamp": "Sun 2026-11-08 13:10:16 CST"
+  },
+  "rtk_base_config": {
+    "enabled": true,
+    "device": "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com_u-blox_GNSS_receiver-if00",
+    "baud": 115200,
+    "px4_device": "/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0",
+    "px4_baud": 57600,
+    "survey_min_duration_s": 60,
+    "survey_accuracy_m": 2.0,
+    "stale_after_ms": 3000,
+    "status_file": "/run/cns-rpi/rtk-base-status.json"
+  },
+  "status": {
+    "base": {
+      "baud": 115200,
+      "configuration": {
+        "state": "idle",
+        "storage": "RAM",
+        "survey_accuracy_m": null,
+        "survey_min_duration_s": null,
+        "verified_age_ms": null
+      },
+      "connected": true,
+      "device": "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com_u-blox_GNSS_receiver-if00",
+      "last_error": null,
+      "last_rx_age_ms": 300,
+      "nmea": {
+        "checksum_errors": 0,
+        "valid_sentences": 42
+      },
+      "protocol": {
+        "checksum_errors": 0,
+        "firmware": "HPG 1.50",
+        "framing_errors": 0,
+        "hardware": "00190000",
+        "last_rx_age_ms": 1001,
+        "module": "ZED-F9P",
+        "name": "UBX",
+        "software": "EXT CORE 1.00 (f17067)",
+        "stale": false,
+        "valid_frames": 2,
+        "version": "27.50"
+      },
+      "receiver_verified": true,
+      "rtcm": {
+        "bytes": 0,
+        "crc_errors": 0,
+        "last_rx_age_ms": null,
+        "message_types": {},
+        "stale": true,
+        "valid_frames": 0
+      },
+      "rx_bytes": 1672,
+      "survey_in": {
+        "active": false,
+        "completed": false,
+        "duration_s": 0,
+        "ecef_m": null,
+        "i_tow_ms": 3346000,
+        "known": true,
+        "last_rx_age_ms": 300,
+        "last_sample_age_ms": 300,
+        "mean_accuracy_m": 94868.3264,
+        "observations": 0,
+        "sample_sequence": 1,
+        "stale": false,
+        "valid": false
+      }
+    },
+    "box": {
+      "device_id": "DCDWCNS1GHC0G6LF8MY6",
+      "identity_verified": false
+    },
+    "box_identity_verified": false,
+    "px4": {
+      "baud": 57600,
+      "component_id": 1,
+      "device": "/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0",
+      "device_id": "393233510c004b0031",
+      "frame_age_ms": 0,
+      "identity_verified": true,
+      "serial_connected": true,
+      "system_id": 1,
+      "telemetry": {
+        "attitude": {
+          "pitch": -0.3116038754261334,
+          "pitchspeed": 0.03575788125444148,
+          "roll": 0.7722152645069708,
+          "rollspeed": -0.050268378022295564,
+          "time_boot_ms": 6267284,
+          "yaw": 177.0759054026255,
+          "yawspeed": 0.01490012437544893
+        },
+        "heartbeat": {
+          "autopilot": 12,
+          "base_mode": 29,
+          "custom_mode": 50593792,
+          "mavlink_version": 3,
+          "system_status": 0,
+          "type": 13
+        }
+      }
+    },
+    "schema_version": 1,
+    "source": "live"
+  },
+  "source_manifest_files": 471,
+  "source_directory": "/home/dcdw/cns-rpi-rtk-deploy-20261109T104000/source",
+  "backup_directory": "/home/dcdw/cns-rpi-rtk-deploy-20261109T104000/backup"
+}

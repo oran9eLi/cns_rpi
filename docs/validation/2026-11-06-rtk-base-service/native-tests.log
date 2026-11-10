@@ -1,0 +1,22 @@
+Internal ctest changing into directory: /home/dcdw/cns_rpi/build
+Test project /home/dcdw/cns_rpi/build
+    Start  4: rtk_base_station
+1/8 Test  #4: rtk_base_station .................   Passed    0.01 sec
+    Start  5: rtk_px4_session
+2/8 Test  #5: rtk_px4_session ..................   Passed    0.00 sec
+    Start  6: rtk_base_request
+3/8 Test  #6: rtk_base_request .................   Passed    0.00 sec
+    Start  7: rtk_base_experiment
+4/8 Test  #7: rtk_base_experiment ..............   Passed    0.00 sec
+    Start  8: rtk_experiment_service
+5/8 Test  #8: rtk_experiment_service ...........   Passed    0.00 sec
+    Start 11: mavlink_port_discovery
+6/8 Test #11: mavlink_port_discovery ...........   Passed    0.98 sec
+    Start 12: app_config
+7/8 Test #12: app_config .......................   Passed    0.01 sec
+    Start 23: registration_payload
+8/8 Test #23: registration_payload .............   Passed    0.00 sec
+
+100% tests passed, 0 tests failed out of 8
+
+Total Test time (real) =   1.01 sec

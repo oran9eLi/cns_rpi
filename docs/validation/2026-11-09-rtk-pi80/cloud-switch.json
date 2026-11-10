@@ -1,0 +1,9 @@
+{
+  "observed_at": "2026-11-09T02:50:48.609196+00:00",
+  "host": "112.124.52.232",
+  "port": 1883,
+  "only_mqtt_host_changed": true,
+  "binding_unchanged": true,
+  "cellular_service_unchanged": true,
+  "cloud_query_completed": true
+}

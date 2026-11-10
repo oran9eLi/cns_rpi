@@ -1,0 +1,142 @@
+Internal ctest changing into directory: /tmp/cns-rtk-build
+Test project /tmp/cns-rtk-build
+      Start  9: rtk_base_gateway
+      Start 64: maintenance_client_python
+      Start 62: maintenance_install_python
+      Start  3: release_deploy
+ 1/68 Test  #3: release_deploy ...................   Passed    7.09 sec
+      Start 35: m1_transaction
+ 2/68 Test #62: maintenance_install_python .......   Passed    7.76 sec
+      Start 40: uart_echo_transaction
+ 3/68 Test #64: maintenance_client_python ........   Passed    8.60 sec
+      Start 28: video_manager
+ 4/68 Test #28: video_manager ....................   Passed    4.69 sec
+      Start 58: migrate_telemetry_config
+ 5/68 Test #58: migrate_telemetry_config .........   Passed    2.60 sec
+      Start 68: factory_image_python
+ 6/68 Test #35: m1_transaction ...................   Passed    9.95 sec
+      Start 11: mavlink_port_discovery
+ 7/68 Test #68: factory_image_python .............   Passed    1.81 sec
+      Start 59: migrate_deployed_config
+ 8/68 Test #40: uart_echo_transaction ............   Passed   10.15 sec
+      Start 14: logger
+ 9/68 Test #11: mavlink_port_discovery ...........   Passed    1.00 sec
+      Start 61: cellular_dialup_python
+10/68 Test #14: logger ...........................   Passed    0.40 sec
+      Start 57: apply_config_helper
+11/68 Test #61: cellular_dialup_python ...........   Passed    0.46 sec
+      Start 63: bootstrap_pi_python
+12/68 Test #57: apply_config_helper ..............   Passed    0.28 sec
+      Start 67: device_access_python
+13/68 Test #59: migrate_deployed_config ..........   Passed    0.98 sec
+      Start 29: video_experiment
+14/68 Test #63: bootstrap_pi_python ..............   Passed    0.22 sec
+      Start  2: release_cli
+15/68 Test #67: device_access_python .............   Passed    0.28 sec
+      Start  8: rtk_experiment_service
+16/68 Test  #8: rtk_experiment_service ...........   Passed    0.03 sec
+      Start 66: ci_driver_python
+17/68 Test #29: video_experiment .................   Passed    0.26 sec
+      Start 52: config_store
+18/68 Test  #2: release_cli ......................   Passed    0.20 sec
+      Start 36: serial_affinity
+19/68 Test #36: serial_affinity ..................   Passed    0.15 sec
+      Start 65: release_package_python
+20/68 Test #52: config_store .....................   Passed    0.23 sec
+      Start 60: cellular_link_python
+21/68 Test #66: ci_driver_python .................   Passed    0.27 sec
+      Start 55: cns_rpi_service
+22/68 Test #55: cns_rpi_service ..................   Passed    0.03 sec
+      Start 10: mavlink_link
+23/68 Test #65: release_package_python ...........   Passed    0.18 sec
+      Start  4: rtk_base_station
+24/68 Test #10: mavlink_link .....................   Passed    0.11 sec
+      Start 56: main_logging_contract
+25/68 Test #60: cellular_link_python .............   Passed    0.40 sec
+      Start 12: app_config
+26/68 Test  #4: rtk_base_station .................   Passed    0.31 sec
+      Start 30: link_lab
+27/68 Test #12: app_config .......................   Passed    0.03 sec
+      Start 37: pi_baud_change
+28/68 Test #30: link_lab .........................   Passed    0.03 sec
+      Start 26: pi_link_inspection
+29/68 Test #56: main_logging_contract ............   Passed    0.30 sec
+      Start  1: mqtt_client
+30/68 Test #37: pi_baud_change ...................   Passed    0.05 sec
+      Start 19: device_binding_store
+31/68 Test  #1: mqtt_client ......................   Passed    0.03 sec
+      Start 27: video_request
+32/68 Test #19: device_binding_store .............   Passed    0.01 sec
+      Start 49: cellular_snapshot
+33/68 Test #27: video_request ....................   Passed    0.01 sec
+      Start  6: rtk_base_request
+34/68 Test #26: pi_link_inspection ...............   Passed    0.05 sec
+      Start  7: rtk_base_experiment
+35/68 Test #49: cellular_snapshot ................   Passed    0.01 sec
+      Start 32: m1_request
+36/68 Test  #7: rtk_base_experiment ..............   Passed    0.01 sec
+      Start 54: config_request
+37/68 Test  #6: rtk_base_request .................   Passed    0.02 sec
+      Start 20: json_serializer
+38/68 Test #32: m1_request .......................   Passed    0.01 sec
+      Start 31: uart_echo_request
+39/68 Test #54: config_request ...................   Passed    0.01 sec
+      Start 24: registration_state
+40/68 Test #24: registration_state ...............   Passed    0.00 sec
+      Start 44: control_test_cli
+41/68 Test #20: json_serializer ..................   Passed    0.01 sec
+      Start 50: systemd_watchdog
+42/68 Test #31: uart_echo_request ................   Passed    0.01 sec
+      Start 22: telemetry_publisher
+43/68 Test #50: systemd_watchdog .................   Passed    0.00 sec
+      Start 48: cellular_status
+44/68 Test #44: control_test_cli .................   Passed    0.01 sec
+      Start 18: identity
+45/68 Test #22: telemetry_publisher ..............   Passed    0.01 sec
+      Start 21: mqtt_topic
+46/68 Test #48: cellular_status ..................   Passed    0.01 sec
+      Start 25: runtime_status
+47/68 Test #18: identity .........................   Passed    0.01 sec
+      Start 33: deferred_serial_request
+48/68 Test #21: mqtt_topic .......................   Passed    0.01 sec
+      Start 45: control_transaction
+49/68 Test #25: runtime_status ...................   Passed    0.01 sec
+      Start 43: control_command
+50/68 Test #33: deferred_serial_request ..........   Passed    0.01 sec
+      Start 23: registration_payload
+51/68 Test #45: control_transaction ..............   Passed    0.01 sec
+      Start 41: device_session
+52/68 Test #43: control_command ..................   Passed    0.01 sec
+      Start 42: command_parser
+53/68 Test #23: registration_payload .............   Passed    0.01 sec
+      Start 15: state_store
+54/68 Test #41: device_session ...................   Passed    0.01 sec
+      Start 17: extension_decoder
+55/68 Test #42: command_parser ...................   Passed    0.01 sec
+      Start 13: startup_summary
+56/68 Test #15: state_store ......................   Passed    0.01 sec
+      Start 47: endpoint_revalidation
+57/68 Test #17: extension_decoder ................   Passed    0.01 sec
+      Start 53: command_processor
+58/68 Test #13: startup_summary ..................   Passed    0.01 sec
+      Start 46: control_endpoint
+59/68 Test #47: endpoint_revalidation ............   Passed    0.01 sec
+      Start 51: config_updater
+60/68 Test #46: control_endpoint .................   Passed    0.01 sec
+      Start 38: startup_baud_recovery
+61/68 Test #53: command_processor ................   Passed    0.01 sec
+      Start 16: telemetry_decoder
+62/68 Test #51: config_updater ...................   Passed    0.01 sec
+      Start 39: uart_echo_protocol
+63/68 Test #38: startup_baud_recovery ............   Passed    0.01 sec
+      Start 34: m1_protocol
+64/68 Test #16: telemetry_decoder ................   Passed    0.01 sec
+      Start  5: rtk_px4_session
+65/68 Test #39: uart_echo_protocol ...............   Passed    0.01 sec
+66/68 Test #34: m1_protocol ......................   Passed    0.01 sec
+67/68 Test  #5: rtk_px4_session ..................   Passed    0.01 sec
+68/68 Test  #9: rtk_base_gateway .................   Passed   19.81 sec
+
+100% tests passed, 0 tests failed out of 68
+
+Total Test time (real) =  19.82 sec

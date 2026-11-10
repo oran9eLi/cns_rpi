@@ -20,6 +20,7 @@
 #include <cstring>
 #include <deque>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <optional>
 #include <string>
@@ -43,6 +44,7 @@
 #include "control_command/control_transaction.hpp"
 #include "device/device_binding_store.hpp"
 #include "experiment/pi_link_inspection.hpp"
+#include "experiment/rtk_base_experiment.hpp"
 #include "experiment/video_experiment.hpp"
 #include "experiment/video_request.hpp"
 #include "experiment/link_lab.hpp"
@@ -65,6 +67,7 @@
 #include "registration/registration_payload.hpp"
 #include "registration/registration_state.hpp"
 #include "runtime_status/device_session.hpp"
+#include "rtk/experiment_service.hpp"
 #include "state/state_store.hpp"
 #include "telemetry/publisher.hpp"
 #include "uart/mavlink_port_discovery.hpp"
@@ -137,6 +140,20 @@ std::string RuntimeStatusSummary(const runtime_status::Snapshot& snapshot) {
   }();
   return "控制链=在线，业务=" + std::string(business) +
          "，身份=" + identity;
+}
+
+bool WriteRtkStatus(const std::filesystem::path& target,
+                    const nlohmann::json& status) {
+  std::error_code error;
+  std::filesystem::create_directories(target.parent_path(), error);
+  if (error) return false;
+  const auto temporary = target.string() + ".tmp";
+  std::ofstream file(temporary, std::ios::binary | std::ios::trunc);
+  file << status.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace) << '\n';
+  file.close();
+  if (!file) return false;
+  std::filesystem::rename(temporary, target, error);
+  return !error;
 }
 
 }  // namespace
@@ -232,6 +249,28 @@ int main(int argc, char** argv) {
   state::StateStore state_store;
   const auto started_at = std::chrono::steady_clock::now();
   runtime_status::DeviceSession device_session(persisted_binding, started_at);
+  std::optional<rtk::ExperimentService> rtk_service;
+  std::vector<std::string> rtk_serial_devices;
+  if (app_config->rtk_base.enabled) {
+    rtk_service.emplace(app_config->rtk_base, **logger);
+    rtk_serial_devices = {app_config->rtk_base.device,
+                          app_config->rtk_base.px4_device};
+  }
+  experiment::RtkBaseExperiment rtk_experiment(
+      app_config->mqtt.topics.topic_namespace);
+  std::optional<experiment::Publication> pending_rtk_publication;
+  auto next_rtk_status_write = started_at;
+  bool rtk_status_write_failed = false;
+  const auto sample_rtk_base = [&] {
+    return rtk_service
+        ? rtk_service->BaseStatus(std::chrono::steady_clock::now())
+        : nlohmann::json{{"enabled", false}, {"connected", false}};
+  };
+  const auto rtk_status = [&](bool include_samples = true) {
+    auto status = rtk_service->Status(std::chrono::steady_clock::now(), include_samples);
+    status["box_identity_verified"] = device_session.CurrentLinkIdentityVerified();
+    return status;
+  };
   auto last_heartbeat = started_at;
   auto last_cellular_heartbeat = started_at;
   std::optional<mqtt::MqttClient> mqtt_client;
@@ -830,6 +869,39 @@ int main(int argc, char** argv) {
 
   while (!g_exit_requested) {
     auto now = std::chrono::steady_clock::now();
+    if (rtk_service) {
+      const auto box = device_session.CurrentOnlineStatus();
+      if (box && box->identity_status == runtime_status::IdentityStatus::kConflict)
+        (void)rtk_service->ControlRelay("rtk_rover_stop");
+      // 先处理到期取消，再读取设备ACK，避免过期动作被迟到ACK推进。
+      if (auto terminal = rtk_experiment.Tick(
+              sample_rtk_base, [&] { rtk_service->CancelPendingConfiguration(); },
+              std::chrono::system_clock::now())) {
+        pending_rtk_publication = std::move(*terminal);
+      }
+      if (pending_rtk_publication &&
+          experiment_ack_outbox.Enqueue(*pending_rtk_publication)) {
+        pending_rtk_publication.reset();
+      }
+      rtk_service->Tick(now);
+      if (now >= next_rtk_status_write) {
+        next_rtk_status_write = now + std::chrono::seconds(1);
+        auto status = rtk_status();
+        const auto* binding = device_session.ActiveBinding();
+        status["schema_version"] = 1;
+        status["source"] = "live";
+        status["box"] = {{"device_id", binding
+            ? nlohmann::json(binding->device_id) : nlohmann::json(nullptr)},
+            {"identity_verified", device_session.CurrentLinkIdentityVerified()}};
+        const bool written = WriteRtkStatus(app_config->rtk_base.status_file, status);
+        if (!written && !rtk_status_write_failed) {
+          (*logger)->Warn("RTK本地状态文件写入失败，继续观测并稍后重试");
+        } else if (written && rtk_status_write_failed) {
+          (*logger)->Info("RTK本地状态文件写入已恢复");
+        }
+        rtk_status_write_failed = !written;
+      }
+    }
     if (link_lab && link_lab->SessionActive() &&
         (link_lab->SessionExpired(now) || !mqtt_client ||
          !mqtt_client->IsConnected() ||
@@ -921,7 +993,7 @@ int main(int argc, char** argv) {
               probe_device, probe_baud,
               startup_baud_recovery.UseTrustedEndpoint()
                   ? kStartupRecoveryProbeTimeout
-                  : kDiscoveryProbeTimeout);
+                  : kDiscoveryProbeTimeout, rtk_serial_devices);
         } else {
           next_discovery = now + kDiscoveryRetryInterval;
         }
@@ -1161,20 +1233,30 @@ int main(int argc, char** argv) {
                       /*retain=*/false,
                       app_config->telemetry_publish.snapshot.enabled},
                      [&](const state::TelemetryState& state, std::uint64_t) {
-                       return payload::ToJson(
+                       auto frame = payload::ToJson(
                            state, app_config->identity.school_name,
                            cellular::ReadStatusSnapshot(
                                app_config->cellular.status_snapshot_path,
                                app_config->cellular.status_snapshot_max_age));
+                       if (rtk_service) {
+                         frame["telemetry"]["rtk"] = rtk_status();
+                         // v3接收接口要求身份容器；缓存身份没有实时Basic ID观测值。
+                         if (!frame.contains("drone_id")) {
+                           frame["drone_id"] = {{"basic_id", nlohmann::json::object()}};
+                         }
+                       }
+                       return frame;
                      }},
                     {{"遥测实时通道", telemetry_realtime_topic,
                       app_config->telemetry_publish.realtime.interval,
                       app_config->mqtt.topics.telemetry_realtime.qos,
                       /*retain=*/false,
                       app_config->telemetry_publish.realtime.enabled},
-                     [](const state::TelemetryState& state,
+                     [&](const state::TelemetryState& state,
                         std::uint64_t sequence) {
-                       return payload::ToRealtimeJson(state, sequence);
+                       auto frame = payload::ToRealtimeJson(state, sequence);
+                       if (rtk_service) frame["telemetry"]["rtk"] = rtk_status(false);
+                       return frame;
                      }},
                 },
                 std::chrono::steady_clock::now());
@@ -1207,9 +1289,16 @@ int main(int argc, char** argv) {
 
     if (mqtt_client && active_mqtt_binding) {
       auto snapshot = state_store.Snapshot();
-      const auto online_payload = registration::BuildOnlinePayload(
+      auto online_payload = registration::BuildOnlinePayload(
           MakeOnlineRegistration(*active_mqtt_binding, snapshot,
                                  app_config->identity.school_name));
+      if (rtk_service) {
+        auto registration = nlohmann::json::parse(online_payload);
+        registration["capabilities"].push_back("rtk_base");
+        registration["capabilities"].push_back("rtk_rover");
+        registration["capabilities"].push_back("rtk_protocol_observation");
+        online_payload = registration.dump();
+      }
       if (registration_state.ShouldPublish(mqtt_client->IsConnected(),
                                            online_payload)) {
         const auto& registration_config = app_config->mqtt.topics.registration;
@@ -1595,6 +1684,34 @@ int main(int argc, char** argv) {
                 }
               }
             }
+          } else if (experiment::IsRtkBaseOperation(message->payload)) {
+            if (pending_rtk_publication ||
+                experiment_ack_outbox.Size() >= experiment::AckOutbox::kCapacity) {
+              (*logger)->Warn("实验ACK队列已满，RTK动作未执行，等待平台重投");
+            } else {
+              const auto* binding = device_session.ActiveBinding();
+              const auto status = device_session.CurrentOnlineStatus();
+              const std::optional<std::string> identity =
+                  device_session.HasPersistedBinding() && binding && status &&
+                  status->identity_status != runtime_status::IdentityStatus::kConflict
+                      ? std::optional<std::string>{binding->device_id} : std::nullopt;
+              const auto outcome = rtk_experiment.Handle(
+                  message->topic, message->payload, identity, sample_rtk_base,
+                  [&](std::uint32_t duration, double accuracy)
+                      -> std::expected<void, std::string> {
+                    if (!rtk_service) return std::unexpected("RTK基站实验未启用");
+                    return rtk_service->StartSurveyIn(duration, accuracy);
+                  }, std::chrono::system_clock::now(),
+                  [&](std::string_view operation) -> std::expected<void, std::string> {
+                    if (!rtk_service) return std::unexpected("RTK实验未启用");
+                    return rtk_service->ControlRelay(operation);
+                  }, [&] {
+                    return rtk_service ? rtk_status()
+                                       : nlohmann::json{{"enabled", false}};
+                  });
+              if (!outcome.diagnostic.empty()) (*logger)->Warn(outcome.diagnostic);
+              if (outcome.publication) (void)experiment_ack_outbox.Enqueue(*outcome.publication);
+            }
           } else if (experiment::IsVideoOperation(message->payload)) {
             if (experiment_ack_outbox.Size() >= experiment::AckOutbox::kCapacity) {
               (*logger)->Warn("实验ACK队列已满，视频动作未执行，等待平台重投");
@@ -1873,10 +1990,23 @@ int main(int argc, char** argv) {
     const bool telemetry_allowed =
         telemetry_identity_matches && active_mqtt_binding &&
         device_session.CanPublishTelemetry();
-    if (mqtt_client && telemetry_publisher && telemetry_allowed &&
+    const auto box_status = device_session.CurrentOnlineStatus();
+    const bool rtk_telemetry_allowed = rtk_service && active_mqtt_binding &&
+        device_session.HasPersistedBinding() && box_status &&
+        box_status->identity_status != runtime_status::IdentityStatus::kConflict;
+    if (mqtt_client && telemetry_publisher &&
+        (telemetry_allowed || rtk_telemetry_allowed) &&
         mqtt_client->IsConnected()) {
       const auto attempts = telemetry_publisher->Tick(
-          now, [&] { return state_store.Snapshot(); },
+          now, [&] {
+            auto snapshot = telemetry_allowed ? state_store.Snapshot()
+                                               : state::TelemetryState{};
+            if (rtk_telemetry_allowed) {
+              snapshot.device_id = active_mqtt_binding->device_id;
+              snapshot.device_type = active_mqtt_binding->device_type;
+            }
+            return snapshot;
+          },
           [&](const std::string& topic, const std::string& frame, int qos,
               bool retain) {
             return mqtt_client->Publish(topic, frame, qos, retain);

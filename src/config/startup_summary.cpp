@@ -20,6 +20,7 @@ std::string BuildStartupSummary(const AppConfig& config) {
       << "秒，运行三态Topic=" << config.mqtt.topics.topic_namespace
       << "/{device_id}/" << config.mqtt.topics.runtime_status.suffix
       << "，设备绑定文件=" << config.identity.binding_file.string();
+  if (config.rtk_base.enabled) out << "，RTK基站实验=已启用";
   return out.str();
 }
 

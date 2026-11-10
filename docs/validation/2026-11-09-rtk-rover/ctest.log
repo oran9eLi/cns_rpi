@@ -1,0 +1,42 @@
+Internal ctest changing into directory: /home/dcdw/cns-rpi-rtk-rover-20261109T151840/build
+Test project /home/dcdw/cns-rpi-rtk-rover-20261109T151840/build
+      Start  2: release_cli
+ 1/18 Test  #2: release_cli ......................   Passed    0.08 sec
+      Start  3: release_deploy
+ 2/18 Test  #3: release_deploy ...................   Passed    6.52 sec
+      Start  4: rtk_base_station
+ 3/18 Test  #4: rtk_base_station .................   Passed    0.01 sec
+      Start  5: rtk_rtcm_encoder
+ 4/18 Test  #5: rtk_rtcm_encoder .................   Passed    0.00 sec
+      Start  6: rtk_px4_session
+ 5/18 Test  #6: rtk_px4_session ..................   Passed    0.00 sec
+      Start  7: rtk_base_request
+ 6/18 Test  #7: rtk_base_request .................   Passed    0.00 sec
+      Start  8: rtk_base_experiment
+ 7/18 Test  #8: rtk_base_experiment ..............   Passed    0.00 sec
+      Start  9: rtk_experiment_service
+ 8/18 Test  #9: rtk_experiment_service ...........   Passed    0.01 sec
+      Start 10: rtk_base_gateway
+ 9/18 Test #10: rtk_base_gateway .................   Passed    0.08 sec
+      Start 12: mavlink_port_discovery
+10/18 Test #12: mavlink_port_discovery ...........   Passed    0.98 sec
+      Start 13: app_config
+11/18 Test #13: app_config .......................   Passed    0.01 sec
+      Start 20: device_binding_store
+12/18 Test #20: device_binding_store .............   Passed    0.00 sec
+      Start 26: runtime_status
+13/18 Test #26: runtime_status ...................   Passed    0.00 sec
+      Start 28: video_request
+14/18 Test #28: video_request ....................   Passed    0.00 sec
+      Start 29: video_manager
+15/18 Test #29: video_manager ....................   Passed    3.57 sec
+      Start 30: video_experiment
+16/18 Test #30: video_experiment .................   Passed    0.23 sec
+      Start 42: device_session
+17/18 Test #42: device_session ...................   Passed    0.00 sec
+      Start 56: cns_rpi_service
+18/18 Test #56: cns_rpi_service ..................   Passed    0.00 sec
+
+100% tests passed, 0 tests failed out of 18
+
+Total Test time (real) =  11.51 sec

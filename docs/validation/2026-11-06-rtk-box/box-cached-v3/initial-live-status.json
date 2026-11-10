@@ -1,0 +1,126 @@
+{
+  "base": {
+    "baud": 115200,
+    "configuration": {
+      "state": "idle",
+      "storage": "RAM",
+      "survey_accuracy_m": null,
+      "survey_min_duration_s": null,
+      "verified_age_ms": null
+    },
+    "connected": true,
+    "device": "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com_u-blox_GNSS_receiver-if00",
+    "last_error": null,
+    "last_rx_age_ms": 701,
+    "nmea": {
+      "checksum_errors": 0,
+      "valid_sentences": 15
+    },
+    "protocol": {
+      "checksum_errors": 0,
+      "firmware": "HPG 1.50",
+      "framing_errors": 0,
+      "hardware": "00190000",
+      "last_rx_age_ms": 1001,
+      "module": "ZED-F9P",
+      "name": "UBX",
+      "software": "EXT CORE 1.00 (f17067)",
+      "stale": false,
+      "valid_frames": 2,
+      "version": "27.50"
+    },
+    "receiver_verified": true,
+    "rtcm": {
+      "bytes": 0,
+      "crc_errors": 0,
+      "last_rx_age_ms": null,
+      "message_types": {},
+      "stale": true,
+      "valid_frames": 0
+    },
+    "rx_bytes": 772,
+    "survey_in": {
+      "active": true,
+      "completed": false,
+      "duration_s": 389,
+      "ecef_m": null,
+      "i_tow_ms": 14265000,
+      "known": true,
+      "last_rx_age_ms": 701,
+      "last_sample_age_ms": 701,
+      "mean_accuracy_m": 94868.3264,
+      "observations": 0,
+      "sample_sequence": 1,
+      "stale": false,
+      "valid": false
+    }
+  },
+  "box": {
+    "device_id": "DCDWCNS1GHC0G6LF8MY6",
+    "identity_verified": false
+  },
+  "box_identity_verified": false,
+  "px4": {
+    "baud": 57600,
+    "component_id": 1,
+    "device": "/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0",
+    "device_id": "393233510c004b0031",
+    "frame_age_ms": 0,
+    "identity_verified": true,
+    "serial_connected": true,
+    "system_id": 1,
+    "telemetry": {
+      "attitude": {
+        "pitch": 0.28814484366978416,
+        "pitchspeed": -0.05020133011063837,
+        "roll": 0.5914936350711638,
+        "rollspeed": -0.1688404620137169,
+        "time_boot_ms": 3041010,
+        "yaw": -137.28822299660365,
+        "yawspeed": -0.02356096432558377
+      },
+      "battery": {
+        "battery_function": 1,
+        "battery_remaining": null,
+        "charge_state": 1,
+        "current_battery": null,
+        "current_consumed": -1,
+        "energy_consumed": -100.0,
+        "fault_bitmask": 0,
+        "id": 0,
+        "mode": 0,
+        "temperature": 327.67,
+        "time_remaining": 0,
+        "type": 1,
+        "voltages": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "voltages_ext": [
+          null,
+          null,
+          null,
+          null
+        ]
+      },
+      "heartbeat": {
+        "autopilot": 12,
+        "base_mode": 29,
+        "custom_mode": 50593792,
+        "mavlink_version": 3,
+        "system_status": 0,
+        "type": 13
+      }
+    }
+  },
+  "schema_version": 1,
+  "source": "live"
+}

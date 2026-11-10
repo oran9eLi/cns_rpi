@@ -1,0 +1,172 @@
+{
+  "request_url": "http://112.124.52.232/api/devices/DCDWCNS1GHC0G6LF8MY6",
+  "http_status": 200,
+  "raw_response_sha256": "12e952b98f2f604ead84763f9861f9161a2e602e46310c17d4bd3fa01161e6e7",
+  "observed_at": "2026-11-06T06:57:12.703447+00:00",
+  "device_id": "DCDWCNS1GHC0G6LF8MY6",
+  "device_type": "cns_box",
+  "telemetry_received_at": "2026-11-06T06:57:11.885Z",
+  "telemetry_keys": [
+    "rtk",
+    "cellular_5g"
+  ],
+  "drone_id": {
+    "basic_id": {}
+  },
+  "rtk": {
+    "px4": {
+      "baud": 57600,
+      "device": "/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0",
+      "device_id": "393233510c004b0031",
+      "system_id": 1,
+      "telemetry": {
+        "motor": {
+          "pwm_us": [
+            1000,
+            1000,
+            1000,
+            1000
+          ],
+          "pwm_time_usec": 585831144
+        },
+        "battery": {
+          "id": 0,
+          "mode": 0,
+          "type": 1,
+          "voltages": [
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null,
+            null
+          ],
+          "temperature": 327.67,
+          "charge_state": 1,
+          "voltages_ext": [
+            null,
+            null,
+            null,
+            null
+          ],
+          "fault_bitmask": 0,
+          "time_remaining": 0,
+          "current_battery": null,
+          "energy_consumed": -100,
+          "battery_function": 1,
+          "current_consumed": -1,
+          "battery_remaining": null
+        },
+        "attitude": {
+          "yaw": -140.21673490513834,
+          "roll": 0.597155541727987,
+          "pitch": 0.3098361370915695,
+          "yawspeed": -0.0006197596258993211,
+          "rollspeed": -0.0955135387762302,
+          "pitchspeed": 0.029243348209703812,
+          "time_boot_ms": 4881047
+        },
+        "pressure": {
+          "press_abs": 1020.8536987304688,
+          "press_diff": 0,
+          "temperature": 44.94,
+          "time_boot_ms": 4880708,
+          "temperature_press_diff": 0
+        },
+        "heartbeat": {
+          "type": 13,
+          "autopilot": 12,
+          "base_mode": 29,
+          "custom_mode": 50593792,
+          "system_status": 0,
+          "mavlink_version": 3
+        },
+        "sys_status": {
+          "load": 43.9,
+          "errors_comm": 0,
+          "errors_count1": 0,
+          "errors_count2": 0,
+          "errors_count3": 0,
+          "errors_count4": 0,
+          "drop_rate_comm": 0,
+          "current_battery": null,
+          "voltage_battery": 65.535,
+          "battery_remaining": -1,
+          "onboard_control_sensors_health": 52463679,
+          "onboard_control_sensors_enabled": 81935,
+          "onboard_control_sensors_present": 16399,
+          "onboard_control_sensors_health_extended": 1,
+          "onboard_control_sensors_enabled_extended": 0,
+          "onboard_control_sensors_present_extended": 0
+        }
+      },
+      "component_id": 1,
+      "frame_age_ms": 0,
+      "serial_connected": true,
+      "identity_verified": true
+    },
+    "base": {
+      "baud": 115200,
+      "nmea": {
+        "checksum_errors": 0,
+        "valid_sentences": 385
+      },
+      "rtcm": {
+        "bytes": 50,
+        "stale": false,
+        "crc_errors": 0,
+        "valid_frames": 5,
+        "message_types": {
+          "1230": 5
+        },
+        "last_rx_age_ms": 1814
+      },
+      "device": "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com_u-blox_GNSS_receiver-if00",
+      "protocol": {
+        "name": "UBX",
+        "stale": false,
+        "module": "ZED-F9P",
+        "version": "27.50",
+        "firmware": "HPG 1.50",
+        "hardware": "00190000",
+        "software": "EXT CORE 1.00 (f17067)",
+        "valid_frames": 55,
+        "framing_errors": 0,
+        "last_rx_age_ms": 912,
+        "checksum_errors": 0
+      },
+      "rx_bytes": 20161,
+      "connected": true,
+      "survey_in": {
+        "known": true,
+        "stale": false,
+        "valid": false,
+        "active": true,
+        "ecef_m": null,
+        "i_tow_ms": 16105000,
+        "completed": false,
+        "duration_s": 1,
+        "observations": 0,
+        "last_rx_age_ms": 801,
+        "mean_accuracy_m": 94868.3264,
+        "sample_sequence": 1,
+        "last_sample_age_ms": 801
+      },
+      "last_error": null,
+      "configuration": {
+        "state": "verified",
+        "storage": "RAM",
+        "verified_age_ms": 1614,
+        "survey_accuracy_m": 2,
+        "survey_min_duration_s": 60
+      },
+      "last_rx_age_ms": 801,
+      "receiver_verified": true
+    },
+    "box_identity_verified": false
+  }
+}

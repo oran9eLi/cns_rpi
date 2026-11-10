@@ -1,0 +1,389 @@
+{
+  "started_at": "2026-11-06T06:57:08.456Z",
+  "ok": true,
+  "registration_online": true,
+  "target_json_messages": 50,
+  "rtk_telemetry_messages": 43,
+  "cached_runtime_observed": true,
+  "box_identity_verified": false,
+  "px4_observation_messages": 43,
+  "px4_observation_device_id": "393233510c004b0031",
+  "px4_registration_messages": 1,
+  "unexpected_px4_registration": false,
+  "historical_px4_registration_messages": 1,
+  "unexpected_f407_telemetry": [],
+  "configuration_verified": true,
+  "survey_completed_observed": false,
+  "note": "completed ACK verifies configuration only; receiver survey completion is separate",
+  "stage": "finished",
+  "device_id": "DCDWCNS1GHC0G6LF8MY6",
+  "topic_filter": "cns_rpi/DCDWCNS1GHC0G6LF8MY6/#",
+  "acks": {
+    "rtk_base_status": [
+      {
+        "action_id": "0f4fe271-2e57-4ffc-97c4-87c0f450e10c",
+        "command_id": "d2dc1c5a-a6b3-490e-9b49-2ad4402343cf",
+        "fact": {
+          "base": {
+            "baud": 115200,
+            "configuration": {
+              "state": "idle",
+              "storage": "RAM",
+              "survey_accuracy_m": null,
+              "survey_min_duration_s": null,
+              "verified_age_ms": null
+            },
+            "connected": true,
+            "device": "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com_u-blox_GNSS_receiver-if00",
+            "last_error": null,
+            "last_rx_age_ms": 601,
+            "nmea": {
+              "checksum_errors": 0,
+              "valid_sentences": 341
+            },
+            "protocol": {
+              "checksum_errors": 0,
+              "firmware": "HPG 1.50",
+              "framing_errors": 0,
+              "hardware": "00190000",
+              "last_rx_age_ms": 812,
+              "module": "ZED-F9P",
+              "name": "UBX",
+              "software": "EXT CORE 1.00 (f17067)",
+              "stale": false,
+              "valid_frames": 45,
+              "version": "27.50"
+            },
+            "receiver_verified": true,
+            "rtcm": {
+              "bytes": 40,
+              "crc_errors": 0,
+              "last_rx_age_ms": 3641,
+              "message_types": {
+                "1230": 4
+              },
+              "stale": true,
+              "valid_frames": 4
+            },
+            "rx_bytes": 17752,
+            "survey_in": {
+              "active": true,
+              "completed": false,
+              "duration_s": 1835,
+              "ecef_m": null,
+              "i_tow_ms": 16102000,
+              "known": true,
+              "last_rx_age_ms": 601,
+              "last_sample_age_ms": 601,
+              "mean_accuracy_m": 94868.3264,
+              "observations": 0,
+              "sample_sequence": 23,
+              "stale": false,
+              "valid": false
+            }
+          }
+        },
+        "observed_at": "2026-11-06T06:57:08.742Z",
+        "operation": "rtk_base_status",
+        "schema_version": 1,
+        "session_id": "56cd783c-5ce4-4190-83fa-496116a2c9d0",
+        "status": "completed"
+      }
+    ],
+    "rtk_base_survey_in": [
+      {
+        "action_id": "fe25e072-0d51-416e-89e8-36d598f90298",
+        "command_id": "c21a1d21-4b69-42dc-83a5-dda01d76f10a",
+        "fact": {
+          "base": {
+            "baud": 115200,
+            "configuration": {
+              "state": "pending",
+              "storage": "RAM",
+              "survey_accuracy_m": 2.0,
+              "survey_min_duration_s": 60,
+              "verified_age_ms": null
+            },
+            "connected": true,
+            "device": "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com_u-blox_GNSS_receiver-if00",
+            "last_error": null,
+            "last_rx_age_ms": 110,
+            "nmea": {
+              "checksum_errors": 0,
+              "valid_sentences": 341
+            },
+            "protocol": {
+              "checksum_errors": 0,
+              "firmware": "HPG 1.50",
+              "framing_errors": 0,
+              "hardware": "00190000",
+              "last_rx_age_ms": 110,
+              "module": "ZED-F9P",
+              "name": "UBX",
+              "software": "EXT CORE 1.00 (f17067)",
+              "stale": false,
+              "valid_frames": 46,
+              "version": "27.50"
+            },
+            "receiver_verified": true,
+            "rtcm": {
+              "bytes": 40,
+              "crc_errors": 0,
+              "last_rx_age_ms": 3952,
+              "message_types": {
+                "1230": 4
+              },
+              "stale": true,
+              "valid_frames": 4
+            },
+            "rx_bytes": 17980,
+            "survey_in": {
+              "active": null,
+              "completed": false,
+              "duration_s": null,
+              "ecef_m": null,
+              "i_tow_ms": null,
+              "known": false,
+              "last_rx_age_ms": null,
+              "last_sample_age_ms": null,
+              "mean_accuracy_m": null,
+              "observations": null,
+              "sample_sequence": 0,
+              "stale": true,
+              "valid": null
+            }
+          }
+        },
+        "observed_at": "2026-11-06T06:57:09.053Z",
+        "operation": "rtk_base_survey_in",
+        "schema_version": 1,
+        "session_id": "56cd783c-5ce4-4190-83fa-496116a2c9d0",
+        "status": "accepted"
+      },
+      {
+        "action_id": "fe25e072-0d51-416e-89e8-36d598f90298",
+        "command_id": "c21a1d21-4b69-42dc-83a5-dda01d76f10a",
+        "fact": {
+          "base": {
+            "baud": 115200,
+            "configuration": {
+              "state": "verified",
+              "storage": "RAM",
+              "survey_accuracy_m": 2.0,
+              "survey_min_duration_s": 60,
+              "verified_age_ms": 100
+            },
+            "connected": true,
+            "device": "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com_u-blox_GNSS_receiver-if00",
+            "last_error": null,
+            "last_rx_age_ms": 100,
+            "nmea": {
+              "checksum_errors": 0,
+              "valid_sentences": 370
+            },
+            "protocol": {
+              "checksum_errors": 0,
+              "firmware": "HPG 1.50",
+              "framing_errors": 0,
+              "hardware": "00190000",
+              "last_rx_age_ms": 411,
+              "module": "ZED-F9P",
+              "name": "UBX",
+              "software": "EXT CORE 1.00 (f17067)",
+              "stale": false,
+              "valid_frames": 53,
+              "version": "27.50"
+            },
+            "receiver_verified": true,
+            "rtcm": {
+              "bytes": 50,
+              "crc_errors": 0,
+              "last_rx_age_ms": 300,
+              "message_types": {
+                "1230": 5
+              },
+              "stale": false,
+              "valid_frames": 5
+            },
+            "rx_bytes": 19389,
+            "survey_in": {
+              "active": null,
+              "completed": false,
+              "duration_s": null,
+              "ecef_m": null,
+              "i_tow_ms": null,
+              "known": false,
+              "last_rx_age_ms": null,
+              "last_sample_age_ms": null,
+              "mean_accuracy_m": null,
+              "observations": null,
+              "sample_sequence": 0,
+              "stale": true,
+              "valid": null
+            }
+          }
+        },
+        "observed_at": "2026-11-06T06:57:10.366Z",
+        "operation": "rtk_base_survey_in",
+        "schema_version": 1,
+        "session_id": "56cd783c-5ce4-4190-83fa-496116a2c9d0",
+        "status": "completed"
+      }
+    ]
+  },
+  "latest_base": {
+    "baud": 115200,
+    "configuration": {
+      "state": "verified",
+      "storage": "RAM",
+      "survey_accuracy_m": 2.0,
+      "survey_min_duration_s": 60,
+      "verified_age_ms": 2125
+    },
+    "connected": true,
+    "device": "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com_u-blox_GNSS_receiver-if00",
+    "last_error": null,
+    "last_rx_age_ms": 300,
+    "nmea": {
+      "checksum_errors": 0,
+      "valid_sentences": 400
+    },
+    "protocol": {
+      "checksum_errors": 0,
+      "firmware": "HPG 1.50",
+      "framing_errors": 0,
+      "hardware": "00190000",
+      "last_rx_age_ms": 411,
+      "module": "ZED-F9P",
+      "name": "UBX",
+      "software": "EXT CORE 1.00 (f17067)",
+      "stale": false,
+      "valid_frames": 57,
+      "version": "27.50"
+    },
+    "receiver_verified": true,
+    "rtcm": {
+      "bytes": 50,
+      "crc_errors": 0,
+      "last_rx_age_ms": 2325,
+      "message_types": {
+        "1230": 5
+      },
+      "stale": false,
+      "valid_frames": 5
+    },
+    "rx_bytes": 20933,
+    "survey_in": {
+      "active": true,
+      "completed": false,
+      "duration_s": 2,
+      "ecef_m": null,
+      "i_tow_ms": 16106000,
+      "known": true,
+      "last_rx_age_ms": 300,
+      "last_sample_age_ms": 300,
+      "mean_accuracy_m": 94868.3264,
+      "observations": 0,
+      "sample_sequence": 2,
+      "stale": false,
+      "valid": false
+    }
+  },
+  "latest_px4": {
+    "baud": 57600,
+    "component_id": 1,
+    "device": "/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0",
+    "device_id": "393233510c004b0031",
+    "frame_age_ms": 0,
+    "identity_verified": true,
+    "serial_connected": true,
+    "system_id": 1,
+    "telemetry": {
+      "attitude": {
+        "pitch": 0.3085785818714938,
+        "pitchspeed": 0.0448440072021154,
+        "roll": 0.5976564400540723,
+        "rollspeed": 0.14129180113096962,
+        "time_boot_ms": 4881584,
+        "yaw": -140.2155054710877,
+        "yawspeed": -0.01674938475301666
+      },
+      "battery": {
+        "battery_function": 1,
+        "battery_remaining": null,
+        "charge_state": 1,
+        "current_battery": null,
+        "current_consumed": -1,
+        "energy_consumed": -100.0,
+        "fault_bitmask": 0,
+        "id": 0,
+        "mode": 0,
+        "temperature": 327.67,
+        "time_remaining": 0,
+        "type": 1,
+        "voltages": [
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null,
+          null
+        ],
+        "voltages_ext": [
+          null,
+          null,
+          null,
+          null
+        ]
+      },
+      "heartbeat": {
+        "autopilot": 12,
+        "base_mode": 29,
+        "custom_mode": 50593792,
+        "mavlink_version": 3,
+        "system_status": 0,
+        "type": 13
+      },
+      "motor": {
+        "pwm_time_usec": 585831144,
+        "pwm_us": [
+          1000,
+          1000,
+          1000,
+          1000
+        ]
+      },
+      "pressure": {
+        "press_abs": 1020.8536987304688,
+        "press_diff": 0.0,
+        "temperature": 44.94,
+        "temperature_press_diff": 0.0,
+        "time_boot_ms": 4880708
+      },
+      "sys_status": {
+        "battery_remaining": -1,
+        "current_battery": null,
+        "drop_rate_comm": 0.0,
+        "errors_comm": 0,
+        "errors_count1": 0,
+        "errors_count2": 0,
+        "errors_count3": 0,
+        "errors_count4": 0,
+        "load": 43.9,
+        "onboard_control_sensors_enabled": 81935,
+        "onboard_control_sensors_enabled_extended": 0,
+        "onboard_control_sensors_health": 52463679,
+        "onboard_control_sensors_health_extended": 1,
+        "onboard_control_sensors_present": 16399,
+        "onboard_control_sensors_present_extended": 0,
+        "voltage_battery": 65.535
+      }
+    }
+  },
+  "elapsed_s": 4.063,
+  "finished_at": "2026-11-06T06:57:12.519Z"
+}

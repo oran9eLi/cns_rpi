@@ -1,0 +1,2 @@
+Without drone_id: rejected: drone_id 必须是 object
+With exact empty drone_id.basic_id: accepted, payload unchanged

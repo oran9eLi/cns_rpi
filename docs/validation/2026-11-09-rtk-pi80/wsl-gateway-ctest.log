@@ -1,0 +1,47 @@
+[OUTPUT] 
+Internal ctest changing into directory: /tmp/cns-rtk-gateway-review-PHwhZb/build
+
+[HANDLER_VERBOSE_OUTPUT] 
+UpdateCTestConfiguration  from :/tmp/cns-rtk-gateway-review-PHwhZb/build/DartConfiguration.tcl
+
+UpdateCTestConfiguration  from :/tmp/cns-rtk-gateway-review-PHwhZb/build/DartConfiguration.tcl
+[HANDLER_OUTPUT] 
+Test project /tmp/cns-rtk-gateway-review-PHwhZb/build
+
+[HANDLER_VERBOSE_OUTPUT] 
+Constructing a list of tests
+
+Done constructing a list of tests
+Updating test list for fixtures
+Added 0 tests to meet fixture requirements
+Checking test dependency graph...
+Checking test dependency graph end
+test 9
+[HANDLER_OUTPUT] 
+    Start 9: rtk_base_gateway
+
+[HANDLER_VERBOSE_OUTPUT] 
+
+9: Test command: /usr/bin/python3 "/mnt/c/Users/李岩/Desktop/cns_rpi/tests/test_rtk_base_gateway.py" "/tmp/cns-rtk-gateway-review-PHwhZb/build/cns_rpi" "/tmp/cns-rtk-gateway-review-PHwhZb/build/rtk_mavlink_fixture"
+
+9: Working Directory: /tmp/cns-rtk-gateway-review-PHwhZb/build
+9: Test timeout computed to be: 10000000
+9: .
+9: ----------------------------------------------------------------------
+9: Ran 1 test in 19.403s
+9: 
+9: OK
+[HANDLER_OUTPUT] 
+1/1 Test #9: rtk_base_gateway .................
+   Passed   19.87 sec
+[HANDLER_VERBOSE_OUTPUT] 
+
+The following tests passed:
+
+	rtk_base_gateway
+[HANDLER_OUTPUT] 
+
+100% tests passed, 0 tests failed out of 1
+
+
+Total Test time (real) =  19.88 sec

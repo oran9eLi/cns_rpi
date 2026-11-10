@@ -1,0 +1,62 @@
+[  3%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/experiment/rtk_base_experiment.cpp.o
+[  3%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/rtk/base_station.cpp.o
+[  3%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/rtk/px4_session.cpp.o
+[  6%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/rtk/experiment_service.cpp.o
+[  6%] Linking CXX static library libcns_rpi_core.a
+[ 93%] Built target cns_rpi_core
+[ 96%] Built target cns_rpi_mqtt
+[ 96%] Building CXX object CMakeFiles/cns_rpi.dir/src/main.cpp.o
+[100%] Linking CXX executable cns_rpi
+[100%] Built target cns_rpi
+[  0%] Building CXX object CMakeFiles/rtk_mavlink_fixture.dir/tests/rtk_mavlink_fixture.cpp.o
+[100%] Linking CXX executable rtk_mavlink_fixture
+[100%] Built target rtk_mavlink_fixture
+[ 96%] Built target cns_rpi_core
+[ 96%] Building CXX object CMakeFiles/test_rtk_base_station.dir/tests/test_rtk_base_station.cpp.o
+[100%] Linking CXX executable test_rtk_base_station
+[100%] Built target test_rtk_base_station
+[ 96%] Built target cns_rpi_core
+[100%] Building CXX object CMakeFiles/test_rtk_rtcm_encoder.dir/tests/test_rtk_rtcm_encoder.cpp.o
+[100%] Linking CXX executable test_rtk_rtcm_encoder
+[100%] Built target test_rtk_rtcm_encoder
+[ 96%] Built target cns_rpi_core
+[ 96%] Building CXX object CMakeFiles/test_rtk_px4_session.dir/tests/test_rtk_px4_session.cpp.o
+[100%] Linking CXX executable test_rtk_px4_session
+[100%] Built target test_rtk_px4_session
+[ 93%] Built target cns_rpi_core
+[ 96%] Building CXX object CMakeFiles/test_rtk_base_request.dir/tests/test_rtk_base_request.cpp.o
+[100%] Linking CXX executable test_rtk_base_request
+[100%] Built target test_rtk_base_request
+[ 96%] Built target cns_rpi_core
+[100%] Building CXX object CMakeFiles/test_rtk_base_experiment.dir/tests/test_rtk_base_experiment.cpp.o
+[100%] Linking CXX executable test_rtk_base_experiment
+[100%] Built target test_rtk_base_experiment
+[ 96%] Built target cns_rpi_core
+[ 96%] Building CXX object CMakeFiles/test_rtk_experiment_service.dir/tests/test_rtk_experiment_service.cpp.o
+[100%] Linking CXX executable test_rtk_experiment_service
+[100%] Built target test_rtk_experiment_service
+[ 96%] Built target cns_rpi_core
+[100%] Linking CXX executable test_app_config
+[100%] Built target test_app_config
+[ 96%] Built target cns_rpi_core
+[ 96%] Linking CXX executable test_mavlink_port_discovery
+[100%] Built target test_mavlink_port_discovery
+[ 93%] Built target cns_rpi_core
+[ 96%] Linking CXX executable test_video_request
+[100%] Built target test_video_request
+[ 96%] Built target cns_rpi_core
+[ 96%] Linking CXX executable test_video_manager
+[100%] Built target test_video_manager
+[ 96%] Built target cns_rpi_core
+[ 96%] Linking CXX executable test_video_experiment
+[100%] Built target test_video_experiment
+[ 96%] Built target cns_rpi_core
+[ 96%] Linking CXX executable test_device_session
+[100%] Built target test_device_session
+[ 96%] Built target cns_rpi_core
+[ 96%] Linking CXX executable test_device_binding_store
+[100%] Built target test_device_binding_store
+[ 96%] Built target cns_rpi_core
+[ 96%] Linking CXX executable test_runtime_status
+[100%] Built target test_runtime_status
+[100%] Built target test_cns_rpi_service

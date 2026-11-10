@@ -5,7 +5,9 @@
 
 #include "config/app_config.hpp"
 
+#include <cmath>
 #include <fstream>
+#include <optional>
 #include <unordered_set>
 
 #include <nlohmann/json.hpp>
@@ -34,6 +36,65 @@ bool IsValidCommandId(const std::string& command_id) {
 
 bool IsValidLogLevel(const std::string& level) {
   return level == "debug" || level == "info" || level == "warn" || level == "error";
+}
+
+bool IsValidBaud(int baud) {
+  return baud == 9600 || baud == 19200 || baud == 38400 || baud == 57600 ||
+         baud == 115200 || baud == 230400;
+}
+
+bool SameSerialDevice(const std::filesystem::path& left, const std::filesystem::path& right) {
+  if (left.lexically_normal() == right.lexically_normal()) return true;
+  std::error_code error;
+  return std::filesystem::equivalent(left, right, error);
+}
+
+std::optional<int> BoundedInteger(const nlohmann::json& value, int low, int high) {
+  if (!value.is_number_integer()) return std::nullopt;
+  if (value.is_number_unsigned()) {
+    if (value.get<std::uint64_t>() > static_cast<std::uint64_t>(high)) return std::nullopt;
+  } else if (value.get<std::int64_t>() < low || value.get<std::int64_t>() > high) {
+    return std::nullopt;
+  }
+  const int result = value.get<int>();
+  return result >= low ? std::optional{result} : std::nullopt;
+}
+
+bool ReadRtkBaseConfig(const nlohmann::json& value, RtkBaseConfig& cfg) {
+  if (!value.is_object()) return false;
+  if (value.contains("enabled")) cfg.enabled = value.at("enabled").get<bool>();
+  if (value.contains("device")) cfg.device = value.at("device").get<std::string>();
+  if (value.contains("px4_device")) cfg.px4_device = value.at("px4_device").get<std::string>();
+  if (value.contains("baud")) {
+    const auto baud = BoundedInteger(value.at("baud"), 9600, 230400);
+    if (!baud || !IsValidBaud(*baud)) return false;
+    cfg.baud = *baud;
+  }
+  if (value.contains("px4_baud")) {
+    const auto baud = BoundedInteger(value.at("px4_baud"), 9600, 230400);
+    if (!baud || !IsValidBaud(*baud)) return false;
+    cfg.px4_baud = *baud;
+  }
+  if (value.contains("survey_min_duration_s")) {
+    const auto duration = BoundedInteger(value.at("survey_min_duration_s"), 10, 86400);
+    if (!duration) return false;
+    cfg.survey_min_duration_s = static_cast<std::uint32_t>(*duration);
+  }
+  if (value.contains("survey_accuracy_m")) {
+    if (!value.at("survey_accuracy_m").is_number()) return false;
+    cfg.survey_accuracy_m = value.at("survey_accuracy_m").get<double>();
+  }
+  if (value.contains("stale_after_ms")) {
+    const auto stale = BoundedInteger(value.at("stale_after_ms"), 1000, 60000);
+    if (!stale) return false;
+    cfg.stale_after_ms = static_cast<std::uint32_t>(*stale);
+  }
+  if (value.contains("status_file")) {
+    cfg.status_file = value.at("status_file").get<std::string>();
+  }
+  return std::isfinite(cfg.survey_accuracy_m) && cfg.survey_accuracy_m >= 0.1 &&
+         cfg.survey_accuracy_m <= 100.0 && !cfg.status_file.empty() &&
+         cfg.status_file.is_absolute();
 }
 
 }  // namespace
@@ -68,6 +129,9 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
   AppConfig cfg;
   std::size_t max_file_size_kb = 0;
   try {
+    if (root.contains("rtk_base") && !ReadRtkBaseConfig(root.at("rtk_base"), cfg.rtk_base)) {
+      return std::unexpected(ConfigError::kInvalidValue);
+    }
     if (root.contains("video")) {
       const auto& video = root.at("video");
       if (!video.is_object()) return std::unexpected(ConfigError::kInvalidValue);
@@ -251,6 +315,18 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
       !std::filesystem::path(cfg.video.executable).is_absolute() ||
       cfg.video.ffprobe.empty() || !std::filesystem::path(cfg.video.ffprobe).is_absolute() ||
       cfg.video.work_directory.empty() || !cfg.video.work_directory.is_absolute()) {
+    return std::unexpected(ConfigError::kInvalidValue);
+  }
+
+  if (cfg.rtk_base.enabled &&
+      (cfg.rtk_base.device.empty() ||
+       !std::filesystem::path(cfg.rtk_base.device).is_absolute() ||
+       cfg.rtk_base.px4_device.empty() ||
+       !std::filesystem::path(cfg.rtk_base.px4_device).is_absolute() ||
+       SameSerialDevice(cfg.rtk_base.device, cfg.rtk_base.px4_device) ||
+       (cfg.serial.device != "auto" &&
+        (SameSerialDevice(cfg.rtk_base.device, cfg.serial.device) ||
+         SameSerialDevice(cfg.rtk_base.px4_device, cfg.serial.device))))) {
     return std::unexpected(ConfigError::kInvalidValue);
   }
 

@@ -1,10 +1,10 @@
 # CNS RPi
 
-树莓派端 MAVLink 数据汇聚与 MQTT 转发程序。单台树莓派连接一台采用 STM32F407 的 CNS 主控箱，负责身份获取、遥测解析与上报；主控箱下行命令经 MAVLink 转发并回传执行结果。固件、MQTT broker 和服务器数据库、路由程序不属于本仓库。
+树莓派端 MAVLink 数据汇聚与 MQTT 转发程序。默认单台树莓派连接一台采用 STM32F407 的 CNS 主控箱，负责身份获取、遥测解析与上报；主控箱下行命令经 MAVLink 转发并回传执行结果。固件、MQTT broker 和服务器数据库、路由程序不属于本仓库。
 
 ## 当前支持范围
 
-当前源码仅支持 F407 主控箱：被动接收 `OPEN_DRONE_ID_BASIC_ID.uas_id` 作为唯一业务身份，汇聚已实现的 MAVLink 遥测并发布快照、实时状态和命令回执。树莓派不提供设备业务身份。配置不再提供设备模式选择或局域网地面站桥接；主控箱固件内部的 `Px4Lite` / `px4lite_*` 名称仍沿用原协议。
+程序接入 F407 主控箱：被动接收 `OPEN_DRONE_ID_BASIC_ID.uas_id` 作为唯一业务身份，汇聚已实现的 MAVLink 遥测并发布快照、实时状态和命令回执。显式设置 `rtk_base.enabled=true` 时，在同一个箱子主流程中另接 3DR/PX4 与 9Ps 两条独立串口；MQTT 注册、遥测外层和实验 target 仍使用 F407 箱子 `device_id`、`device_type=cns_box`，PX4 身份仅作为实验元数据。树莓派不提供设备业务身份。配置不提供旧设备自动识别模式或局域网地面站桥接；主控箱固件内部的 `Px4Lite` / `px4lite_*` 名称仍沿用原协议。
 
 旧配置中的 `device.mode=auto|cns_box` 和关闭的 `qgc_udp` 可由部署迁移移除；其他设备模式或已启用的桥接会明确拒绝。废弃的 `px4_realtime` 不再决定实时发布参数，旧版遥测结构迁移后实时通道使用 100 ms 默认值。当前源码清理尚不代表实体 Pi、服务器/Web 或云端版本已完成验收。
 
@@ -28,6 +28,16 @@
 
 `v1.0.7` 增加摄像头检测、有限试采集、SRT 推流启停及状态查询，沿用同一 F407 身份和实验 MQTT 通道。`video` 默认关闭；启用前需在 Pi 上准备支持 libav/SRT 的 `rpicam-vid`，发布安装依赖中的 `ffmpeg` 提供 `ffprobe`。参数、操作及结果字段见 [G2 接口](docs/G2树莓派视频实验接口与本地验证.md)，升级变化及验收边界见 [v1.0.7 发布说明](docs/V1.0.7发布说明.md)。
 
+## RTK 基站与移动站实验
+
+2026-11-09 增量：树莓派支持本地 RTCM→MAVLink 改正转发、开始/暂停/恢复/停止，以及真实 UBX/RTCM/GPS 原帧、实际发送分片、定位样本新鲜度和状态变化。完整原文进入低频快照，高频实时帧只传状态和计数。进程重启默认停止转发；不需要 QGC。服务器和网页本轮未修改，数据接入及实体验收边界见 [移动站实验与教学数据接口](docs/RTK移动站实验与教学数据接口.md)。下段为原第一实验基础。
+
+`rtk_base` 默认关闭。启用后增加基站识别、RAM Survey-in 配置、真实观测与 RTCM 输出统计，F407、G2、配置及控制流程继续运行。`serial.device/baud` 属于 F407，仍可使用 `auto`，自动发现排除 RTK 两个设备；`rtk_base.px4_device/px4_baud` 属于 3DR/PX4，`rtk_base.device/baud` 属于 9Ps，后两者须为不同的明确绝对路径，并与 F407 端口分开。已有合法持久化箱子绑定且无身份冲突时，允许 F407 未连接的缓存身份 RTK 发布；此时不携带旧 F407 普通传感数据，运行三态如实显示 cached/offline/unknown。无箱子绑定时仅本地观测，不使用 PX4 注册。PX4 失联只撤销其实验状态，不关闭箱子 MQTT。不接入 NTRIP 或飞控控制；改正转发必须显式发起移动站操作。第一实验操作、MQTT 请求/回执和本地状态字段见 [RTK 基站第一实验操作与接口](docs/RTK基站第一实验操作与接口.md)。
+
+缓存 RTK 快照按现有服务器 schema 3 合同保留精确空 `"drone_id":{"basic_id":{}}`，其中没有 F407 实时观测值；schema 1 实时帧仍不含 `drone_id`，服务器代码未改。
+
+配置读回成功、Survey-in 完成、RTCM 可见及移动端 RTK Fixed 是不同事实。当前缓存箱子身份的正式服务已部署并完成 MQTT、HTTP 和服务重启验证，见 [常驻交付记录](docs/validation/2026-11-06-rtk-base-service.md)；F407 接回后的实体三链路/G2 同时运行和室外测量仍待验。旧 PX4 独立注册实测保留为历史组件证据。
+
 ## 源码开发部署
 
 目标为 Raspberry Pi 5、Raspberry Pi OS 64-bit（trixie / Debian 13）、用户 `dcdw`，仓库路径固定为 `/home/dcdw/cns_rpi`。用户须具备 sudo 权限；未配置免密 sudo 时，交互执行脚本会请求密码。
@@ -40,7 +50,7 @@ nano config/config.json
 ./scripts/install_deps.sh
 ```
 
-先确认现场 MQTT 地址、APN、串口自动发现、上报周期及 `identity.binding_file`，再执行脚本。`install_deps.sh` 安装依赖并调用 `deploy.sh` 构建、初始化配置、安装 helper 和两个常驻服务。已有现场配置会保留，不用仓库样例覆盖。完整步骤与旧只读设备迁移边界见 [新设备部署手册](docs/新设备部署手册.md)。
+默认 F407 部署先确认现场 MQTT 地址、APN、串口自动发现、上报周期及 `identity.binding_file`，再执行脚本。`install_deps.sh` 安装依赖并调用 `deploy.sh` 构建、初始化配置、安装 helper 和两个常驻服务。已有现场配置会保留，不用仓库样例覆盖。完整步骤与旧只读设备迁移边界见 [新设备部署手册](docs/新设备部署手册.md)；RTK 第一实验见 [研发正式常驻部署](docs/RTK基站第一实验操作与接口.md#31-研发正式常驻部署)。
 
 ```bash
 systemctl status cns-rpi.service cellular-dialup.service --no-pager
@@ -60,7 +70,7 @@ journalctl -u cns-rpi.service -u cellular-dialup.service -n 100 --no-pager
 
 主控箱在 `{namespace}/{device_id}/runtime/status/v1` 以 QoS 1、`retain=true` 发布 Pi 控制链、F407 业务链和身份核验三态。状态只在内容变化时发布；每次 MQTT 连接或重连后强制重发当前值，不增加周期心跳。F407 连续 10 秒没有有效业务帧只会令业务状态离线，不会关闭 MQTT 控制入口。
 
-Pi 将首次真实核验的 F407 身份保存到 `identity.binding_file`。重启或串口暂时失联时可用缓存身份恢复 MQTT；身份重新出现后必须一致才允许遥测和需向主控板下发的命令，冲突不会自动改绑。异常断线由 runtime Last Will 发布 `offline|unknown|cached`，从未成功持久化绑定时为 `offline|unknown|unbound`。registration 与运行三态相互独立。协议、维护边界和验收命令见 [设备运行三态发布与验收](docs/设备运行三态发布与验收.md)。
+Pi 将首次真实核验的 F407 身份保存到 `identity.binding_file`。重启或串口暂时失联时可用缓存身份恢复 MQTT；身份重新出现后必须一致才允许 F407 普通遥测与向主控板下发命令，冲突不会自动改绑。RTK 启用且已有合法持久化箱子绑定、无身份冲突时，可在缓存箱子身份下发布 RTK，具体条件见 [RTK 第一实验接口](docs/RTK基站第一实验操作与接口.md)；该帧不携带未实时在线的 F407 普通传感数据。异常断线由 runtime Last Will 发布 `offline|unknown|cached`，从未成功持久化绑定时为 `offline|unknown|unbound`。registration 与运行三态相互独立。协议、维护边界和验收命令见 [设备运行三态发布与验收](docs/设备运行三态发布与验收.md)。
 
 阶段一里程碑三的只读 `inspect_pi_link` 已在 Pi 侧实现：Pi 控制在线且身份为 `verified|cached` 时，返回当前控制链、身份、F407 业务链和串口端点事实，不要求 F407 业务在线，也不向 UART6 发实验帧。它与需下发主控板的命令门禁不同；串口端点已打开不能当作 UART6 通信成功。设备侧格式见 [Pi 控制链自检跨端契约](docs/2026-09-22-阶段一Pi控制链自检跨端契约.md)，部署记录与剩余验收边界见 [Pi 控制链自检实现与验证](docs/阶段一Pi控制链自检实现与验证.md)。直达 Pi 的 MQTT 自检已验证，Server/Web 闭环尚未验收。
 

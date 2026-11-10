@@ -1,0 +1,280 @@
+{
+  "started_at": "2026-11-06T05:39:07.794Z",
+  "ok": true,
+  "registration_online": true,
+  "target_json_messages": 45,
+  "rtk_telemetry_messages": 39,
+  "configuration_verified": true,
+  "survey_completed_observed": false,
+  "note": "completed ACK verifies configuration only; receiver survey completion is separate",
+  "stage": "finished",
+  "device_id": "393233510c004b0031",
+  "topic_filter": "cns_rpi/393233510c004b0031/#",
+  "acks": {
+    "rtk_base_status": [
+      {
+        "action_id": "7ed4b108-0842-4ad1-b0dd-37bf7784bde8",
+        "command_id": "fd58a692-0843-4d84-9df8-a1acf809ada8",
+        "fact": {
+          "base": {
+            "baud": 115200,
+            "configuration": {
+              "state": "idle",
+              "storage": "RAM",
+              "survey_accuracy_m": null,
+              "survey_min_duration_s": null,
+              "verified_age_ms": null
+            },
+            "connected": true,
+            "device": "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com_u-blox_GNSS_receiver-if00",
+            "last_error": null,
+            "last_rx_age_ms": 141,
+            "nmea": {
+              "checksum_errors": 0,
+              "valid_sentences": 28
+            },
+            "protocol": {
+              "checksum_errors": 0,
+              "firmware": "HPG 1.50",
+              "framing_errors": 0,
+              "hardware": "00190000",
+              "last_rx_age_ms": 141,
+              "module": "ZED-F9P",
+              "name": "UBX",
+              "software": "EXT CORE 1.00 (f17067)",
+              "stale": false,
+              "valid_frames": 5,
+              "version": "27.50"
+            },
+            "receiver_verified": true,
+            "rtcm": {
+              "bytes": 0,
+              "crc_errors": 0,
+              "last_rx_age_ms": null,
+              "message_types": {},
+              "stale": true,
+              "valid_frames": 0
+            },
+            "rx_bytes": 1708,
+            "survey_in": {
+              "active": true,
+              "completed": false,
+              "duration_s": 9759,
+              "ecef_m": null,
+              "i_tow_ms": 11422000,
+              "known": true,
+              "last_rx_age_ms": 817,
+              "last_sample_age_ms": 817,
+              "mean_accuracy_m": 94868.3264,
+              "observations": 0,
+              "sample_sequence": 2,
+              "stale": false,
+              "valid": false
+            }
+          }
+        },
+        "observed_at": "2026-11-06T05:39:08.870Z",
+        "operation": "rtk_base_status",
+        "schema_version": 1,
+        "session_id": "c3c42a8d-a362-461f-ac4d-db2b96de8731",
+        "status": "completed"
+      }
+    ],
+    "rtk_base_survey_in": [
+      {
+        "action_id": "45c0caea-e724-4a72-b5fd-c6bc8ffbc697",
+        "command_id": "67547385-fb41-4c45-a843-e44caf520ccb",
+        "fact": {
+          "base": {
+            "baud": 115200,
+            "configuration": {
+              "state": "pending",
+              "storage": "RAM",
+              "survey_accuracy_m": 2.0,
+              "survey_min_duration_s": 60,
+              "verified_age_ms": null
+            },
+            "connected": true,
+            "device": "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com_u-blox_GNSS_receiver-if00",
+            "last_error": null,
+            "last_rx_age_ms": 475,
+            "nmea": {
+              "checksum_errors": 0,
+              "valid_sentences": 42
+            },
+            "protocol": {
+              "checksum_errors": 0,
+              "firmware": "HPG 1.50",
+              "framing_errors": 0,
+              "hardware": "00190000",
+              "last_rx_age_ms": 797,
+              "module": "ZED-F9P",
+              "name": "UBX",
+              "software": "EXT CORE 1.00 (f17067)",
+              "stale": false,
+              "valid_frames": 6,
+              "version": "27.50"
+            },
+            "receiver_verified": true,
+            "rtcm": {
+              "bytes": 0,
+              "crc_errors": 0,
+              "last_rx_age_ms": null,
+              "message_types": {},
+              "stale": true,
+              "valid_frames": 0
+            },
+            "rx_bytes": 2218,
+            "survey_in": {
+              "active": null,
+              "completed": false,
+              "duration_s": null,
+              "ecef_m": null,
+              "i_tow_ms": null,
+              "known": false,
+              "last_rx_age_ms": null,
+              "last_sample_age_ms": null,
+              "mean_accuracy_m": null,
+              "observations": null,
+              "sample_sequence": 0,
+              "stale": true,
+              "valid": null
+            }
+          }
+        },
+        "observed_at": "2026-11-06T05:39:09.526Z",
+        "operation": "rtk_base_survey_in",
+        "schema_version": 1,
+        "session_id": "c3c42a8d-a362-461f-ac4d-db2b96de8731",
+        "status": "accepted"
+      },
+      {
+        "action_id": "45c0caea-e724-4a72-b5fd-c6bc8ffbc697",
+        "command_id": "67547385-fb41-4c45-a843-e44caf520ccb",
+        "fact": {
+          "base": {
+            "baud": 115200,
+            "configuration": {
+              "state": "verified",
+              "storage": "RAM",
+              "survey_accuracy_m": 2.0,
+              "survey_min_duration_s": 60,
+              "verified_age_ms": 15
+            },
+            "connected": true,
+            "device": "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com_u-blox_GNSS_receiver-if00",
+            "last_error": null,
+            "last_rx_age_ms": 15,
+            "nmea": {
+              "checksum_errors": 0,
+              "valid_sentences": 42
+            },
+            "protocol": {
+              "checksum_errors": 0,
+              "firmware": "HPG 1.50",
+              "framing_errors": 0,
+              "hardware": "00190000",
+              "last_rx_age_ms": 873,
+              "module": "ZED-F9P",
+              "name": "UBX",
+              "software": "EXT CORE 1.00 (f17067)",
+              "stale": false,
+              "valid_frames": 10,
+              "version": "27.50"
+            },
+            "receiver_verified": true,
+            "rtcm": {
+              "bytes": 0,
+              "crc_errors": 0,
+              "last_rx_age_ms": null,
+              "message_types": {},
+              "stale": true,
+              "valid_frames": 0
+            },
+            "rx_bytes": 2331,
+            "survey_in": {
+              "active": null,
+              "completed": false,
+              "duration_s": null,
+              "ecef_m": null,
+              "i_tow_ms": null,
+              "known": false,
+              "last_rx_age_ms": null,
+              "last_sample_age_ms": null,
+              "mean_accuracy_m": null,
+              "observations": null,
+              "sample_sequence": 0,
+              "stale": true,
+              "valid": null
+            }
+          }
+        },
+        "observed_at": "2026-11-06T05:39:09.602Z",
+        "operation": "rtk_base_survey_in",
+        "schema_version": 1,
+        "session_id": "c3c42a8d-a362-461f-ac4d-db2b96de8731",
+        "status": "completed"
+      }
+    ]
+  },
+  "latest_base": {
+    "baud": 115200,
+    "configuration": {
+      "state": "verified",
+      "storage": "RAM",
+      "survey_accuracy_m": 2.0,
+      "survey_min_duration_s": 60,
+      "verified_age_ms": 2146
+    },
+    "connected": true,
+    "device": "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com_u-blox_GNSS_receiver-if00",
+    "last_error": null,
+    "last_rx_age_ms": 680,
+    "nmea": {
+      "checksum_errors": 0,
+      "valid_sentences": 70
+    },
+    "protocol": {
+      "checksum_errors": 0,
+      "firmware": "HPG 1.50",
+      "framing_errors": 0,
+      "hardware": "00190000",
+      "last_rx_age_ms": 990,
+      "module": "ZED-F9P",
+      "name": "UBX",
+      "software": "EXT CORE 1.00 (f17067)",
+      "stale": false,
+      "valid_frames": 14,
+      "version": "27.50"
+    },
+    "receiver_verified": true,
+    "rtcm": {
+      "bytes": 10,
+      "crc_errors": 0,
+      "last_rx_age_ms": 1693,
+      "message_types": {
+        "1230": 1
+      },
+      "stale": false,
+      "valid_frames": 1
+    },
+    "rx_bytes": 3799,
+    "survey_in": {
+      "active": true,
+      "completed": false,
+      "duration_s": 9762,
+      "ecef_m": null,
+      "i_tow_ms": 11425000,
+      "known": true,
+      "last_rx_age_ms": 680,
+      "last_sample_age_ms": 680,
+      "mean_accuracy_m": 94868.3264,
+      "observations": 0,
+      "sample_sequence": 2,
+      "stale": false,
+      "valid": false
+    }
+  },
+  "elapsed_s": 4.029,
+  "finished_at": "2026-11-06T05:39:11.822Z"
+}

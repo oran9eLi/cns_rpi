@@ -1,0 +1,200 @@
+{
+  "/api/health": {
+    "http_status": 200,
+    "body": {
+      "schema_version": 1,
+      "status": "ok",
+      "server_time": "2026-11-06T05:49:17.687Z",
+      "dependencies": {
+        "database": "ready",
+        "mqtt": "ready"
+      }
+    }
+  },
+  "/api/devices/393233510c004b0031": {
+    "http_status": 200,
+    "body": {
+      "schema_version": 1,
+      "item": {
+        "device_id": "393233510c004b0031",
+        "device_type": "flight_controller",
+        "school_name": "东南大学",
+        "dcdw_label": null,
+        "model_version": "PX4",
+        "capabilities": [
+          "telemetry",
+          "rtk_base"
+        ],
+        "product": null,
+        "version": null,
+        "status": "offline",
+        "last_seen_at": "2026-11-06T05:49:11.496Z",
+        "telemetry_received_at": "2026-11-06T05:49:11.496Z",
+        "control_status": "offline",
+        "business_status": "unknown",
+        "identity_status": "unbound",
+        "runtime_received_at": null,
+        "degraded": false,
+        "provisioned_at": "2026-11-06T05:36:51.075Z",
+        "latest_telemetry": {
+          "sent_at": "2026-11-06T05:49:11Z",
+          "drone_id": {
+            "basic_id": {
+              "id_type": 1,
+              "ua_type": 2
+            }
+          },
+          "device_id": "393233510c004b0031",
+          "telemetry": {
+            "rtk": {
+              "base": {
+                "baud": 115200,
+                "nmea": {
+                  "checksum_errors": 0,
+                  "valid_sentences": 714
+                },
+                "rtcm": {
+                  "bytes": 100,
+                  "stale": false,
+                  "crc_errors": 0,
+                  "valid_frames": 10,
+                  "message_types": {
+                    "1230": 10
+                  },
+                  "last_rx_age_ms": 1433
+                },
+                "device": "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com_u-blox_GNSS_receiver-if00",
+                "protocol": {
+                  "name": "UBX",
+                  "stale": false,
+                  "module": "ZED-F9P",
+                  "version": "27.50",
+                  "firmware": "HPG 1.50",
+                  "hardware": "00190000",
+                  "software": "EXT CORE 1.00 (f17067)",
+                  "valid_frames": 106,
+                  "framing_errors": 0,
+                  "last_rx_age_ms": 770,
+                  "checksum_errors": 0
+                },
+                "rx_bytes": 37789,
+                "connected": true,
+                "survey_in": {
+                  "known": true,
+                  "stale": false,
+                  "valid": false,
+                  "active": true,
+                  "ecef_m": null,
+                  "i_tow_ms": 12025000,
+                  "completed": false,
+                  "duration_s": 47,
+                  "observations": 0,
+                  "last_rx_age_ms": 433,
+                  "mean_accuracy_m": 94868.3264,
+                  "sample_sequence": 47,
+                  "last_sample_age_ms": 433
+                },
+                "last_error": null,
+                "configuration": {
+                  "state": "verified",
+                  "storage": "RAM",
+                  "verified_age_ms": 47403,
+                  "survey_accuracy_m": 2,
+                  "survey_min_duration_s": 60
+                },
+                "last_rx_age_ms": 433,
+                "receiver_verified": true
+              }
+            },
+            "motor": {
+              "pwm_us": [
+                1000,
+                1000,
+                1000,
+                1000
+              ],
+              "pwm_time_usec": 799771950
+            },
+            "battery": {
+              "id": 0,
+              "mode": 0,
+              "type": 1,
+              "voltages": [
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                null
+              ],
+              "temperature": 327.67,
+              "charge_state": 1,
+              "voltages_ext": [
+                null,
+                null,
+                null,
+                null
+              ],
+              "fault_bitmask": 0,
+              "time_remaining": 0,
+              "current_battery": null,
+              "energy_consumed": -100,
+              "battery_function": 1,
+              "current_consumed": -1,
+              "battery_remaining": null
+            },
+            "attitude": {
+              "yaw": -135.78834077562553,
+              "roll": 0.6248173276188627,
+              "pitch": 0.3556869568660271,
+              "yawspeed": -0.017791775674023742,
+              "rollspeed": 0.030353193918871382,
+              "pitchspeed": 0.030691928613021703,
+              "time_boot_ms": 800697
+            },
+            "pressure": {
+              "press_abs": 1020.6798095703125,
+              "press_diff": 0,
+              "temperature": 37.1,
+              "time_boot_ms": 799689,
+              "temperature_press_diff": 0
+            },
+            "heartbeat": {
+              "type": 13,
+              "autopilot": 12,
+              "base_mode": 29,
+              "custom_mode": 50593792,
+              "system_status": 0,
+              "mavlink_version": 3
+            },
+            "sys_status": {
+              "load": 43.9,
+              "errors_comm": 0,
+              "errors_count1": 0,
+              "errors_count2": 0,
+              "errors_count3": 0,
+              "errors_count4": 0,
+              "drop_rate_comm": 0,
+              "current_battery": null,
+              "voltage_battery": 65.535,
+              "battery_remaining": -1,
+              "onboard_control_sensors_health": 52463679,
+              "onboard_control_sensors_enabled": 81935,
+              "onboard_control_sensors_present": 16399,
+              "onboard_control_sensors_health_extended": 1,
+              "onboard_control_sensors_enabled_extended": 0,
+              "onboard_control_sensors_present_extended": 0
+            }
+          },
+          "device_type": "flight_controller",
+          "school_name": "东南大学",
+          "schema_version": 3
+        }
+      }
+    }
+  }
+}

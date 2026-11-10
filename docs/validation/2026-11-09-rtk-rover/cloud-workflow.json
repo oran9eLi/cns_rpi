@@ -1,0 +1,62 @@
+{
+  "status": {
+    "ack": [
+      "completed"
+    ],
+    "relay_state": "stopped",
+    "box_id": "DCDWCNS1GHC0G6LF8MY6",
+    "px4_id": "393233510c004b0031",
+    "gps_known": true,
+    "gps_stale": false,
+    "fix_type": 0,
+    "rtcm_frames": 0
+  },
+  "start": {
+    "ack": [
+      "completed"
+    ],
+    "relay_state": "waiting_base",
+    "box_id": "DCDWCNS1GHC0G6LF8MY6",
+    "px4_id": "393233510c004b0031",
+    "gps_known": true,
+    "gps_stale": false,
+    "fix_type": 0,
+    "rtcm_frames": 0
+  },
+  "pause": {
+    "ack": [
+      "completed"
+    ],
+    "relay_state": "paused",
+    "box_id": "DCDWCNS1GHC0G6LF8MY6",
+    "px4_id": "393233510c004b0031",
+    "gps_known": true,
+    "gps_stale": false,
+    "fix_type": 0,
+    "rtcm_frames": 0
+  },
+  "resume": {
+    "ack": [
+      "completed"
+    ],
+    "relay_state": "waiting_base",
+    "box_id": "DCDWCNS1GHC0G6LF8MY6",
+    "px4_id": "393233510c004b0031",
+    "gps_known": true,
+    "gps_stale": false,
+    "fix_type": 0,
+    "rtcm_frames": 0
+  },
+  "stop": {
+    "ack": [
+      "completed"
+    ],
+    "relay_state": "stopped",
+    "box_id": "DCDWCNS1GHC0G6LF8MY6",
+    "px4_id": "393233510c004b0031",
+    "gps_known": true,
+    "gps_stale": false,
+    "fix_type": 0,
+    "rtcm_frames": 0
+  }
+}

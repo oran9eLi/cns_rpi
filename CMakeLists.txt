@@ -39,6 +39,12 @@ add_library(cns_rpi_core
     src/experiment/pi_link_inspection.cpp
     src/experiment/video_request.cpp
     src/experiment/video_experiment.cpp
+    src/experiment/rtk_base_request.cpp
+    src/experiment/rtk_base_experiment.cpp
+    src/rtk/base_station.cpp
+    src/rtk/rtcm_encoder.cpp
+    src/rtk/px4_session.cpp
+    src/rtk/experiment_service.cpp
     src/video/video_manager.cpp
     src/experiment/link_lab.cpp
     src/experiment/uart_echo_request.cpp
@@ -77,6 +83,7 @@ add_library(cns_rpi_mqtt src/mqtt/mqtt_client.cpp)
 target_include_directories(cns_rpi_mqtt PUBLIC src)
 target_link_libraries(cns_rpi_mqtt PUBLIC cns_rpi_core PkgConfig::MOSQUITTO)
 
+
 add_library(cns_rpi_config_request src/config_command/config_request.cpp)
 target_include_directories(cns_rpi_config_request PUBLIC src)
 target_link_libraries(cns_rpi_config_request PUBLIC cns_rpi_core cns_rpi_mqtt)
@@ -93,6 +100,20 @@ add_test(NAME release_cli COMMAND ${PYTHON3_EXECUTABLE}
 add_test(NAME release_deploy COMMAND ${PYTHON3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_release_deploy.py $<TARGET_FILE:cns_rpi>)
 target_link_libraries(cns_rpi PRIVATE cns_rpi_core cns_rpi_mqtt)
+
+foreach(rtk_test base_station rtcm_encoder px4_session base_request base_experiment experiment_service)
+  add_executable(test_rtk_${rtk_test} tests/test_rtk_${rtk_test}.cpp)
+  target_link_libraries(test_rtk_${rtk_test} PRIVATE cns_rpi_core)
+  add_test(NAME rtk_${rtk_test} COMMAND test_rtk_${rtk_test})
+endforeach()
+target_compile_definitions(test_rtk_base_station PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+target_compile_definitions(test_rtk_experiment_service PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
+add_executable(rtk_mavlink_fixture tests/rtk_mavlink_fixture.cpp)
+target_include_directories(rtk_mavlink_fixture SYSTEM PRIVATE src/mavlink)
+add_test(NAME rtk_base_gateway COMMAND ${PYTHON3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_rtk_base_gateway.py
+    $<TARGET_FILE:cns_rpi> $<TARGET_FILE:rtk_mavlink_fixture>)
 
 add_executable(cns_control_test src/control_test/main.cpp)
 target_link_libraries(cns_control_test PRIVATE cns_rpi_core)
