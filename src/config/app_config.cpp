@@ -60,6 +60,18 @@ std::optional<int> BoundedInteger(const nlohmann::json& value, int low, int high
   return result >= low ? std::optional{result} : std::nullopt;
 }
 
+bool ReadGnssConfig(const nlohmann::json& value, GnssConfig& cfg) {
+  if (!value.is_object()) return false;
+  for (const auto& item : value.items()) {
+    if (item.key() != "enabled" && item.key() != "archive_directory") return false;
+  }
+  if (value.contains("enabled")) cfg.enabled = value.at("enabled").get<bool>();
+  if (value.contains("archive_directory")) {
+    cfg.archive_directory = value.at("archive_directory").get<std::string>();
+  }
+  return !cfg.archive_directory.empty() && cfg.archive_directory.is_absolute();
+}
+
 bool ReadRtkBaseConfig(const nlohmann::json& value, RtkBaseConfig& cfg) {
   if (!value.is_object()) return false;
   if (value.contains("enabled")) cfg.enabled = value.at("enabled").get<bool>();
@@ -129,6 +141,9 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
   AppConfig cfg;
   std::size_t max_file_size_kb = 0;
   try {
+    if (root.contains("gnss") && !ReadGnssConfig(root.at("gnss"), cfg.gnss)) {
+      return std::unexpected(ConfigError::kInvalidValue);
+    }
     if (root.contains("rtk_base") && !ReadRtkBaseConfig(root.at("rtk_base"), cfg.rtk_base)) {
       return std::unexpected(ConfigError::kInvalidValue);
     }

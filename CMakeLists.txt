@@ -41,6 +41,9 @@ add_library(cns_rpi_core
     src/experiment/video_experiment.cpp
     src/experiment/rtk_base_request.cpp
     src/experiment/rtk_base_experiment.cpp
+    src/experiment/gnss_request.cpp
+    src/experiment/gnss_experiment.cpp
+    src/gnss/raw_frame.cpp
     src/rtk/base_station.cpp
     src/rtk/rtcm_encoder.cpp
     src/rtk/px4_session.cpp
@@ -100,6 +103,18 @@ add_test(NAME release_cli COMMAND ${PYTHON3_EXECUTABLE}
 add_test(NAME release_deploy COMMAND ${PYTHON3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_release_deploy.py $<TARGET_FILE:cns_rpi>)
 target_link_libraries(cns_rpi PRIVATE cns_rpi_core cns_rpi_mqtt)
+
+foreach(gnss_test raw_frame request experiment)
+  add_executable(test_gnss_${gnss_test} tests/test_gnss_${gnss_test}.cpp)
+  target_link_libraries(test_gnss_${gnss_test} PRIVATE cns_rpi_core)
+  add_test(NAME gnss_${gnss_test} COMMAND test_gnss_${gnss_test})
+endforeach()
+
+add_executable(gnss_mavlink_fixture tests/gnss_mavlink_fixture.cpp)
+target_include_directories(gnss_mavlink_fixture SYSTEM PRIVATE src/mavlink)
+add_test(NAME gnss_gateway COMMAND ${PYTHON3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_gnss_gateway.py
+    $<TARGET_FILE:cns_rpi> $<TARGET_FILE:gnss_mavlink_fixture>)
 
 foreach(rtk_test base_station rtcm_encoder px4_session base_request base_experiment experiment_service)
   add_executable(test_rtk_${rtk_test} tests/test_rtk_${rtk_test}.cpp)

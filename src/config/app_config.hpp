@@ -118,6 +118,12 @@ struct VideoConfig {
   std::filesystem::path work_directory{"/tmp/cns-rpi-video"};
 };
 
+/// GNSS采集显式启用；归档目录仅由设备配置指定。
+struct GnssConfig {
+  bool enabled{false};
+  std::filesystem::path archive_directory{"/var/lib/cns-rpi/gnss"};
+};
+
 /// RTK 的两个串口独立于 F407；云端身份始终由 serial 链路上的 F407 提供。
 struct RtkBaseConfig {
   bool enabled{false};
@@ -140,6 +146,7 @@ struct AppConfig {
   RuntimeConfig runtime;
   CellularConfig cellular;
   VideoConfig video;
+  GnssConfig gnss;
   RtkBaseConfig rtk_base;
 };
 

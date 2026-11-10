@@ -59,6 +59,8 @@ journalctl -u cns-rpi.service -u cellular-dialup.service -n 100 --no-pager
 
 ## 遥测通道
 
+GNSS 原始报文实验提供 `gnss_capture_start`、`gnss_capture_stop`、`gnss_status`，从已核验 F407 的 `TUNNEL/0x8020` 恢复 NMEA/UBX 字节，经独立 `gnss/raw/v1` Topic 上传；普通定位继续由原有遥测通道提供。默认关闭，启用配置、采集边界和服务器接点见 [GNSS 实验接口与服务器对接](docs/GNSS实验接口与服务器对接.md)。当前为 Pi 侧本地候选，硬件与服务器联调结果以验证记录为准。
+
 | 通道 | Topic | 默认周期 | 用途 |
 |---|---|---|---|
 | 完整快照 | `{namespace}/{device_id}/telemetry/snapshot/v1` | 1000 ms | 数据库维护完整状态 |
