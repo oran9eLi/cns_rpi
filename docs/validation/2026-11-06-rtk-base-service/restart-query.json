@@ -1,0 +1,91 @@
+{
+  "started_at": "2026-11-06T06:57:19.253Z",
+  "request": {
+    "schema_version": 1,
+    "command_id": "d0c578e5-03bf-4a0b-b449-81a6ecf1c68b",
+    "request_id": "fadce7b2-475f-4d49-95c1-b4e2af71f28e",
+    "target": {
+      "device_id": "DCDWCNS1GHC0G6LF8MY6"
+    },
+    "session_id": "2f03fd2c-62a0-4895-98fe-084da80d7295",
+    "action_id": "fadce7b2-475f-4d49-95c1-b4e2af71f28e",
+    "lease_version": 1793948244504680466,
+    "operation": "rtk_base_status",
+    "expires_at": "2026-11-06T06:58:24.504Z"
+  },
+  "acks": [
+    {
+      "received_at": "2026-11-06T06:57:24.762Z",
+      "topic": "cns_rpi/DCDWCNS1GHC0G6LF8MY6/experiment/ack",
+      "qos": 2,
+      "retain": false,
+      "payload": {
+        "action_id": "fadce7b2-475f-4d49-95c1-b4e2af71f28e",
+        "command_id": "d0c578e5-03bf-4a0b-b449-81a6ecf1c68b",
+        "fact": {
+          "base": {
+            "baud": 115200,
+            "configuration": {
+              "state": "idle",
+              "storage": "RAM",
+              "survey_accuracy_m": null,
+              "survey_min_duration_s": null,
+              "verified_age_ms": null
+            },
+            "connected": true,
+            "device": "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com_u-blox_GNSS_receiver-if00",
+            "last_error": null,
+            "last_rx_age_ms": 200,
+            "nmea": {
+              "checksum_errors": 0,
+              "valid_sentences": 15
+            },
+            "protocol": {
+              "checksum_errors": 0,
+              "firmware": "HPG 1.50",
+              "framing_errors": 0,
+              "hardware": "00190000",
+              "last_rx_age_ms": 200,
+              "module": "ZED-F9P",
+              "name": "UBX",
+              "software": "EXT CORE 1.00 (f17067)",
+              "stale": false,
+              "valid_frames": 3,
+              "version": "27.50"
+            },
+            "receiver_verified": true,
+            "rtcm": {
+              "bytes": 0,
+              "crc_errors": 0,
+              "last_rx_age_ms": null,
+              "message_types": {},
+              "stale": true,
+              "valid_frames": 0
+            },
+            "rx_bytes": 1028,
+            "survey_in": {
+              "active": true,
+              "completed": false,
+              "duration_s": 14,
+              "ecef_m": null,
+              "i_tow_ms": 16118000,
+              "known": true,
+              "last_rx_age_ms": 511,
+              "last_sample_age_ms": 511,
+              "mean_accuracy_m": 94868.3264,
+              "observations": 0,
+              "sample_sequence": 1,
+              "stale": false,
+              "valid": false
+            }
+          }
+        },
+        "observed_at": "2026-11-06T06:57:24.648Z",
+        "operation": "rtk_base_status",
+        "schema_version": 1,
+        "session_id": "2f03fd2c-62a0-4895-98fe-084da80d7295",
+        "status": "completed"
+      }
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+{
+  "observed_at": "2026-11-09T07:31:54.780322+00:00",
+  "hashes": {
+    "/home/dcdw/cns_rpi/build/cns_rpi": "ca9abd849b4c3d012789c215199c598aa8b8ca5d9a9cdf96bbdd73847a22c24c",
+    "/var/lib/cns-rpi/config.json": "09d7ed5837957ef14cab71f2c1ba9e0639f43c32c9395ae53917b7867d8bf3d7",
+    "/var/lib/cns-rpi/device_binding.json": "38a437dd71310753febec80b734995c883896ec81e17d2ffed21df7fe15e67e7",
+    "/etc/systemd/system/cns-rpi.service": "5f567e07a6b4301112f0e6a9cf0e39e17a5c499b3bdbefbd1b1f86ec5df14fd2",
+    "/etc/systemd/system/cellular-dialup.service": "dd13c72ba053f7931c4f2c5dc338aef8bde6fe098270d95ca9bcf3888f50bc81",
+    "/usr/local/libexec/cns-rpi-apply-config": "5f90471faad2c1de44fc23c5cc2a5b9b05fe3b15f036cc9bd57b171ff472a36f"
+  },
+  "cns-rpi.service": {
+    "MainPID": "10011",
+    "NRestarts": "0",
+    "ActiveState": "active",
+    "SubState": "running",
+    "ActiveEnterTimestamp": "Mon 2026-11-09 10:51:15 CST"
+  },
+  "cellular-dialup.service": {
+    "MainPID": "690",
+    "NRestarts": "0",
+    "ActiveState": "active",
+    "SubState": "running",
+    "ActiveEnterTimestamp": "Sun 2026-11-08 13:10:16 CST"
+  }
+}

@@ -12,12 +12,15 @@ namespace device {
 enum class Type {
   kUnknown,
   kCnsBox,
+  kFlightController,
 };
 
 constexpr std::string_view TypeName(Type type) {
   switch (type) {
     case Type::kCnsBox:
       return "cns_box";
+    case Type::kFlightController:
+      return "flight_controller";
     case Type::kUnknown:
       return "unknown";
   }

@@ -188,25 +188,39 @@ DiscoveryAttempt ProbeMavlinkCandidates(
   return attempt;
 }
 
+std::vector<std::string> ExcludeSerialCandidates(
+    std::span<const std::string> candidates,
+    std::span<const std::string> excluded) {
+  std::vector<std::string> result;
+  for (const auto& candidate : candidates) {
+    const bool reserved = std::any_of(excluded.begin(), excluded.end(),
+        [&](const auto& path) {
+          std::error_code error;
+          return candidate == path ||
+              std::filesystem::equivalent(candidate, path, error);
+        });
+    if (!reserved) result.push_back(candidate);
+  }
+  return result;
+}
+
 DiscoveryAttempt DiscoverMavlinkPortOnce(
     std::string_view configured_device, int baud,
     std::chrono::milliseconds per_port_timeout,
-    const StopRequested& stop_requested) {
-  if (configured_device == "auto") {
-    const auto candidates = EnumerateSerialCandidates();
-    return ProbeMavlinkCandidates(candidates, baud, per_port_timeout,
-                                  stop_requested);
-  }
-
-  const std::array<std::string, 1> candidates{
-      std::string(configured_device)};
+    const StopRequested& stop_requested,
+    std::span<const std::string> excluded) {
+  const auto candidates = ExcludeSerialCandidates(
+      configured_device == "auto" ? EnumerateSerialCandidates()
+                                  : std::vector<std::string>{std::string(configured_device)},
+      excluded);
   return ProbeMavlinkCandidates(candidates, baud, per_port_timeout,
                                 stop_requested);
 }
 
 bool AsyncMavlinkDiscovery::Start(
     std::string configured_device, int baud,
-    std::chrono::milliseconds per_port_timeout) {
+    std::chrono::milliseconds per_port_timeout,
+    std::vector<std::string> excluded) {
   if (IsRunning()) {
     return false;
   }
@@ -222,10 +236,10 @@ bool AsyncMavlinkDiscovery::Start(
   running_.store(true, std::memory_order_release);
   worker_ = std::jthread(
       [this, configured_device = std::move(configured_device), baud,
-       per_port_timeout](std::stop_token stop_token) {
+       per_port_timeout, excluded = std::move(excluded)](std::stop_token stop_token) {
         auto attempt = DiscoverMavlinkPortOnce(
             configured_device, baud, per_port_timeout,
-            [&stop_token] { return stop_token.stop_requested(); });
+            [&stop_token] { return stop_token.stop_requested(); }, excluded);
         {
           std::scoped_lock lock(mutex_);
           result_.emplace(std::move(attempt));

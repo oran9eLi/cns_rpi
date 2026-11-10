@@ -1,0 +1,16 @@
+{
+  "request_url": "http://112.124.52.232/api/devices/DCDWCNS1GHC0G6LF8MY6",
+  "http_status": 200,
+  "recorded_at": "2026-11-09T02:51:22.837Z",
+  "device_id": "DCDWCNS1GHC0G6LF8MY6",
+  "telemetry_received_at": "2026-11-09T02:50:55.698Z",
+  "rtk": {
+    "base": {
+      "receiver_verified": true
+    },
+    "px4": {
+      "device_id": "393233510c004b0031"
+    },
+    "box_identity_verified": false
+  }
+}

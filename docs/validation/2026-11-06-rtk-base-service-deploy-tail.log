@@ -1,0 +1,168 @@
+Captured deployment output from approximately 50% of the build onward.
+The earlier build portion is recorded in the task transcript.
+
+[ 50%] Linking CXX executable test_app_config
+[ 50%] Built target test_app_config
+[ 50%] Building CXX object CMakeFiles/test_state_store.dir/tests/test_state_store.cpp.o
+[ 51%] Linking CXX executable test_logger
+[ 51%] Built target test_logger
+[ 52%] Building CXX object CMakeFiles/test_telemetry_decoder.dir/tests/test_telemetry_decoder.cpp.o
+[ 53%] Linking CXX executable test_state_store
+[ 53%] Built target test_state_store
+[ 53%] Building CXX object CMakeFiles/test_extension_decoder.dir/tests/test_extension_decoder.cpp.o
+[ 53%] Linking CXX executable test_telemetry_decoder
+[ 53%] Built target test_telemetry_decoder
+[ 54%] Building CXX object CMakeFiles/test_identity.dir/tests/test_identity.cpp.o
+[ 55%] Linking CXX executable test_extension_decoder
+[ 55%] Built target test_extension_decoder
+[ 56%] Building CXX object CMakeFiles/test_device_binding_store.dir/tests/test_device_binding_store.cpp.o
+[ 56%] Linking CXX executable test_identity
+[ 56%] Built target test_identity
+[ 57%] Building CXX object CMakeFiles/test_json_serializer.dir/tests/test_json_serializer.cpp.o
+[ 58%] Linking CXX executable test_device_binding_store
+[ 58%] Built target test_device_binding_store
+[ 59%] Building CXX object CMakeFiles/test_mqtt_topic.dir/tests/test_mqtt_topic.cpp.o
+[ 59%] Linking CXX executable test_mqtt_topic
+[ 59%] Built target test_mqtt_topic
+[ 60%] Building CXX object CMakeFiles/test_telemetry_publisher.dir/tests/test_telemetry_publisher.cpp.o
+[ 60%] Linking CXX executable test_json_serializer
+[ 60%] Built target test_json_serializer
+[ 60%] Building CXX object CMakeFiles/test_registration_payload.dir/tests/test_registration_payload.cpp.o
+[ 60%] Linking CXX executable test_telemetry_publisher
+[ 60%] Built target test_telemetry_publisher
+[ 60%] Building CXX object CMakeFiles/test_registration_state.dir/tests/test_registration_state.cpp.o
+[ 61%] Linking CXX executable test_registration_state
+[ 61%] Built target test_registration_state
+[ 62%] Building CXX object CMakeFiles/test_runtime_status.dir/tests/test_runtime_status.cpp.o
+[ 63%] Linking CXX executable test_registration_payload
+[ 63%] Built target test_registration_payload
+[ 64%] Building CXX object CMakeFiles/test_pi_link_inspection.dir/tests/test_pi_link_inspection.cpp.o
+[ 64%] Linking CXX executable test_runtime_status
+[ 64%] Built target test_runtime_status
+[ 65%] Building CXX object CMakeFiles/test_video_request.dir/tests/test_video_request.cpp.o
+[ 66%] Linking CXX executable test_pi_link_inspection
+[ 66%] Built target test_pi_link_inspection
+[ 67%] Building CXX object CMakeFiles/test_video_manager.dir/tests/test_video_manager.cpp.o
+[ 68%] Linking CXX executable test_video_request
+[ 68%] Built target test_video_request
+[ 69%] Building CXX object CMakeFiles/test_video_experiment.dir/tests/test_video_experiment.cpp.o
+[ 69%] Linking CXX executable test_video_manager
+[ 69%] Built target test_video_manager
+[ 70%] Building CXX object CMakeFiles/test_link_lab.dir/tests/test_link_lab.cpp.o
+[ 70%] Linking CXX executable test_video_experiment
+[ 70%] Built target test_video_experiment
+[ 70%] Building CXX object CMakeFiles/test_uart_echo_request.dir/tests/test_uart_echo_request.cpp.o
+[ 71%] Linking CXX executable test_link_lab
+[ 71%] Built target test_link_lab
+[ 72%] Building CXX object CMakeFiles/test_m1_request.dir/tests/test_m1_request.cpp.o
+[ 73%] Linking CXX executable test_uart_echo_request
+[ 73%] Built target test_uart_echo_request
+[ 74%] Building CXX object CMakeFiles/test_deferred_serial_request.dir/tests/test_deferred_serial_request.cpp.o
+[ 74%] Linking CXX executable test_m1_request
+[ 74%] Built target test_m1_request
+[ 74%] Building CXX object CMakeFiles/test_m1_protocol.dir/tests/test_m1_protocol.cpp.o
+[ 75%] Linking CXX executable test_m1_protocol
+[ 75%] Built target test_m1_protocol
+[ 76%] Building CXX object CMakeFiles/test_m1_transaction.dir/tests/test_m1_transaction.cpp.o
+[ 76%] Linking CXX executable test_deferred_serial_request
+[ 76%] Built target test_deferred_serial_request
+[ 77%] Building CXX object CMakeFiles/test_serial_affinity.dir/tests/test_serial_affinity.cpp.o
+[ 77%] Linking CXX executable test_serial_affinity
+[ 77%] Built target test_serial_affinity
+[ 78%] Building CXX object CMakeFiles/test_pi_baud_change.dir/tests/test_pi_baud_change.cpp.o
+[ 78%] Linking CXX executable test_m1_transaction
+[ 78%] Built target test_m1_transaction
+[ 79%] Building CXX object CMakeFiles/test_startup_baud_recovery.dir/tests/test_startup_baud_recovery.cpp.o
+[ 79%] Linking CXX executable test_startup_baud_recovery
+[ 79%] Built target test_startup_baud_recovery
+[ 80%] Building CXX object CMakeFiles/test_uart_echo_protocol.dir/tests/test_uart_echo_protocol.cpp.o
+[ 80%] Linking CXX executable test_pi_baud_change
+[ 80%] Built target test_pi_baud_change
+[ 80%] Building CXX object CMakeFiles/test_uart_echo_transaction.dir/tests/test_uart_echo_transaction.cpp.o
+[ 81%] Linking CXX executable test_uart_echo_protocol
+[ 81%] Built target test_uart_echo_protocol
+[ 81%] Building CXX object CMakeFiles/test_device_session.dir/tests/test_device_session.cpp.o
+[ 82%] Linking CXX executable test_device_session
+[ 82%] Built target test_device_session
+[ 82%] Building CXX object CMakeFiles/test_command_parser.dir/tests/test_command_parser.cpp.o
+[ 83%] Linking CXX executable test_uart_echo_transaction
+[ 83%] Built target test_uart_echo_transaction
+[ 84%] Building CXX object CMakeFiles/test_control_command.dir/tests/test_control_command.cpp.o
+[ 85%] Linking CXX executable test_command_parser
+[ 85%] Built target test_command_parser
+[ 85%] Building CXX object CMakeFiles/test_control_test_cli.dir/tests/test_control_test_cli.cpp.o
+[ 86%] Linking CXX executable test_control_command
+[ 86%] Built target test_control_command
+[ 87%] Building CXX object CMakeFiles/test_control_transaction.dir/tests/test_control_transaction.cpp.o
+[ 88%] Linking CXX executable test_control_test_cli
+[ 88%] Built target test_control_test_cli
+[ 88%] Building CXX object CMakeFiles/test_control_endpoint.dir/tests/test_control_endpoint.cpp.o
+[ 88%] Linking CXX executable test_control_transaction
+[ 88%] Built target test_control_transaction
+[ 88%] Building CXX object CMakeFiles/test_endpoint_revalidation.dir/tests/test_endpoint_revalidation.cpp.o
+[ 89%] Linking CXX executable test_control_endpoint
+[ 89%] Built target test_control_endpoint
+[ 90%] Building CXX object CMakeFiles/test_cellular_status.dir/tests/test_cellular_status.cpp.o
+[ 91%] Linking CXX executable test_endpoint_revalidation
+[ 91%] Built target test_endpoint_revalidation
+[ 92%] Building CXX object CMakeFiles/test_cellular_snapshot.dir/tests/test_cellular_snapshot.cpp.o
+[ 92%] Linking CXX executable test_cellular_status
+[ 92%] Built target test_cellular_status
+[ 92%] Building CXX object CMakeFiles/test_systemd_watchdog.dir/tests/test_systemd_watchdog.cpp.o
+[ 93%] Linking CXX executable test_systemd_watchdog
+[ 93%] Built target test_systemd_watchdog
+[ 94%] Building CXX object CMakeFiles/test_config_updater.dir/tests/test_config_updater.cpp.o
+[ 94%] Linking CXX executable test_cellular_snapshot
+[ 94%] Built target test_cellular_snapshot
+[ 95%] Building CXX object CMakeFiles/test_config_store.dir/tests/test_config_store.cpp.o
+[ 95%] Linking CXX executable test_config_updater
+[ 95%] Built target test_config_updater
+[ 95%] Building CXX object CMakeFiles/test_command_processor.dir/tests/test_command_processor.cpp.o
+[ 95%] Linking CXX executable test_config_store
+[ 95%] Built target test_config_store
+[ 95%] Building CXX object CMakeFiles/cns_rpi_config_request.dir/src/config_command/config_request.cpp.o
+[ 96%] Linking CXX static library libcns_rpi_config_request.a
+[ 96%] Built target cns_rpi_config_request
+[ 97%] Building CXX object CMakeFiles/test_mqtt_client.dir/tests/test_mqtt_client.cpp.o
+[ 98%] Linking CXX executable test_command_processor
+[ 98%] Built target test_command_processor
+[ 98%] Building CXX object CMakeFiles/cns_rpi.dir/src/main.cpp.o
+[ 98%] Linking CXX executable test_mqtt_client
+[ 98%] Built target test_mqtt_client
+[ 98%] Building CXX object CMakeFiles/test_config_request.dir/tests/test_config_request.cpp.o
+[ 99%] Linking CXX executable cns_rpi
+[ 99%] Built target cns_rpi
+[100%] Linking CXX executable test_config_request
+[100%] Built target test_config_request
+===== 准备并校验现场配置 =====
+配置校验通过
+  - 已收敛 /usr/local/libexec/cns-rpi-apply-config 的内容、所有者和权限
+  - 保留现场配置：/var/lib/cns-rpi/config.json
+  - 现场配置已经是 F407 主控箱与快照/实时通道结构
+配置校验通过
+cns_rpi 1.0.7
+===== 安装配置 helper 和 systemd 服务 =====
+  - 已收敛 /etc/systemd/system/cns-rpi.service 的内容、所有者和权限
+  - 已收敛 /etc/systemd/system/cellular-dialup.service 的内容、所有者和权限
+===== 加载并启用 systemd 服务 =====
+● cns-rpi.service - CNS RPi 数据节点
+     Loaded: loaded (/etc/systemd/system/cns-rpi.service; enabled; preset: enabled)
+     Active: active (running) since Fri 2026-11-06 14:56:46 CST; 1s ago
+ Invocation: 6d2ea5c0e2a442da952995fad8f940f8
+   Main PID: 17046 (cns_rpi)
+      Tasks: 2 (limit: 9626)
+        CPU: 17ms
+     CGroup: /system.slice/cns-rpi.service
+             └─17046 /home/dcdw/cns_rpi/build/cns_rpi /var/lib/cns-rpi/config.json --config-writer=helper --config-helper=/usr/local/libexec/cns-rpi-apply-config --config-staging=/run/cns-rpi
+
+Nov 06 14:56:46 raspberrypi cns_rpi[17046]: [2026-11-06 14:56:46.548] [+000000.000s] [INFO ] 已加载设备身份绑定: device_id=DCDWCNS1GHC0G6LF8MY6
+Nov 06 14:56:46 raspberrypi cns_rpi[17046]: [2026-11-06 14:56:46.549] [+000000.001s] [INFO ] systemd watchdog 已启用，超时=30s
+Nov 06 14:56:46 raspberrypi cns_rpi[17046]: [2026-11-06 14:56:46.564] [+000000.015s] [INFO ] RTK附属PX4串口已打开，等待观测身份核验
+Nov 06 14:56:46 raspberrypi cns_rpi[17046]: [2026-11-06 14:56:46.564] [+000000.015s] [INFO ] MQTT连接中：Broker=112.124.52.232
+Nov 06 14:56:46 raspberrypi cns_rpi[17046]: [2026-11-06 14:56:46.564] [+000000.015s] [INFO ] 遥测快照通道：状态=已启用，周期=1000毫秒，Topic=cns_rpi/DCDWCNS1GHC0G6LF8MY6/telemetry/snapshot/v1
+Nov 06 14:56:46 raspberrypi cns_rpi[17046]: [2026-11-06 14:56:46.564] [+000000.015s] [INFO ] 遥测实时通道：状态=已启用，周期=100毫秒，Topic=cns_rpi/DCDWCNS1GHC0G6LF8MY6/telemetry/realtime/v1
+Nov 06 14:56:46 raspberrypi cns_rpi[17046]: [2026-11-06 14:56:46.574] [+000000.026s] [WARN ] 尚未发现受控设备 MAVLink 串口，继续等待
+Nov 06 14:56:46 raspberrypi cns_rpi[17046]: [2026-11-06 14:56:46.606] [+000000.057s] [INFO ] MQTT已连接
+Nov 06 14:56:46 raspberrypi cns_rpi[17046]: [2026-11-06 14:56:46.674] [+000000.126s] [INFO ] 运行三态已发布: 控制链=在线，业务=未知，身份=已缓存
+Nov 06 14:56:47 raspberrypi cns_rpi[17046]: [2026-11-06 14:56:47.075] [+000000.527s] [INFO ] RTK附属PX4观测身份已核验：393233510c004b0031
+===== cns_rpi 部署完成 =====

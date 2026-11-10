@@ -1,0 +1,40 @@
+Internal ctest changing into directory: /home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build
+Test project /home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build
+      Start  2: release_cli
+ 1/17 Test  #2: release_cli ......................   Passed    0.09 sec
+      Start  3: release_deploy
+ 2/17 Test  #3: release_deploy ...................   Passed    6.50 sec
+      Start  4: rtk_base_station
+ 3/17 Test  #4: rtk_base_station .................   Passed    0.01 sec
+      Start  5: rtk_px4_session
+ 4/17 Test  #5: rtk_px4_session ..................   Passed    0.00 sec
+      Start  6: rtk_base_request
+ 5/17 Test  #6: rtk_base_request .................   Passed    0.00 sec
+      Start  7: rtk_base_experiment
+ 6/17 Test  #7: rtk_base_experiment ..............   Passed    0.00 sec
+      Start  8: rtk_experiment_service
+ 7/17 Test  #8: rtk_experiment_service ...........   Passed    0.00 sec
+      Start  9: rtk_base_gateway
+ 8/17 Test  #9: rtk_base_gateway .................   Passed    0.08 sec
+      Start 11: mavlink_port_discovery
+ 9/17 Test #11: mavlink_port_discovery ...........   Passed    0.98 sec
+      Start 12: app_config
+10/17 Test #12: app_config .......................   Passed    0.01 sec
+      Start 19: device_binding_store
+11/17 Test #19: device_binding_store .............   Passed    0.00 sec
+      Start 25: runtime_status
+12/17 Test #25: runtime_status ...................   Passed    0.00 sec
+      Start 27: video_request
+13/17 Test #27: video_request ....................   Passed    0.00 sec
+      Start 28: video_manager
+14/17 Test #28: video_manager ....................   Passed    4.31 sec
+      Start 29: video_experiment
+15/17 Test #29: video_experiment .................   Passed    0.23 sec
+      Start 41: device_session
+16/17 Test #41: device_session ...................   Passed    0.00 sec
+      Start 55: cns_rpi_service
+17/17 Test #55: cns_rpi_service ..................   Passed    0.00 sec
+
+100% tests passed, 0 tests failed out of 17
+
+Total Test time (real) =  12.24 sec

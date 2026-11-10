@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "command_id": "ec023c31-497f-4128-b355-ea564db60f42",
+  "request_id": "57433297-d10c-49f2-8a39-4b707edf1dc0",
+  "target": {
+    "device_id": "DCDWCNS1GHC0G6LF8MY6"
+  },
+  "session_id": "ff9c5d1a-fe21-4ece-9c3c-9b23702a77ad",
+  "action_id": "57433297-d10c-49f2-8a39-4b707edf1dc0",
+  "lease_version": 1,
+  "operation": "rtk_base_status",
+  "expires_at": "2026-11-09T02:51:06.589Z"
+}

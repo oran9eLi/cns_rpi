@@ -1,0 +1,357 @@
+Start testing: Nov 09 10:36 CST
+----------------------------------------------------------
+2/68 Testing: release_cli
+2/68 Test: release_cli
+Command: "/usr/bin/python3" "/home/dcdw/cns-rpi-rtk-deploy-20261109T104000/source/tests/test_release_cli.py" "/home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build/cns_rpi"
+Directory: /home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build
+"release_cli" start time: Nov 09 10:36 CST
+Output:
+----------------------------------------------------------
+...
+----------------------------------------------------------------------
+Ran 3 tests in 0.012s
+
+OK
+<end of output>
+Test time =   0.09 sec
+----------------------------------------------------------
+Test Passed.
+"release_cli" end time: Nov 09 10:36 CST
+"release_cli" time elapsed: 00:00:00
+----------------------------------------------------------
+
+3/68 Testing: release_deploy
+3/68 Test: release_deploy
+Command: "/usr/bin/python3" "/home/dcdw/cns-rpi-rtk-deploy-20261109T104000/source/tests/test_release_deploy.py" "/home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build/cns_rpi"
+Directory: /home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build
+"release_deploy" start time: Nov 09 10:36 CST
+Output:
+----------------------------------------------------------
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 6.429s
+
+OK
+<end of output>
+Test time =   6.50 sec
+----------------------------------------------------------
+Test Passed.
+"release_deploy" end time: Nov 09 10:36 CST
+"release_deploy" time elapsed: 00:00:06
+----------------------------------------------------------
+
+4/68 Testing: rtk_base_station
+4/68 Test: rtk_base_station
+Command: "/home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build/test_rtk_base_station"
+Directory: /home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build
+"rtk_base_station" start time: Nov 09 10:36 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  24 |  24 passed | 0 failed | 0 skipped
+[doctest] assertions: 482 | 482 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.01 sec
+----------------------------------------------------------
+Test Passed.
+"rtk_base_station" end time: Nov 09 10:36 CST
+"rtk_base_station" time elapsed: 00:00:00
+----------------------------------------------------------
+
+5/68 Testing: rtk_px4_session
+5/68 Test: rtk_px4_session
+Command: "/home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build/test_rtk_px4_session"
+Directory: /home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build
+"rtk_px4_session" start time: Nov 09 10:36 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  7 |  7 passed | 0 failed | 0 skipped
+[doctest] assertions: 81 | 81 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"rtk_px4_session" end time: Nov 09 10:36 CST
+"rtk_px4_session" time elapsed: 00:00:00
+----------------------------------------------------------
+
+6/68 Testing: rtk_base_request
+6/68 Test: rtk_base_request
+Command: "/home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build/test_rtk_base_request"
+Directory: /home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build
+"rtk_base_request" start time: Nov 09 10:36 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  7 |  7 passed | 0 failed | 0 skipped
+[doctest] assertions: 77 | 77 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"rtk_base_request" end time: Nov 09 10:36 CST
+"rtk_base_request" time elapsed: 00:00:00
+----------------------------------------------------------
+
+7/68 Testing: rtk_base_experiment
+7/68 Test: rtk_base_experiment
+Command: "/home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build/test_rtk_base_experiment"
+Directory: /home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build
+"rtk_base_experiment" start time: Nov 09 10:36 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  5 |  5 passed | 0 failed | 0 skipped
+[doctest] assertions: 30 | 30 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"rtk_base_experiment" end time: Nov 09 10:36 CST
+"rtk_base_experiment" time elapsed: 00:00:00
+----------------------------------------------------------
+
+8/68 Testing: rtk_experiment_service
+8/68 Test: rtk_experiment_service
+Command: "/home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build/test_rtk_experiment_service"
+Directory: /home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build
+"rtk_experiment_service" start time: Nov 09 10:36 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  4 |  4 passed | 0 failed | 0 skipped
+[doctest] assertions: 75 | 75 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"rtk_experiment_service" end time: Nov 09 10:36 CST
+"rtk_experiment_service" time elapsed: 00:00:00
+----------------------------------------------------------
+
+9/68 Testing: rtk_base_gateway
+9/68 Test: rtk_base_gateway
+Command: "/usr/bin/python3" "/home/dcdw/cns-rpi-rtk-deploy-20261109T104000/source/tests/test_rtk_base_gateway.py" "/home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build/cns_rpi" "/home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build/rtk_mavlink_fixture"
+Directory: /home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build
+"rtk_base_gateway" start time: Nov 09 10:36 CST
+Output:
+----------------------------------------------------------
+s
+----------------------------------------------------------------------
+Ran 1 test in 0.000s
+
+OK (skipped=1)
+<end of output>
+Test time =   0.08 sec
+----------------------------------------------------------
+Test Passed.
+"rtk_base_gateway" end time: Nov 09 10:36 CST
+"rtk_base_gateway" time elapsed: 00:00:00
+----------------------------------------------------------
+
+11/68 Testing: mavlink_port_discovery
+11/68 Test: mavlink_port_discovery
+Command: "/home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build/test_mavlink_port_discovery"
+Directory: /home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build
+"mavlink_port_discovery" start time: Nov 09 10:36 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  20 |  20 passed | 0 failed | 0 skipped
+[doctest] assertions: 179 | 179 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.98 sec
+----------------------------------------------------------
+Test Passed.
+"mavlink_port_discovery" end time: Nov 09 10:36 CST
+"mavlink_port_discovery" time elapsed: 00:00:00
+----------------------------------------------------------
+
+12/68 Testing: app_config
+12/68 Test: app_config
+Command: "/home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build/test_app_config"
+Directory: /home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build
+"app_config" start time: Nov 09 10:36 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  29 |  29 passed | 0 failed | 0 skipped
+[doctest] assertions: 275 | 275 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.01 sec
+----------------------------------------------------------
+Test Passed.
+"app_config" end time: Nov 09 10:36 CST
+"app_config" time elapsed: 00:00:00
+----------------------------------------------------------
+
+19/68 Testing: device_binding_store
+19/68 Test: device_binding_store
+Command: "/home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build/test_device_binding_store"
+Directory: /home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build
+"device_binding_store" start time: Nov 09 10:36 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  5 |  5 passed | 0 failed | 0 skipped
+[doctest] assertions: 27 | 27 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"device_binding_store" end time: Nov 09 10:36 CST
+"device_binding_store" time elapsed: 00:00:00
+----------------------------------------------------------
+
+25/68 Testing: runtime_status
+25/68 Test: runtime_status
+Command: "/home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build/test_runtime_status"
+Directory: /home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build
+"runtime_status" start time: Nov 09 10:36 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases: 12 | 12 passed | 0 failed | 0 skipped
+[doctest] assertions: 37 | 37 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"runtime_status" end time: Nov 09 10:36 CST
+"runtime_status" time elapsed: 00:00:00
+----------------------------------------------------------
+
+27/68 Testing: video_request
+27/68 Test: video_request
+Command: "/home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build/test_video_request"
+Directory: /home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build
+"video_request" start time: Nov 09 10:36 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  6 |  6 passed | 0 failed | 0 skipped
+[doctest] assertions: 50 | 50 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"video_request" end time: Nov 09 10:36 CST
+"video_request" time elapsed: 00:00:00
+----------------------------------------------------------
+
+28/68 Testing: video_manager
+28/68 Test: video_manager
+Command: "/home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build/test_video_manager"
+Directory: /home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build
+"video_manager" start time: Nov 09 10:36 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  13 |  13 passed | 0 failed | 0 skipped
+[doctest] assertions: 189 | 189 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   4.31 sec
+----------------------------------------------------------
+Test Passed.
+"video_manager" end time: Nov 09 10:36 CST
+"video_manager" time elapsed: 00:00:04
+----------------------------------------------------------
+
+29/68 Testing: video_experiment
+29/68 Test: video_experiment
+Command: "/home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build/test_video_experiment"
+Directory: /home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build
+"video_experiment" start time: Nov 09 10:36 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:   9 |   9 passed | 0 failed | 0 skipped
+[doctest] assertions: 138 | 138 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.23 sec
+----------------------------------------------------------
+Test Passed.
+"video_experiment" end time: Nov 09 10:36 CST
+"video_experiment" time elapsed: 00:00:00
+----------------------------------------------------------
+
+41/68 Testing: device_session
+41/68 Test: device_session
+Command: "/home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build/test_device_session"
+Directory: /home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build
+"device_session" start time: Nov 09 10:36 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases: 10 | 10 passed | 0 failed | 0 skipped
+[doctest] assertions: 65 | 65 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"device_session" end time: Nov 09 10:36 CST
+"device_session" time elapsed: 00:00:00
+----------------------------------------------------------
+
+55/68 Testing: cns_rpi_service
+55/68 Test: cns_rpi_service
+Command: "/home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build/test_cns_rpi_service"
+Directory: /home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build
+"cns_rpi_service" start time: Nov 09 10:36 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  5 |  5 passed | 0 failed | 0 skipped
+[doctest] assertions: 37 | 37 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"cns_rpi_service" end time: Nov 09 10:36 CST
+"cns_rpi_service" time elapsed: 00:00:00
+----------------------------------------------------------
+
+End testing: Nov 09 10:36 CST

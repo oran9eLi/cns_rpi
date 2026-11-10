@@ -7,6 +7,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <filesystem>
 #include <string>
 #include <thread>
 #include <utility>
@@ -271,6 +272,32 @@ TEST_CASE("明确路径只探测配置的设备") {
       configured.slave_path, 115200, std::chrono::milliseconds(150),
       [] { return false; });
 
+  CHECK_FALSE(attempt.found.has_value());
+  CHECK(attempt.failures.empty());
+}
+
+TEST_CASE("F407发现排除基站和PX4的路径及符号链接") {
+  auto box = OpenPtyPair();
+  auto px4 = OpenPtyPair();
+  auto base = OpenPtyPair();
+  const auto alias = std::filesystem::temp_directory_path() /
+      ("cns-rtk-discovery-" + std::to_string(::getpid()));
+  std::filesystem::create_symlink(px4.slave_path, alias);
+  const std::vector<std::string> candidates{
+      px4.slave_path, box.slave_path, base.slave_path};
+  const std::vector<std::string> excluded{alias.string(), base.slave_path};
+  CHECK(uart::ExcludeSerialCandidates(candidates, excluded) ==
+        std::vector<std::string>{box.slave_path});
+  std::filesystem::remove(alias);
+}
+
+TEST_CASE("受信旧路径指向PX4时也不打开该端口") {
+  auto px4 = OpenPtyPair();
+  WriteAll(px4.master_fd, Encode(PackHeartbeat(22)));
+  const std::vector<std::string> excluded{px4.slave_path};
+  const auto attempt = uart::DiscoverMavlinkPortOnce(
+      px4.slave_path, 115200, std::chrono::milliseconds(100),
+      [] { return false; }, excluded);
   CHECK_FALSE(attempt.found.has_value());
   CHECK(attempt.failures.empty());
 }

@@ -1,0 +1,125 @@
+[  1%] Built target rtk_mavlink_fixture
+[  3%] Built target config_store_helper
+[  4%] Built target test_cns_rpi_service
+[  5%] Built target test_main_logging_contract
+[  5%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/experiment/rtk_base_experiment.cpp.o
+[  6%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/rtk/base_station.cpp.o
+[  6%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/rtk/px4_session.cpp.o
+[  7%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/rtk/experiment_service.cpp.o
+[  7%] Linking CXX static library libcns_rpi_core.a
+[ 35%] Built target cns_rpi_core
+[ 35%] Building CXX object CMakeFiles/test_rtk_base_station.dir/tests/test_rtk_base_station.cpp.o
+[ 36%] Built target cns_rpi_mqtt
+[ 36%] Linking CXX executable test_rtk_rtcm_encoder
+[ 37%] Built target test_rtk_rtcm_encoder
+[ 37%] Building CXX object CMakeFiles/test_rtk_px4_session.dir/tests/test_rtk_px4_session.cpp.o
+[ 38%] Linking CXX executable test_rtk_base_station
+[ 38%] Built target test_rtk_base_station
+[ 39%] Linking CXX executable test_rtk_base_request
+[ 40%] Built target test_rtk_base_request
+[ 41%] Building CXX object CMakeFiles/test_rtk_base_experiment.dir/tests/test_rtk_base_experiment.cpp.o
+[ 41%] Linking CXX executable test_rtk_base_experiment
+[ 41%] Built target test_rtk_base_experiment
+[ 42%] Linking CXX executable test_rtk_px4_session
+[ 42%] Built target test_rtk_px4_session
+[ 42%] Building CXX object CMakeFiles/test_rtk_experiment_service.dir/tests/test_rtk_experiment_service.cpp.o
+[ 43%] Linking CXX executable cns_control_test
+[ 43%] Built target cns_control_test
+[ 43%] Linking CXX executable test_mavlink_link
+[ 44%] Built target test_mavlink_link
+[ 44%] Linking CXX executable test_mavlink_port_discovery
+[ 45%] Built target test_mavlink_port_discovery
+[ 46%] Linking CXX executable test_app_config
+[ 46%] Built target test_app_config
+[ 47%] Linking CXX executable test_startup_summary
+[ 47%] Built target test_startup_summary
+[ 47%] Linking CXX executable test_logger
+[ 48%] Built target test_logger
+[ 49%] Linking CXX executable test_state_store
+[ 49%] Built target test_state_store
+[ 49%] Linking CXX executable test_telemetry_decoder
+[ 50%] Built target test_telemetry_decoder
+[ 51%] Linking CXX executable test_rtk_experiment_service
+[ 51%] Built target test_rtk_experiment_service
+[ 52%] Linking CXX executable test_identity
+[ 53%] Linking CXX executable test_extension_decoder
+[ 53%] Built target test_identity
+[ 54%] Built target test_extension_decoder
+[ 54%] Linking CXX executable test_device_binding_store
+[ 55%] Built target test_device_binding_store
+[ 56%] Linking CXX executable test_mqtt_topic
+[ 57%] Linking CXX executable test_json_serializer
+[ 58%] Built target test_mqtt_topic
+[ 58%] Built target test_json_serializer
+[ 58%] Linking CXX executable test_registration_payload
+[ 59%] Linking CXX executable test_telemetry_publisher
+[ 60%] Built target test_registration_payload
+[ 60%] Linking CXX executable test_registration_state
+[ 61%] Built target test_telemetry_publisher
+[ 61%] Linking CXX executable test_runtime_status
+[ 62%] Built target test_registration_state
+[ 63%] Linking CXX executable test_pi_link_inspection
+[ 64%] Built target test_runtime_status
+[ 64%] Built target test_pi_link_inspection
+[ 65%] Linking CXX executable test_video_request
+[ 65%] Linking CXX executable test_video_manager
+[ 66%] Built target test_video_manager
+[ 67%] Built target test_video_request
+[ 67%] Linking CXX executable test_video_experiment
+[ 68%] Built target test_video_experiment
+[ 69%] Linking CXX executable test_uart_echo_request
+[ 69%] Linking CXX executable test_link_lab
+[ 69%] Built target test_uart_echo_request
+[ 70%] Linking CXX executable test_m1_request
+[ 71%] Built target test_link_lab
+[ 72%] Linking CXX executable test_deferred_serial_request
+[ 73%] Built target test_m1_request
+[ 73%] Built target test_deferred_serial_request
+[ 73%] Linking CXX executable test_m1_protocol
+[ 74%] Linking CXX executable test_m1_transaction
+[ 75%] Built target test_m1_protocol
+[ 76%] Linking CXX executable test_serial_affinity
+[ 76%] Built target test_m1_transaction
+[ 77%] Linking CXX executable test_pi_baud_change
+[ 78%] Built target test_serial_affinity
+[ 79%] Linking CXX executable test_startup_baud_recovery
+[ 79%] Built target test_pi_baud_change
+[ 79%] Built target test_startup_baud_recovery
+[ 80%] Linking CXX executable test_uart_echo_protocol
+[ 81%] Linking CXX executable test_uart_echo_transaction
+[ 81%] Built target test_uart_echo_protocol
+[ 81%] Linking CXX executable test_device_session
+[ 81%] Built target test_uart_echo_transaction
+[ 82%] Linking CXX executable test_command_parser
+[ 83%] Built target test_device_session
+[ 84%] Built target test_command_parser
+[ 84%] Linking CXX executable test_control_command
+[ 85%] Linking CXX executable test_control_test_cli
+[ 86%] Built target test_control_command
+[ 86%] Built target test_control_test_cli
+[ 87%] Linking CXX executable test_control_transaction
+[ 88%] Linking CXX executable test_control_endpoint
+[ 88%] Built target test_control_transaction
+[ 89%] Built target test_control_endpoint
+[ 89%] Linking CXX executable test_endpoint_revalidation
+[ 89%] Linking CXX executable test_cellular_status
+[ 90%] Built target test_endpoint_revalidation
+[ 91%] Linking CXX executable test_cellular_snapshot
+[ 92%] Built target test_cellular_status
+[ 92%] Linking CXX executable test_systemd_watchdog
+[ 92%] Built target test_cellular_snapshot
+[ 92%] Linking CXX executable test_config_updater
+[ 93%] Built target test_systemd_watchdog
+[ 94%] Linking CXX executable test_config_store
+[ 95%] Built target test_config_updater
+[ 96%] Linking CXX executable test_command_processor
+[ 96%] Built target test_config_store
+[ 97%] Built target cns_rpi_config_request
+[ 97%] Linking CXX executable test_mqtt_client
+[ 97%] Built target test_command_processor
+[ 98%] Built target test_mqtt_client
+[ 99%] Linking CXX executable test_config_request
+[ 99%] Built target test_config_request
+[ 99%] Building CXX object CMakeFiles/cns_rpi.dir/src/main.cpp.o
+[100%] Linking CXX executable cns_rpi
+[100%] Built target cns_rpi

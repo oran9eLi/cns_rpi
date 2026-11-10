@@ -1,4 +1,15 @@
 {
+  "rtk_base": {
+    "enabled": false,
+    "device": "",
+    "baud": 115200,
+    "px4_device": "",
+    "px4_baud": 57600,
+    "survey_min_duration_s": 60,
+    "survey_accuracy_m": 2.0,
+    "stale_after_ms": 3000,
+    "status_file": "/run/cns-rpi/rtk-base-status.json"
+  },
   "video": {
     "enabled": false,
     "executable": "/usr/bin/rpicam-vid",

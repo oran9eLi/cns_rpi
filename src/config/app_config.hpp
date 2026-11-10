@@ -13,6 +13,7 @@
 #include <expected>
 #include <chrono>
 #include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <string>
 #include <string_view>
@@ -119,6 +120,19 @@ struct VideoConfig {
   std::filesystem::path work_directory{"/tmp/cns-rpi-video"};
 };
 
+/// RTK 的两个串口独立于 F407；云端身份始终由 serial 链路上的 F407 提供。
+struct RtkBaseConfig {
+  bool enabled{false};
+  std::string device;                     ///< 9Ps 基站端口；启用时必须为明确绝对路径。
+  int baud{115200};
+  std::string px4_device;                 ///< 3DR/PX4 端口；启用时必须为明确绝对路径。
+  int px4_baud{57600};
+  std::uint32_t survey_min_duration_s{60};  ///< Survey-in 最短持续时间，10..86400 秒。
+  double survey_accuracy_m{2.0};           ///< Survey-in 平均位置精度门限，0.1..100 米。
+  std::uint32_t stale_after_ms{3000};      ///< 基站新样本过期门限，1000..60000 毫秒。
+  std::filesystem::path status_file{"/run/cns-rpi/rtk-base-status.json"};
+};
+
 struct AppConfig {
   SerialConfig serial;
   TelemetryPublishConfig telemetry_publish;
@@ -129,6 +143,7 @@ struct AppConfig {
   RuntimeConfig runtime;
   CellularConfig cellular;
   VideoConfig video;
+  RtkBaseConfig rtk_base;
 };
 
 /**

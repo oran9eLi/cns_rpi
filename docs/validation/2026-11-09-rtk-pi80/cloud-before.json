@@ -1,0 +1,15 @@
+{
+  "observed_at": "2026-11-09T02:50:31.053629+00:00",
+  "old_host": "192.168.0.149",
+  "new_host": "112.124.52.232",
+  "port": 1883,
+  "config_sha256": "1709c994c437395b8f186ed24d2e2f0aa5b18a9b8051465b25635c2fe65df330",
+  "binding_sha256": "38a437dd71310753febec80b734995c883896ec81e17d2ffed21df7fe15e67e7",
+  "cellular_service": {
+    "MainPID": "690",
+    "NRestarts": "0",
+    "ActiveState": "active",
+    "SubState": "running",
+    "ActiveEnterTimestamp": "Sun 2026-11-08 13:10:16 CST"
+  }
+}

@@ -1,0 +1,116 @@
+[  3%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/uart/serial_port.cpp.o
+[  3%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/logging/logger.cpp.o
+[  6%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/uart/mavlink_link.cpp.o
+[  6%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/uart/mavlink_port_discovery.cpp.o
+[  9%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/config/app_config.cpp.o
+[ 12%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/config/startup_summary.cpp.o
+[ 12%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/state/state_store.cpp.o
+[ 15%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/protocol/telemetry_decoder.cpp.o
+[ 15%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/protocol/extension_decoder.cpp.o
+[ 18%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/protocol/identity.cpp.o
+[ 21%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/device/device_binding_store.cpp.o
+[ 21%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/payload/json_serializer.cpp.o
+[ 25%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/telemetry/publisher.cpp.o
+[ 25%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/mqtt/topic.cpp.o
+[ 28%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/registration/registration_payload.cpp.o
+[ 31%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/registration/registration_state.cpp.o
+[ 31%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/runtime_status/runtime_status.cpp.o
+[ 34%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/runtime_status/device_session.cpp.o
+[ 34%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/experiment/pi_link_inspection.cpp.o
+[ 37%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/experiment/video_request.cpp.o
+[ 37%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/experiment/video_experiment.cpp.o
+[ 40%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/experiment/rtk_base_request.cpp.o
+[ 43%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/experiment/rtk_base_experiment.cpp.o
+[ 43%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/rtk/base_station.cpp.o
+[ 46%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/rtk/px4_session.cpp.o
+[ 46%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/rtk/experiment_service.cpp.o
+[ 50%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/video/video_manager.cpp.o
+[ 53%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/experiment/link_lab.cpp.o
+[ 53%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/experiment/uart_echo_request.cpp.o
+[ 56%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/experiment/m1_request.cpp.o
+[ 56%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/experiment/deferred_serial_request.cpp.o
+[ 59%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/experiment/m1_protocol.cpp.o
+[ 62%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/experiment/m1_transaction.cpp.o
+[ 62%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/experiment/serial_affinity.cpp.o
+[ 65%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/experiment/pi_baud_change.cpp.o
+[ 65%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/experiment/startup_baud_recovery.cpp.o
+[ 68%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/experiment/uart_echo_protocol.cpp.o
+[ 71%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/experiment/uart_echo_transaction.cpp.o
+[ 71%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/config_command/command_parser.cpp.o
+[ 75%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/config_command/config_updater.cpp.o
+[ 75%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/config_command/config_store.cpp.o
+[ 78%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/config_command/command_processor.cpp.o
+[ 78%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/control_command/control_command.cpp.o
+[ 81%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/control_command/control_transaction.cpp.o
+[ 84%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/control_command/control_endpoint.cpp.o
+[ 84%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/control_command/endpoint_revalidation.cpp.o
+[ 87%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/control_test/control_test_cli.cpp.o
+[ 87%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/cellular/cellular_snapshot.cpp.o
+[ 90%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/cellular/cellular_status.cpp.o
+[ 93%] Building CXX object CMakeFiles/cns_rpi_core.dir/src/platform/systemd_watchdog.cpp.o
+[ 93%] Linking CXX static library libcns_rpi_core.a
+[ 93%] Built target cns_rpi_core
+[ 96%] Building CXX object CMakeFiles/cns_rpi_mqtt.dir/src/mqtt/mqtt_client.cpp.o
+[ 96%] Linking CXX static library libcns_rpi_mqtt.a
+[ 96%] Built target cns_rpi_mqtt
+[ 96%] Building CXX object CMakeFiles/cns_rpi.dir/src/main.cpp.o
+[100%] Linking CXX executable cns_rpi
+[100%] Built target cns_rpi
+[  0%] Building CXX object CMakeFiles/rtk_mavlink_fixture.dir/tests/rtk_mavlink_fixture.cpp.o
+[100%] Linking CXX executable rtk_mavlink_fixture
+[100%] Built target rtk_mavlink_fixture
+[ 93%] Built target cns_rpi_core
+[ 96%] Building CXX object CMakeFiles/test_rtk_base_station.dir/tests/test_rtk_base_station.cpp.o
+[100%] Linking CXX executable test_rtk_base_station
+[100%] Built target test_rtk_base_station
+[ 96%] Built target cns_rpi_core
+[ 96%] Building CXX object CMakeFiles/test_rtk_px4_session.dir/tests/test_rtk_px4_session.cpp.o
+[100%] Linking CXX executable test_rtk_px4_session
+[100%] Built target test_rtk_px4_session
+[ 96%] Built target cns_rpi_core
+[100%] Building CXX object CMakeFiles/test_rtk_base_request.dir/tests/test_rtk_base_request.cpp.o
+[100%] Linking CXX executable test_rtk_base_request
+[100%] Built target test_rtk_base_request
+[ 96%] Built target cns_rpi_core
+[100%] Building CXX object CMakeFiles/test_rtk_base_experiment.dir/tests/test_rtk_base_experiment.cpp.o
+[100%] Linking CXX executable test_rtk_base_experiment
+[100%] Built target test_rtk_base_experiment
+[ 96%] Built target cns_rpi_core
+[ 96%] Building CXX object CMakeFiles/test_rtk_experiment_service.dir/tests/test_rtk_experiment_service.cpp.o
+[100%] Linking CXX executable test_rtk_experiment_service
+[100%] Built target test_rtk_experiment_service
+[ 96%] Built target cns_rpi_core
+[ 96%] Building CXX object CMakeFiles/test_app_config.dir/tests/test_app_config.cpp.o
+[100%] Linking CXX executable test_app_config
+[100%] Built target test_app_config
+[ 96%] Built target cns_rpi_core
+[ 96%] Building CXX object CMakeFiles/test_mavlink_port_discovery.dir/tests/test_mavlink_port_discovery.cpp.o
+[100%] Linking CXX executable test_mavlink_port_discovery
+[100%] Built target test_mavlink_port_discovery
+[ 93%] Built target cns_rpi_core
+[ 96%] Building CXX object CMakeFiles/test_video_request.dir/tests/test_video_request.cpp.o
+[100%] Linking CXX executable test_video_request
+[100%] Built target test_video_request
+[ 96%] Built target cns_rpi_core
+[100%] Building CXX object CMakeFiles/test_video_manager.dir/tests/test_video_manager.cpp.o
+[100%] Linking CXX executable test_video_manager
+[100%] Built target test_video_manager
+[ 96%] Built target cns_rpi_core
+[100%] Building CXX object CMakeFiles/test_video_experiment.dir/tests/test_video_experiment.cpp.o
+[100%] Linking CXX executable test_video_experiment
+[100%] Built target test_video_experiment
+[ 96%] Built target cns_rpi_core
+[ 96%] Building CXX object CMakeFiles/test_device_session.dir/tests/test_device_session.cpp.o
+[100%] Linking CXX executable test_device_session
+[100%] Built target test_device_session
+[ 93%] Built target cns_rpi_core
+[ 96%] Building CXX object CMakeFiles/test_device_binding_store.dir/tests/test_device_binding_store.cpp.o
+[100%] Linking CXX executable test_device_binding_store
+[100%] Built target test_device_binding_store
+[ 96%] Built target cns_rpi_core
+[100%] Building CXX object CMakeFiles/test_runtime_status.dir/tests/test_runtime_status.cpp.o
+[100%] Linking CXX executable test_runtime_status
+[100%] Built target test_runtime_status
+[ 50%] Building CXX object CMakeFiles/test_cns_rpi_service.dir/tests/test_cns_rpi_service.cpp.o
+[100%] Linking CXX executable test_cns_rpi_service
+[100%] Built target test_cns_rpi_service

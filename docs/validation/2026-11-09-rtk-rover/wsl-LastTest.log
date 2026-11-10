@@ -1,0 +1,1542 @@
+Start testing: Nov 09 15:30 CST
+----------------------------------------------------------
+1/69 Testing: mqtt_client
+1/69 Test: mqtt_client
+Command: "/tmp/cns-rtk-student-build/test_mqtt_client"
+Directory: /tmp/cns-rtk-student-build
+"mqtt_client" start time: Nov 09 15:30 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+/mnt/c/Users/李岩/Desktop/cns_rpi/tests/test_mqtt_client.cpp:68:
+TEST CASE:  Broker重启后自动恢复实验Topic的QoS2订阅
+
+/mnt/c/Users/李岩/Desktop/cns_rpi/tests/test_mqtt_client.cpp:71: MESSAGE: 未设置CNS_TEST_MQTT_RECONNECT_PORT，跳过本地Broker重启检查
+
+===============================================================================
+/mnt/c/Users/李岩/Desktop/cns_rpi/tests/test_mqtt_client.cpp:177:
+TEST CASE:  连接broker后订阅消息进入主线程队列
+
+/mnt/c/Users/李岩/Desktop/cns_rpi/tests/test_mqtt_client.cpp:180: MESSAGE: 未设置CNS_TEST_MQTT_BROKER_PORT，跳过真实broker集成检查
+
+===============================================================================
+[doctest] test cases:   5 |   5 passed | 0 failed | 0 skipped
+[doctest] assertions: 265 | 265 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.01 sec
+----------------------------------------------------------
+Test Passed.
+"mqtt_client" end time: Nov 09 15:30 CST
+"mqtt_client" time elapsed: 00:00:00
+----------------------------------------------------------
+
+2/69 Testing: release_cli
+2/69 Test: release_cli
+Command: "/usr/bin/python3" "/mnt/c/Users/李岩/Desktop/cns_rpi/tests/test_release_cli.py" "/tmp/cns-rtk-student-build/cns_rpi"
+Directory: /tmp/cns-rtk-student-build
+"release_cli" start time: Nov 09 15:30 CST
+Output:
+----------------------------------------------------------
+...
+----------------------------------------------------------------------
+Ran 3 tests in 0.012s
+
+OK
+<end of output>
+Test time =   0.30 sec
+----------------------------------------------------------
+Test Passed.
+"release_cli" end time: Nov 09 15:30 CST
+"release_cli" time elapsed: 00:00:00
+----------------------------------------------------------
+
+3/69 Testing: release_deploy
+3/69 Test: release_deploy
+Command: "/usr/bin/python3" "/mnt/c/Users/李岩/Desktop/cns_rpi/tests/test_release_deploy.py" "/tmp/cns-rtk-student-build/cns_rpi"
+Directory: /tmp/cns-rtk-student-build
+"release_deploy" start time: Nov 09 15:30 CST
+Output:
+----------------------------------------------------------
+.........
+----------------------------------------------------------------------
+Ran 9 tests in 8.428s
+
+OK
+<end of output>
+Test time =   8.88 sec
+----------------------------------------------------------
+Test Passed.
+"release_deploy" end time: Nov 09 15:30 CST
+"release_deploy" time elapsed: 00:00:08
+----------------------------------------------------------
+
+4/69 Testing: rtk_base_station
+4/69 Test: rtk_base_station
+Command: "/tmp/cns-rtk-student-build/test_rtk_base_station"
+Directory: /tmp/cns-rtk-student-build
+"rtk_base_station" start time: Nov 09 15:30 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  27 |  27 passed | 0 failed | 0 skipped
+[doctest] assertions: 702 | 702 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.05 sec
+----------------------------------------------------------
+Test Passed.
+"rtk_base_station" end time: Nov 09 15:30 CST
+"rtk_base_station" time elapsed: 00:00:00
+----------------------------------------------------------
+
+5/69 Testing: rtk_rtcm_encoder
+5/69 Test: rtk_rtcm_encoder
+Command: "/tmp/cns-rtk-student-build/test_rtk_rtcm_encoder"
+Directory: /tmp/cns-rtk-student-build
+"rtk_rtcm_encoder" start time: Nov 09 15:30 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:   2 |   2 passed | 0 failed | 0 skipped
+[doctest] assertions: 164 | 164 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"rtk_rtcm_encoder" end time: Nov 09 15:30 CST
+"rtk_rtcm_encoder" time elapsed: 00:00:00
+----------------------------------------------------------
+
+6/69 Testing: rtk_px4_session
+6/69 Test: rtk_px4_session
+Command: "/tmp/cns-rtk-student-build/test_rtk_px4_session"
+Directory: /tmp/cns-rtk-student-build
+"rtk_px4_session" start time: Nov 09 15:30 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  11 |  11 passed | 0 failed | 0 skipped
+[doctest] assertions: 214 | 214 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"rtk_px4_session" end time: Nov 09 15:30 CST
+"rtk_px4_session" time elapsed: 00:00:00
+----------------------------------------------------------
+
+7/69 Testing: rtk_base_request
+7/69 Test: rtk_base_request
+Command: "/tmp/cns-rtk-student-build/test_rtk_base_request"
+Directory: /tmp/cns-rtk-student-build
+"rtk_base_request" start time: Nov 09 15:30 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  8 |  8 passed | 0 failed | 0 skipped
+[doctest] assertions: 97 | 97 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"rtk_base_request" end time: Nov 09 15:30 CST
+"rtk_base_request" time elapsed: 00:00:00
+----------------------------------------------------------
+
+8/69 Testing: rtk_base_experiment
+8/69 Test: rtk_base_experiment
+Command: "/tmp/cns-rtk-student-build/test_rtk_base_experiment"
+Directory: /tmp/cns-rtk-student-build
+"rtk_base_experiment" start time: Nov 09 15:30 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  9 |  9 passed | 0 failed | 0 skipped
+[doctest] assertions: 58 | 58 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"rtk_base_experiment" end time: Nov 09 15:30 CST
+"rtk_base_experiment" time elapsed: 00:00:00
+----------------------------------------------------------
+
+9/69 Testing: rtk_experiment_service
+9/69 Test: rtk_experiment_service
+Command: "/tmp/cns-rtk-student-build/test_rtk_experiment_service"
+Directory: /tmp/cns-rtk-student-build
+"rtk_experiment_service" start time: Nov 09 15:30 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  13 |  13 passed | 0 failed | 0 skipped
+[doctest] assertions: 284 | 284 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.11 sec
+----------------------------------------------------------
+Test Passed.
+"rtk_experiment_service" end time: Nov 09 15:30 CST
+"rtk_experiment_service" time elapsed: 00:00:00
+----------------------------------------------------------
+
+10/69 Testing: rtk_base_gateway
+10/69 Test: rtk_base_gateway
+Command: "/usr/bin/python3" "/mnt/c/Users/李岩/Desktop/cns_rpi/tests/test_rtk_base_gateway.py" "/tmp/cns-rtk-student-build/cns_rpi" "/tmp/cns-rtk-student-build/rtk_mavlink_fixture"
+Directory: /tmp/cns-rtk-student-build
+"rtk_base_gateway" start time: Nov 09 15:30 CST
+Output:
+----------------------------------------------------------
+.
+----------------------------------------------------------------------
+Ran 1 test in 27.594s
+
+OK
+<end of output>
+Test time =  28.02 sec
+----------------------------------------------------------
+Test Passed.
+"rtk_base_gateway" end time: Nov 09 15:31 CST
+"rtk_base_gateway" time elapsed: 00:00:28
+----------------------------------------------------------
+
+11/69 Testing: mavlink_link
+11/69 Test: mavlink_link
+Command: "/tmp/cns-rtk-student-build/test_mavlink_link"
+Directory: /tmp/cns-rtk-student-build
+"mavlink_link" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases: 12 | 12 passed | 0 failed | 0 skipped
+[doctest] assertions: 75 | 75 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.11 sec
+----------------------------------------------------------
+Test Passed.
+"mavlink_link" end time: Nov 09 15:31 CST
+"mavlink_link" time elapsed: 00:00:00
+----------------------------------------------------------
+
+12/69 Testing: mavlink_port_discovery
+12/69 Test: mavlink_port_discovery
+Command: "/tmp/cns-rtk-student-build/test_mavlink_port_discovery"
+Directory: /tmp/cns-rtk-student-build
+"mavlink_port_discovery" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  20 |  20 passed | 0 failed | 0 skipped
+[doctest] assertions: 179 | 179 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.98 sec
+----------------------------------------------------------
+Test Passed.
+"mavlink_port_discovery" end time: Nov 09 15:31 CST
+"mavlink_port_discovery" time elapsed: 00:00:00
+----------------------------------------------------------
+
+13/69 Testing: app_config
+13/69 Test: app_config
+Command: "/tmp/cns-rtk-student-build/test_app_config"
+Directory: /tmp/cns-rtk-student-build
+"app_config" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  29 |  29 passed | 0 failed | 0 skipped
+[doctest] assertions: 275 | 275 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.03 sec
+----------------------------------------------------------
+Test Passed.
+"app_config" end time: Nov 09 15:31 CST
+"app_config" time elapsed: 00:00:00
+----------------------------------------------------------
+
+14/69 Testing: startup_summary
+14/69 Test: startup_summary
+Command: "/tmp/cns-rtk-student-build/test_startup_summary"
+Directory: /tmp/cns-rtk-student-build
+"startup_summary" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases: 1 | 1 passed | 0 failed | 0 skipped
+[doctest] assertions: 1 | 1 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"startup_summary" end time: Nov 09 15:31 CST
+"startup_summary" time elapsed: 00:00:00
+----------------------------------------------------------
+
+15/69 Testing: logger
+15/69 Test: logger
+Command: "/tmp/cns-rtk-student-build/test_logger"
+Directory: /tmp/cns-rtk-student-build
+"logger" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:   16 |   16 passed | 0 failed | 0 skipped
+[doctest] assertions: 2887 | 2887 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.33 sec
+----------------------------------------------------------
+Test Passed.
+"logger" end time: Nov 09 15:31 CST
+"logger" time elapsed: 00:00:00
+----------------------------------------------------------
+
+16/69 Testing: state_store
+16/69 Test: state_store
+Command: "/tmp/cns-rtk-student-build/test_state_store"
+Directory: /tmp/cns-rtk-student-build
+"state_store" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases: 11 | 11 passed | 0 failed | 0 skipped
+[doctest] assertions: 97 | 97 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"state_store" end time: Nov 09 15:31 CST
+"state_store" time elapsed: 00:00:00
+----------------------------------------------------------
+
+17/69 Testing: telemetry_decoder
+17/69 Test: telemetry_decoder
+Command: "/tmp/cns-rtk-student-build/test_telemetry_decoder"
+Directory: /tmp/cns-rtk-student-build
+"telemetry_decoder" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases: 11 | 11 passed | 0 failed | 0 skipped
+[doctest] assertions: 62 | 62 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"telemetry_decoder" end time: Nov 09 15:31 CST
+"telemetry_decoder" time elapsed: 00:00:00
+----------------------------------------------------------
+
+18/69 Testing: extension_decoder
+18/69 Test: extension_decoder
+Command: "/tmp/cns-rtk-student-build/test_extension_decoder"
+Directory: /tmp/cns-rtk-student-build
+"extension_decoder" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  27 |  27 passed | 0 failed | 0 skipped
+[doctest] assertions: 137 | 137 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"extension_decoder" end time: Nov 09 15:31 CST
+"extension_decoder" time elapsed: 00:00:00
+----------------------------------------------------------
+
+19/69 Testing: identity
+19/69 Test: identity
+Command: "/tmp/cns-rtk-student-build/test_identity"
+Directory: /tmp/cns-rtk-student-build
+"identity" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases: 10 | 10 passed | 0 failed | 0 skipped
+[doctest] assertions: 24 | 24 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"identity" end time: Nov 09 15:31 CST
+"identity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+20/69 Testing: device_binding_store
+20/69 Test: device_binding_store
+Command: "/tmp/cns-rtk-student-build/test_device_binding_store"
+Directory: /tmp/cns-rtk-student-build
+"device_binding_store" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  5 |  5 passed | 0 failed | 0 skipped
+[doctest] assertions: 27 | 27 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"device_binding_store" end time: Nov 09 15:31 CST
+"device_binding_store" time elapsed: 00:00:00
+----------------------------------------------------------
+
+21/69 Testing: json_serializer
+21/69 Test: json_serializer
+Command: "/tmp/cns-rtk-student-build/test_json_serializer"
+Directory: /tmp/cns-rtk-student-build
+"json_serializer" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  25 |  25 passed | 0 failed | 0 skipped
+[doctest] assertions: 235 | 235 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"json_serializer" end time: Nov 09 15:31 CST
+"json_serializer" time elapsed: 00:00:00
+----------------------------------------------------------
+
+22/69 Testing: mqtt_topic
+22/69 Test: mqtt_topic
+Command: "/tmp/cns-rtk-student-build/test_mqtt_topic"
+Directory: /tmp/cns-rtk-student-build
+"mqtt_topic" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  4 |  4 passed | 0 failed | 0 skipped
+[doctest] assertions: 13 | 13 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"mqtt_topic" end time: Nov 09 15:31 CST
+"mqtt_topic" time elapsed: 00:00:00
+----------------------------------------------------------
+
+23/69 Testing: telemetry_publisher
+23/69 Test: telemetry_publisher
+Command: "/tmp/cns-rtk-student-build/test_telemetry_publisher"
+Directory: /tmp/cns-rtk-student-build
+"telemetry_publisher" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  3 |  3 passed | 0 failed | 0 skipped
+[doctest] assertions: 27 | 27 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"telemetry_publisher" end time: Nov 09 15:31 CST
+"telemetry_publisher" time elapsed: 00:00:00
+----------------------------------------------------------
+
+24/69 Testing: registration_payload
+24/69 Test: registration_payload
+Command: "/tmp/cns-rtk-student-build/test_registration_payload"
+Directory: /tmp/cns-rtk-student-build
+"registration_payload" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  6 |  6 passed | 0 failed | 0 skipped
+[doctest] assertions: 34 | 34 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"registration_payload" end time: Nov 09 15:31 CST
+"registration_payload" time elapsed: 00:00:00
+----------------------------------------------------------
+
+25/69 Testing: registration_state
+25/69 Test: registration_state
+Command: "/tmp/cns-rtk-student-build/test_registration_state"
+Directory: /tmp/cns-rtk-student-build
+"registration_state" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases: 2 | 2 passed | 0 failed | 0 skipped
+[doctest] assertions: 8 | 8 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"registration_state" end time: Nov 09 15:31 CST
+"registration_state" time elapsed: 00:00:00
+----------------------------------------------------------
+
+26/69 Testing: runtime_status
+26/69 Test: runtime_status
+Command: "/tmp/cns-rtk-student-build/test_runtime_status"
+Directory: /tmp/cns-rtk-student-build
+"runtime_status" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases: 12 | 12 passed | 0 failed | 0 skipped
+[doctest] assertions: 37 | 37 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"runtime_status" end time: Nov 09 15:31 CST
+"runtime_status" time elapsed: 00:00:00
+----------------------------------------------------------
+
+27/69 Testing: pi_link_inspection
+27/69 Test: pi_link_inspection
+Command: "/tmp/cns-rtk-student-build/test_pi_link_inspection"
+Directory: /tmp/cns-rtk-student-build
+"pi_link_inspection" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  15 |  15 passed | 0 failed | 0 skipped
+[doctest] assertions: 391 | 391 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"pi_link_inspection" end time: Nov 09 15:31 CST
+"pi_link_inspection" time elapsed: 00:00:00
+----------------------------------------------------------
+
+28/69 Testing: video_request
+28/69 Test: video_request
+Command: "/tmp/cns-rtk-student-build/test_video_request"
+Directory: /tmp/cns-rtk-student-build
+"video_request" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  6 |  6 passed | 0 failed | 0 skipped
+[doctest] assertions: 50 | 50 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"video_request" end time: Nov 09 15:31 CST
+"video_request" time elapsed: 00:00:00
+----------------------------------------------------------
+
+29/69 Testing: video_manager
+29/69 Test: video_manager
+Command: "/tmp/cns-rtk-student-build/test_video_manager"
+Directory: /tmp/cns-rtk-student-build
+"video_manager" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  13 |  13 passed | 0 failed | 0 skipped
+[doctest] assertions: 189 | 189 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   3.31 sec
+----------------------------------------------------------
+Test Passed.
+"video_manager" end time: Nov 09 15:31 CST
+"video_manager" time elapsed: 00:00:03
+----------------------------------------------------------
+
+30/69 Testing: video_experiment
+30/69 Test: video_experiment
+Command: "/tmp/cns-rtk-student-build/test_video_experiment"
+Directory: /tmp/cns-rtk-student-build
+"video_experiment" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:   9 |   9 passed | 0 failed | 0 skipped
+[doctest] assertions: 138 | 138 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.24 sec
+----------------------------------------------------------
+Test Passed.
+"video_experiment" end time: Nov 09 15:31 CST
+"video_experiment" time elapsed: 00:00:00
+----------------------------------------------------------
+
+31/69 Testing: link_lab
+31/69 Test: link_lab
+Command: "/tmp/cns-rtk-student-build/test_link_lab"
+Directory: /tmp/cns-rtk-student-build
+"link_lab" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  12 |  12 passed | 0 failed | 0 skipped
+[doctest] assertions: 164 | 164 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.02 sec
+----------------------------------------------------------
+Test Passed.
+"link_lab" end time: Nov 09 15:31 CST
+"link_lab" time elapsed: 00:00:00
+----------------------------------------------------------
+
+32/69 Testing: uart_echo_request
+32/69 Test: uart_echo_request
+Command: "/tmp/cns-rtk-student-build/test_uart_echo_request"
+Directory: /tmp/cns-rtk-student-build
+"uart_echo_request" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  5 |  5 passed | 0 failed | 0 skipped
+[doctest] assertions: 23 | 23 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"uart_echo_request" end time: Nov 09 15:31 CST
+"uart_echo_request" time elapsed: 00:00:00
+----------------------------------------------------------
+
+33/69 Testing: m1_request
+33/69 Test: m1_request
+Command: "/tmp/cns-rtk-student-build/test_m1_request"
+Directory: /tmp/cns-rtk-student-build
+"m1_request" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  4 |  4 passed | 0 failed | 0 skipped
+[doctest] assertions: 29 | 29 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"m1_request" end time: Nov 09 15:31 CST
+"m1_request" time elapsed: 00:00:00
+----------------------------------------------------------
+
+34/69 Testing: deferred_serial_request
+34/69 Test: deferred_serial_request
+Command: "/tmp/cns-rtk-student-build/test_deferred_serial_request"
+Directory: /tmp/cns-rtk-student-build
+"deferred_serial_request" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  9 |  9 passed | 0 failed | 0 skipped
+[doctest] assertions: 56 | 56 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"deferred_serial_request" end time: Nov 09 15:31 CST
+"deferred_serial_request" time elapsed: 00:00:00
+----------------------------------------------------------
+
+35/69 Testing: m1_protocol
+35/69 Test: m1_protocol
+Command: "/tmp/cns-rtk-student-build/test_m1_protocol"
+Directory: /tmp/cns-rtk-student-build
+"m1_protocol" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  3 |  3 passed | 0 failed | 0 skipped
+[doctest] assertions: 20 | 20 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"m1_protocol" end time: Nov 09 15:31 CST
+"m1_protocol" time elapsed: 00:00:00
+----------------------------------------------------------
+
+36/69 Testing: m1_transaction
+36/69 Test: m1_transaction
+Command: "/tmp/cns-rtk-student-build/test_m1_transaction"
+Directory: /tmp/cns-rtk-student-build
+"m1_transaction" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  17 |  17 passed | 0 failed | 0 skipped
+[doctest] assertions: 432 | 432 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   4.93 sec
+----------------------------------------------------------
+Test Passed.
+"m1_transaction" end time: Nov 09 15:31 CST
+"m1_transaction" time elapsed: 00:00:04
+----------------------------------------------------------
+
+37/69 Testing: serial_affinity
+37/69 Test: serial_affinity
+Command: "/tmp/cns-rtk-student-build/test_serial_affinity"
+Directory: /tmp/cns-rtk-student-build
+"serial_affinity" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  4 |  4 passed | 0 failed | 0 skipped
+[doctest] assertions: 16 | 16 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.06 sec
+----------------------------------------------------------
+Test Passed.
+"serial_affinity" end time: Nov 09 15:31 CST
+"serial_affinity" time elapsed: 00:00:00
+----------------------------------------------------------
+
+38/69 Testing: pi_baud_change
+38/69 Test: pi_baud_change
+Command: "/tmp/cns-rtk-student-build/test_pi_baud_change"
+Directory: /tmp/cns-rtk-student-build
+"pi_baud_change" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  7 |  7 passed | 0 failed | 0 skipped
+[doctest] assertions: 27 | 27 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.03 sec
+----------------------------------------------------------
+Test Passed.
+"pi_baud_change" end time: Nov 09 15:31 CST
+"pi_baud_change" time elapsed: 00:00:00
+----------------------------------------------------------
+
+39/69 Testing: startup_baud_recovery
+39/69 Test: startup_baud_recovery
+Command: "/tmp/cns-rtk-student-build/test_startup_baud_recovery"
+Directory: /tmp/cns-rtk-student-build
+"startup_baud_recovery" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  8 |  8 passed | 0 failed | 0 skipped
+[doctest] assertions: 29 | 29 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.01 sec
+----------------------------------------------------------
+Test Passed.
+"startup_baud_recovery" end time: Nov 09 15:31 CST
+"startup_baud_recovery" time elapsed: 00:00:00
+----------------------------------------------------------
+
+40/69 Testing: uart_echo_protocol
+40/69 Test: uart_echo_protocol
+Command: "/tmp/cns-rtk-student-build/test_uart_echo_protocol"
+Directory: /tmp/cns-rtk-student-build
+"uart_echo_protocol" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  4 |  4 passed | 0 failed | 0 skipped
+[doctest] assertions: 15 | 15 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"uart_echo_protocol" end time: Nov 09 15:31 CST
+"uart_echo_protocol" time elapsed: 00:00:00
+----------------------------------------------------------
+
+41/69 Testing: uart_echo_transaction
+41/69 Test: uart_echo_transaction
+Command: "/tmp/cns-rtk-student-build/test_uart_echo_transaction"
+Directory: /tmp/cns-rtk-student-build
+"uart_echo_transaction" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  14 |  14 passed | 0 failed | 0 skipped
+[doctest] assertions: 422 | 422 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   4.25 sec
+----------------------------------------------------------
+Test Passed.
+"uart_echo_transaction" end time: Nov 09 15:31 CST
+"uart_echo_transaction" time elapsed: 00:00:04
+----------------------------------------------------------
+
+42/69 Testing: device_session
+42/69 Test: device_session
+Command: "/tmp/cns-rtk-student-build/test_device_session"
+Directory: /tmp/cns-rtk-student-build
+"device_session" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases: 10 | 10 passed | 0 failed | 0 skipped
+[doctest] assertions: 65 | 65 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"device_session" end time: Nov 09 15:31 CST
+"device_session" time elapsed: 00:00:00
+----------------------------------------------------------
+
+43/69 Testing: command_parser
+43/69 Test: command_parser
+Command: "/tmp/cns-rtk-student-build/test_command_parser"
+Directory: /tmp/cns-rtk-student-build
+"command_parser" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  5 |  5 passed | 0 failed | 0 skipped
+[doctest] assertions: 21 | 21 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.01 sec
+----------------------------------------------------------
+Test Passed.
+"command_parser" end time: Nov 09 15:31 CST
+"command_parser" time elapsed: 00:00:00
+----------------------------------------------------------
+
+44/69 Testing: control_command
+44/69 Test: control_command
+Command: "/tmp/cns-rtk-student-build/test_control_command"
+Directory: /tmp/cns-rtk-student-build
+"control_command" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  8 |  8 passed | 0 failed | 0 skipped
+[doctest] assertions: 40 | 40 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"control_command" end time: Nov 09 15:31 CST
+"control_command" time elapsed: 00:00:00
+----------------------------------------------------------
+
+45/69 Testing: control_test_cli
+45/69 Test: control_test_cli
+Command: "/tmp/cns-rtk-student-build/test_control_test_cli"
+Directory: /tmp/cns-rtk-student-build
+"control_test_cli" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases: 15 | 15 passed | 0 failed | 0 skipped
+[doctest] assertions: 55 | 55 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"control_test_cli" end time: Nov 09 15:31 CST
+"control_test_cli" time elapsed: 00:00:00
+----------------------------------------------------------
+
+46/69 Testing: control_transaction
+46/69 Test: control_transaction
+Command: "/tmp/cns-rtk-student-build/test_control_transaction"
+Directory: /tmp/cns-rtk-student-build
+"control_transaction" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  18 |  18 passed | 0 failed | 0 skipped
+[doctest] assertions: 103 | 103 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"control_transaction" end time: Nov 09 15:31 CST
+"control_transaction" time elapsed: 00:00:00
+----------------------------------------------------------
+
+47/69 Testing: control_endpoint
+47/69 Test: control_endpoint
+Command: "/tmp/cns-rtk-student-build/test_control_endpoint"
+Directory: /tmp/cns-rtk-student-build
+"control_endpoint" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  7 |  7 passed | 0 failed | 0 skipped
+[doctest] assertions: 37 | 37 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"control_endpoint" end time: Nov 09 15:31 CST
+"control_endpoint" time elapsed: 00:00:00
+----------------------------------------------------------
+
+48/69 Testing: endpoint_revalidation
+48/69 Test: endpoint_revalidation
+Command: "/tmp/cns-rtk-student-build/test_endpoint_revalidation"
+Directory: /tmp/cns-rtk-student-build
+"endpoint_revalidation" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  6 |  6 passed | 0 failed | 0 skipped
+[doctest] assertions: 28 | 28 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"endpoint_revalidation" end time: Nov 09 15:31 CST
+"endpoint_revalidation" time elapsed: 00:00:00
+----------------------------------------------------------
+
+49/69 Testing: cellular_status
+49/69 Test: cellular_status
+Command: "/tmp/cns-rtk-student-build/test_cellular_status"
+Directory: /tmp/cns-rtk-student-build
+"cellular_status" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  4 |  4 passed | 0 failed | 0 skipped
+[doctest] assertions: 11 | 11 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"cellular_status" end time: Nov 09 15:31 CST
+"cellular_status" time elapsed: 00:00:00
+----------------------------------------------------------
+
+50/69 Testing: cellular_snapshot
+50/69 Test: cellular_snapshot
+Command: "/tmp/cns-rtk-student-build/test_cellular_snapshot"
+Directory: /tmp/cns-rtk-student-build
+"cellular_snapshot" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  6 |  6 passed | 0 failed | 0 skipped
+[doctest] assertions: 30 | 30 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"cellular_snapshot" end time: Nov 09 15:31 CST
+"cellular_snapshot" time elapsed: 00:00:00
+----------------------------------------------------------
+
+51/69 Testing: systemd_watchdog
+51/69 Test: systemd_watchdog
+Command: "/tmp/cns-rtk-student-build/test_systemd_watchdog"
+Directory: /tmp/cns-rtk-student-build
+"systemd_watchdog" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  7 |  7 passed | 0 failed | 0 skipped
+[doctest] assertions: 18 | 18 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"systemd_watchdog" end time: Nov 09 15:31 CST
+"systemd_watchdog" time elapsed: 00:00:00
+----------------------------------------------------------
+
+52/69 Testing: config_updater
+52/69 Test: config_updater
+Command: "/tmp/cns-rtk-student-build/test_config_updater"
+Directory: /tmp/cns-rtk-student-build
+"config_updater" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  4 |  4 passed | 0 failed | 0 skipped
+[doctest] assertions: 19 | 19 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"config_updater" end time: Nov 09 15:31 CST
+"config_updater" time elapsed: 00:00:00
+----------------------------------------------------------
+
+53/69 Testing: config_store
+53/69 Test: config_store
+Command: "/tmp/cns-rtk-student-build/test_config_store"
+Directory: /tmp/cns-rtk-student-build
+"config_store" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  6 |  6 passed | 0 failed | 0 skipped
+[doctest] assertions: 25 | 25 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.10 sec
+----------------------------------------------------------
+Test Passed.
+"config_store" end time: Nov 09 15:31 CST
+"config_store" time elapsed: 00:00:00
+----------------------------------------------------------
+
+54/69 Testing: command_processor
+54/69 Test: command_processor
+Command: "/tmp/cns-rtk-student-build/test_command_processor"
+Directory: /tmp/cns-rtk-student-build
+"command_processor" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  4 |  4 passed | 0 failed | 0 skipped
+[doctest] assertions: 22 | 22 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"command_processor" end time: Nov 09 15:31 CST
+"command_processor" time elapsed: 00:00:00
+----------------------------------------------------------
+
+55/69 Testing: config_request
+55/69 Test: config_request
+Command: "/tmp/cns-rtk-student-build/test_config_request"
+Directory: /tmp/cns-rtk-student-build
+"config_request" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  2 |  2 passed | 0 failed | 0 skipped
+[doctest] assertions: 13 | 13 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.00 sec
+----------------------------------------------------------
+Test Passed.
+"config_request" end time: Nov 09 15:31 CST
+"config_request" time elapsed: 00:00:00
+----------------------------------------------------------
+
+56/69 Testing: cns_rpi_service
+56/69 Test: cns_rpi_service
+Command: "/tmp/cns-rtk-student-build/test_cns_rpi_service"
+Directory: /tmp/cns-rtk-student-build
+"cns_rpi_service" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  5 |  5 passed | 0 failed | 0 skipped
+[doctest] assertions: 37 | 37 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.04 sec
+----------------------------------------------------------
+Test Passed.
+"cns_rpi_service" end time: Nov 09 15:31 CST
+"cns_rpi_service" time elapsed: 00:00:00
+----------------------------------------------------------
+
+57/69 Testing: main_logging_contract
+57/69 Test: main_logging_contract
+Command: "/tmp/cns-rtk-student-build/test_main_logging_contract"
+Directory: /tmp/cns-rtk-student-build
+"main_logging_contract" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+[doctest] doctest version is "2.4.11"
+[doctest] run with "--help" for options
+===============================================================================
+[doctest] test cases:  5 |  5 passed | 0 failed | 0 skipped
+[doctest] assertions: 64 | 64 passed | 0 failed |
+[doctest] Status: SUCCESS!
+<end of output>
+Test time =   0.08 sec
+----------------------------------------------------------
+Test Passed.
+"main_logging_contract" end time: Nov 09 15:31 CST
+"main_logging_contract" time elapsed: 00:00:00
+----------------------------------------------------------
+
+58/69 Testing: apply_config_helper
+58/69 Test: apply_config_helper
+Command: "/usr/bin/python3" "/mnt/c/Users/李岩/Desktop/cns_rpi/tests/test_apply_config_helper.py"
+Directory: /tmp/cns-rtk-student-build
+"apply_config_helper" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+............
+----------------------------------------------------------------------
+Ran 12 tests in 0.180s
+
+OK
+<end of output>
+Test time =   0.38 sec
+----------------------------------------------------------
+Test Passed.
+"apply_config_helper" end time: Nov 09 15:31 CST
+"apply_config_helper" time elapsed: 00:00:00
+----------------------------------------------------------
+
+59/69 Testing: migrate_telemetry_config
+59/69 Test: migrate_telemetry_config
+Command: "/usr/bin/python3" "/mnt/c/Users/李岩/Desktop/cns_rpi/tests/test_migrate_telemetry_config.py"
+Directory: /tmp/cns-rtk-student-build
+"migrate_telemetry_config" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+........
+----------------------------------------------------------------------
+Ran 8 tests in 2.034s
+
+OK
+<end of output>
+Test time =   2.23 sec
+----------------------------------------------------------
+Test Passed.
+"migrate_telemetry_config" end time: Nov 09 15:31 CST
+"migrate_telemetry_config" time elapsed: 00:00:02
+----------------------------------------------------------
+
+60/69 Testing: migrate_deployed_config
+60/69 Test: migrate_deployed_config
+Command: "/usr/bin/python3" "/mnt/c/Users/李岩/Desktop/cns_rpi/tests/test_migrate_deployed_config.py"
+Directory: /tmp/cns-rtk-student-build
+"migrate_deployed_config" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+...
+----------------------------------------------------------------------
+Ran 3 tests in 0.659s
+
+OK
+<end of output>
+Test time =   0.87 sec
+----------------------------------------------------------
+Test Passed.
+"migrate_deployed_config" end time: Nov 09 15:31 CST
+"migrate_deployed_config" time elapsed: 00:00:00
+----------------------------------------------------------
+
+61/69 Testing: cellular_link_python
+61/69 Test: cellular_link_python
+Command: "/usr/bin/python3" "-m" "unittest" "-v" "tests.test_cellular_link"
+Directory: /mnt/c/Users/李岩/Desktop/cns_rpi
+"cellular_link_python" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+test_parse_csq_and_unknown_value (tests.test_cellular_link.AtResponseParserTest.test_parse_csq_and_unknown_value) ... ok
+test_parse_lte_response (tests.test_cellular_link.AtResponseParserTest.test_parse_lte_response) ... ok
+test_parse_nr5g_nsa_multiline_response (tests.test_cellular_link.AtResponseParserTest.test_parse_nr5g_nsa_multiline_response) ... ok
+test_parse_operator (tests.test_cellular_link.AtResponseParserTest.test_parse_operator) ... ok
+test_parse_real_nr5g_sa_response (tests.test_cellular_link.AtResponseParserTest.test_parse_real_nr5g_sa_response) ... ok
+test_unknown_qeng_response_returns_empty_metrics (tests.test_cellular_link.AtResponseParserTest.test_unknown_qeng_response_returns_empty_metrics) ... ok
+test_empty_probe_targets_are_rejected (tests.test_cellular_link.CellularConfigTest.test_empty_probe_targets_are_rejected) ... ok
+test_invalid_interval_and_backoff_are_rejected (tests.test_cellular_link.CellularConfigTest.test_invalid_interval_and_backoff_are_rejected) ... ok
+test_legacy_config_uses_recovery_defaults (tests.test_cellular_link.CellularConfigTest.test_legacy_config_uses_recovery_defaults) ... ok
+test_empty_and_fully_lost_windows_have_explicit_semantics (tests.test_cellular_link.LinkQualityWindowTest.test_empty_and_fully_lost_windows_have_explicit_semantics) ... ok
+test_mixed_samples_report_average_latency_and_loss (tests.test_cellular_link.LinkQualityWindowTest.test_mixed_samples_report_average_latency_and_loss) ... ok
+test_window_discards_oldest_sample (tests.test_cellular_link.LinkQualityWindowTest.test_window_discards_oldest_sample) ... ok
+test_backoff_caps_and_resets (tests.test_cellular_link.LinkStateMachineTest.test_backoff_caps_and_resets) ... ok
+test_missing_basic_network_enters_offline_immediately (tests.test_cellular_link.LinkStateMachineTest.test_missing_basic_network_enters_offline_immediately) ... ok
+test_online_link_degrades_on_second_failure_and_offlines_on_third (tests.test_cellular_link.LinkStateMachineTest.test_online_link_degrades_on_second_failure_and_offlines_on_third) ... ok
+test_only_first_configured_target_affects_state (tests.test_cellular_link.LinkStateMachineTest.test_only_first_configured_target_affects_state) ... ok
+test_recovering_requires_two_full_successes (tests.test_cellular_link.LinkStateMachineTest.test_recovering_requires_two_full_successes) ... ok
+test_success_clears_accumulated_failures (tests.test_cellular_link.LinkStateMachineTest.test_success_clears_accumulated_failures) ... ok
+
+----------------------------------------------------------------------
+Ran 18 tests in 0.002s
+
+OK
+<end of output>
+Test time =   0.16 sec
+----------------------------------------------------------
+Test Passed.
+"cellular_link_python" end time: Nov 09 15:31 CST
+"cellular_link_python" time elapsed: 00:00:00
+----------------------------------------------------------
+
+62/69 Testing: cellular_dialup_python
+62/69 Test: cellular_dialup_python
+Command: "/usr/bin/python3" "-m" "unittest" "-v" "tests.test_cellular_dialup"
+Directory: /mnt/c/Users/李岩/Desktop/cns_rpi
+"cellular_dialup_python" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+test_initial_dial_is_not_repeated_while_link_is_usable (tests.test_cellular_dialup.CellularDaemonTest.test_initial_dial_is_not_repeated_while_link_is_usable) ... ok
+test_invalid_system_time_does_not_generate_recovery_timestamp (tests.test_cellular_dialup.CellularDaemonTest.test_invalid_system_time_does_not_generate_recovery_timestamp) ... ok
+test_latency_probe_is_reused_by_ten_second_link_evaluation (tests.test_cellular_dialup.CellularDaemonTest.test_latency_probe_is_reused_by_ten_second_link_evaluation) ... ok
+test_offline_recovery_resets_module_after_three_failed_redials (tests.test_cellular_dialup.CellularDaemonTest.test_offline_recovery_resets_module_after_three_failed_redials) ... ok
+test_quality_is_sampled_at_independent_interval (tests.test_cellular_dialup.CellularDaemonTest.test_quality_is_sampled_at_independent_interval) ... ok
+test_recovering_snapshot_is_written_before_blocking_redial (tests.test_cellular_dialup.CellularDaemonTest.test_recovering_snapshot_is_written_before_blocking_redial) ... ok
+test_recovery_metadata_continues_after_service_restart (tests.test_cellular_dialup.CellularDaemonTest.test_recovery_metadata_continues_after_service_restart) ... ok
+test_single_failed_state_sample_keeps_online_and_does_not_set_error (tests.test_cellular_dialup.CellularDaemonTest.test_single_failed_state_sample_keeps_online_and_does_not_set_error) ... ok
+test_successful_redial_is_verified_before_another_redial (tests.test_cellular_dialup.CellularDaemonTest.test_successful_redial_is_verified_before_another_redial) ... ok
+test_unavailable_at_port_marks_module_absent (tests.test_cellular_dialup.CellularDaemonTest.test_unavailable_at_port_marks_module_absent) ... ok
+test_all_quality_queries_can_fail_without_exception (tests.test_cellular_dialup.RadioCollectionTest.test_all_quality_queries_can_fail_without_exception) ... ok
+test_partial_at_failure_preserves_available_metrics (tests.test_cellular_dialup.RadioCollectionTest.test_partial_at_failure_preserves_available_metrics) ... ok
+test_missing_interface_returns_empty_status (tests.test_cellular_dialup.RuntimeAdapterTest.test_missing_interface_returns_empty_status) ... ok
+test_probe_interface_reads_network_and_traffic_state (tests.test_cellular_dialup.RuntimeAdapterTest.test_probe_interface_reads_network_and_traffic_state) ... ok
+test_probe_latency_parses_rtt_and_binds_selected_interface (tests.test_cellular_dialup.RuntimeAdapterTest.test_probe_latency_parses_rtt_and_binds_selected_interface) ... ok
+test_probe_latency_returns_none_on_failure (tests.test_cellular_dialup.RuntimeAdapterTest.test_probe_latency_returns_none_on_failure) ... ok
+test_script_entry_can_run_outside_repository_root (tests.test_cellular_dialup.RuntimeAdapterTest.test_script_entry_can_run_outside_repository_root) ... ok
+test_write_snapshot_atomically_replaces_complete_json (tests.test_cellular_dialup.RuntimeAdapterTest.test_write_snapshot_atomically_replaces_complete_json) ... ok
+
+----------------------------------------------------------------------
+Ran 18 tests in 0.259s
+
+OK
+<end of output>
+Test time =   0.54 sec
+----------------------------------------------------------
+Test Passed.
+"cellular_dialup_python" end time: Nov 09 15:31 CST
+"cellular_dialup_python" time elapsed: 00:00:00
+----------------------------------------------------------
+
+63/69 Testing: maintenance_install_python
+63/69 Test: maintenance_install_python
+Command: "/usr/bin/python3" "-m" "unittest" "-v" "tests.test_maintenance_install"
+Directory: /mnt/c/Users/李岩/Desktop/cns_rpi
+"maintenance_install_python" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+test_app_failure_restores_config_and_link (tests.test_maintenance_install.InstallTests.test_app_failure_restores_config_and_link) ... ok
+test_app_preflight_uses_current_cellular_validator (tests.test_maintenance_install.InstallTests.test_app_preflight_uses_current_cellular_validator) ... ok
+test_app_update_and_rollback_preserve_bindings (tests.test_maintenance_install.InstallTests.test_app_update_and_rollback_preserve_bindings) ... ok
+test_bootstrap_health_failure_is_not_success (tests.test_maintenance_install.InstallTests.test_bootstrap_health_failure_is_not_success) ... ok
+test_bootstrap_layout_and_health_still_run_after_split (tests.test_maintenance_install.InstallTests.test_bootstrap_layout_and_health_still_run_after_split) ... ok
+test_bootstrap_preserves_existing_state (tests.test_maintenance_install.InstallTests.test_bootstrap_preserves_existing_state) ... ok
+test_bootstrap_rejects_conflicting_maintenance_identity (tests.test_maintenance_install.InstallTests.test_bootstrap_rejects_conflicting_maintenance_identity) ... ok
+test_cellular_requires_network_and_reports_failed_restore (tests.test_maintenance_install.InstallTests.test_cellular_requires_network_and_reports_failed_restore) ... ok
+test_configure_imports_without_starting_services (tests.test_maintenance_install.InstallTests.test_configure_imports_without_starting_services) ... ok
+test_failed_app_attempt_does_not_overwrite_previous_rollback_config (tests.test_maintenance_install.InstallTests.test_failed_app_attempt_does_not_overwrite_previous_rollback_config) ... ok
+test_initial_stop_error_leaves_installation_unchanged (tests.test_maintenance_install.InstallTests.test_initial_stop_error_leaves_installation_unchanged) ... ok
+test_invalid_packages_do_not_stop (tests.test_maintenance_install.InstallTests.test_invalid_packages_do_not_stop) ... ok
+test_manual_rollback_restores_previous_configuration (tests.test_maintenance_install.InstallTests.test_manual_rollback_restores_previous_configuration) ... ok
+test_manual_rollback_validates_current_config (tests.test_maintenance_install.InstallTests.test_manual_rollback_validates_current_config) ... ok
+test_prepare_installs_offline_layout_without_starting_services (tests.test_maintenance_install.InstallTests.test_prepare_installs_offline_layout_without_starting_services) ... ok
+test_real_platform_boundary_rejects_script_and_missing_libraries (tests.test_maintenance_install.InstallTests.test_real_platform_boundary_rejects_script_and_missing_libraries) ... ok
+test_recovery_stop_error_uses_actual_service_state (tests.test_maintenance_install.InstallTests.test_recovery_stop_error_uses_actual_service_state) ... ok
+test_reinstall_current_preserves_rollback_release_and_config (tests.test_maintenance_install.InstallTests.test_reinstall_current_preserves_rollback_release_and_config) ... ok
+test_release_is_traversable_and_restage_keeps_running_inode (tests.test_maintenance_install.InstallTests.test_release_is_traversable_and_restage_keeps_running_inode) ... ok
+test_restrictive_umask_keeps_all_release_paths_traversable (tests.test_maintenance_install.InstallTests.test_restrictive_umask_keeps_all_release_paths_traversable) ... ok
+test_unhealthy_current_retry_must_observe_health_before_success (tests.test_maintenance_install.InstallTests.test_unhealthy_current_retry_must_observe_health_before_success) ... ok
+
+----------------------------------------------------------------------
+Ran 21 tests in 8.781s
+
+OK
+<end of output>
+Test time =   9.00 sec
+----------------------------------------------------------
+Test Passed.
+"maintenance_install_python" end time: Nov 09 15:31 CST
+"maintenance_install_python" time elapsed: 00:00:08
+----------------------------------------------------------
+
+64/69 Testing: bootstrap_pi_python
+64/69 Test: bootstrap_pi_python
+Command: "/usr/bin/python3" "-m" "unittest" "-v" "tests.test_bootstrap_pi"
+Directory: /mnt/c/Users/李岩/Desktop/cns_rpi
+"bootstrap_pi_python" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+test_bootstrap_is_standalone_on_blank_host (tests.test_bootstrap_pi.BootstrapTests.test_bootstrap_is_standalone_on_blank_host) ... ok
+test_checks_happen_without_apt (tests.test_bootstrap_pi.BootstrapTests.test_checks_happen_without_apt) ... ok
+test_dependency_names_pass_as_arguments (tests.test_bootstrap_pi.BootstrapTests.test_dependency_names_pass_as_arguments) ... ok
+test_platform_and_writable_root_precede_dependencies (tests.test_bootstrap_pi.BootstrapTests.test_platform_and_writable_root_precede_dependencies) ... ok
+test_redirect_cannot_forward_bearer_to_another_origin (tests.test_bootstrap_pi.BootstrapTests.test_redirect_cannot_forward_bearer_to_another_origin) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.084s
+
+OK
+<end of output>
+Test time =   0.56 sec
+----------------------------------------------------------
+Test Passed.
+"bootstrap_pi_python" end time: Nov 09 15:31 CST
+"bootstrap_pi_python" time elapsed: 00:00:00
+----------------------------------------------------------
+
+65/69 Testing: maintenance_client_python
+65/69 Test: maintenance_client_python
+Command: "/usr/bin/python3" "-m" "unittest" "-v" "tests.test_maintenance_client"
+Directory: /mnt/c/Users/李岩/Desktop/cns_rpi
+"maintenance_client_python" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+test_bad_checksum_never_reaches_install (tests.test_maintenance_client.ClientTests.test_bad_checksum_never_reaches_install) ... ok
+test_device_id_is_encoded_in_poll_path (tests.test_maintenance_client.ClientTests.test_device_id_is_encoded_in_poll_path) ... ok
+test_download_redirect_is_not_followed (tests.test_maintenance_client.ClientTests.test_download_redirect_is_not_followed) ... ok
+test_idle_poll_does_not_install (tests.test_maintenance_client.ClientTests.test_idle_poll_does_not_install) ... ok
+test_install_reports_terminal_result_and_redelivery_never_reinstalls (tests.test_maintenance_client.ClientTests.test_install_reports_terminal_result_and_redelivery_never_reinstalls) ... ok
+test_interrupted_task_requires_attention_instead_of_repeating_install (tests.test_maintenance_client.ClientTests.test_interrupted_task_requires_attention_instead_of_repeating_install) ... ok
+test_new_job_waits_for_previous_result_acknowledgement (tests.test_maintenance_client.ClientTests.test_new_job_waits_for_previous_result_acknowledgement) ... ok
+test_real_installer_updates_component_and_reports_result_over_http (tests.test_maintenance_client.ClientTests.test_real_installer_updates_component_and_reports_result_over_http) ... ok
+test_result_survives_failed_report_and_client_restart (tests.test_maintenance_client.ClientTests.test_result_survives_failed_report_and_client_restart) ... ok
+test_rollback_uses_same_authorized_task_flow (tests.test_maintenance_client.ClientTests.test_rollback_uses_same_authorized_task_flow) ... ok
+test_unapproved_response_never_executes_job (tests.test_maintenance_client.ClientTests.test_unapproved_response_never_executes_job) ... ok
+test_invalid_jobs_rejected_at_protocol_boundary (tests.test_maintenance_client.ProtocolTests.test_invalid_jobs_rejected_at_protocol_boundary) ... ok
+test_only_configured_origin_can_supply_packages (tests.test_maintenance_client.ProtocolTests.test_only_configured_origin_can_supply_packages) ... ok
+test_remote_plain_http_and_invalid_device_config_rejected (tests.test_maintenance_client.ProtocolTests.test_remote_plain_http_and_invalid_device_config_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 14 tests in 7.787s
+
+OK
+<end of output>
+Test time =   8.12 sec
+----------------------------------------------------------
+Test Passed.
+"maintenance_client_python" end time: Nov 09 15:31 CST
+"maintenance_client_python" time elapsed: 00:00:08
+----------------------------------------------------------
+
+66/69 Testing: release_package_python
+66/69 Test: release_package_python
+Command: "/usr/bin/python3" "-m" "unittest" "-v" "tests.test_release_package"
+Directory: /mnt/c/Users/李岩/Desktop/cns_rpi
+"release_package_python" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+test_real_archive_has_hashes_modes_and_allowlist (tests.test_release_package.ReleasePackageTests.test_real_archive_has_hashes_modes_and_allowlist) ... ok
+test_rejects_wrong_version_platform_and_elf (tests.test_release_package.ReleasePackageTests.test_rejects_wrong_version_platform_and_elf) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 0.010s
+
+OK
+<end of output>
+Test time =   0.19 sec
+----------------------------------------------------------
+Test Passed.
+"release_package_python" end time: Nov 09 15:31 CST
+"release_package_python" time elapsed: 00:00:00
+----------------------------------------------------------
+
+67/69 Testing: ci_driver_python
+67/69 Test: ci_driver_python
+Command: "/usr/bin/python3" "-m" "unittest" "-v" "tests.test_ci_driver"
+Directory: /mnt/c/Users/李岩/Desktop/cns_rpi
+"ci_driver_python" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+test_build_commands_execute_with_ordinary_identity_and_writable_logs (tests.test_ci_driver.BuildShellTests.test_build_commands_execute_with_ordinary_identity_and_writable_logs) ... ok
+test_child_failure_propagates (tests.test_ci_driver.DriverTests.test_child_failure_propagates) ... ok
+test_live_child_markers_drive_broker (tests.test_ci_driver.DriverTests.test_live_child_markers_drive_broker) ... 本地Broker首次收发成功；现在停止Broker。
+MQTT断线已检测；现在重启Broker。
+ok
+
+----------------------------------------------------------------------
+Ran 3 tests in 0.084s
+
+OK
+<end of output>
+Test time =   0.25 sec
+----------------------------------------------------------
+Test Passed.
+"ci_driver_python" end time: Nov 09 15:31 CST
+"ci_driver_python" time elapsed: 00:00:00
+----------------------------------------------------------
+
+68/69 Testing: device_access_python
+68/69 Test: device_access_python
+Command: "/usr/bin/python3" "-m" "unittest" "-v" "tests.test_device_access"
+Directory: /mnt/c/Users/李岩/Desktop/cns_rpi
+"device_access_python" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+test_changed_identity_or_server_preserves_key (tests.test_device_access.DeviceAccessTests.test_changed_identity_or_server_preserves_key) ... ok
+test_invalid_binding_rejected (tests.test_device_access.DeviceAccessTests.test_invalid_binding_rejected) ... ok
+test_unbound_main_exits_without_polling (tests.test_device_access.DeviceAccessTests.test_unbound_main_exits_without_polling) ... ok
+test_wait_then_generate_and_reuse_private_key (tests.test_device_access.DeviceAccessTests.test_wait_then_generate_and_reuse_private_key) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.022s
+
+OK
+<end of output>
+Test time =   0.31 sec
+----------------------------------------------------------
+Test Passed.
+"device_access_python" end time: Nov 09 15:31 CST
+"device_access_python" time elapsed: 00:00:00
+----------------------------------------------------------
+
+69/69 Testing: factory_image_python
+69/69 Test: factory_image_python
+Command: "/usr/bin/python3" "-m" "unittest" "-v" "tests.test_factory_image"
+Directory: /mnt/c/Users/李岩/Desktop/cns_rpi
+"factory_image_python" start time: Nov 09 15:31 CST
+Output:
+----------------------------------------------------------
+test_readback_rejects_field_identity_in_the_built_filesystem (tests.test_factory_image.FactoryImageTests.test_readback_rejects_field_identity_in_the_built_filesystem) ... ok
+test_real_release_seeds_offline_links_and_units_without_field_identity (tests.test_factory_image.FactoryImageTests.test_real_release_seeds_offline_links_and_units_without_field_identity) ... ok
+test_runtime_config_uses_embedded_manifest_dependencies_and_build_inputs (tests.test_factory_image.FactoryImageTests.test_runtime_config_uses_embedded_manifest_dependencies_and_build_inputs) ... ok
+test_seed_rejects_the_live_host_root_before_writing (tests.test_factory_image.FactoryImageTests.test_seed_rejects_the_live_host_root_before_writing) ... ok
+test_workflow_propagates_builder_failure_through_log_pipeline (tests.test_factory_image.FactoryImageTests.test_workflow_propagates_builder_failure_through_log_pipeline) ... ok
+test_wrong_source_or_checksum_cannot_generate_build_config (tests.test_factory_image.FactoryImageTests.test_wrong_source_or_checksum_cannot_generate_build_config) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 1.431s
+
+OK
+<end of output>
+Test time =   1.90 sec
+----------------------------------------------------------
+Test Passed.
+"factory_image_python" end time: Nov 09 15:31 CST
+"factory_image_python" time elapsed: 00:00:01
+----------------------------------------------------------
+
+End testing: Nov 09 15:31 CST

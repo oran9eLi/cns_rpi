@@ -6,9 +6,13 @@
 #include <fstream>
 #include <string>
 #include <tuple>
+#include <utility>
 #include <vector>
 
+#include <nlohmann/json.hpp>
+
 #include "config/app_config.hpp"
+#include "config/startup_summary.hpp"
 
 namespace {
 
@@ -477,5 +481,160 @@ TEST_CASE("MQTT topic段非法时返回kInvalidValue") {
         ReplaceOnce(ValidConfig(), "\"namespace\": \"cns_rpi\"", "\"namespace\": \"#\"")));
     REQUIRE_FALSE(result.has_value());
     CHECK(result.error() == config::ConfigError::kInvalidValue);
+  }
+}
+
+TEST_CASE("RTK配置拒绝非法类型范围和非绝对状态路径") {
+  using Json = nlohmann::json;
+  for (const auto& rtk : std::vector<Json>{
+           "not-an-object", {{"enabled", "yes"}}, {{"baud", 12345}},
+           {{"px4_device", 3}}, {{"px4_baud", "57600"}}, {{"px4_baud", 57600.5}},
+           {{"px4_baud", 12345}}, {{"px4_baud", 4295024896ULL}},
+           {{"baud", 115200.5}}, {{"survey_min_duration_s", 9}},
+           {{"survey_min_duration_s", 86401}}, {{"survey_min_duration_s", 60.5}},
+           {{"survey_min_duration_s", 4294967356ULL}},
+           {{"survey_accuracy_m", 0.09}}, {{"survey_accuracy_m", 100.1}},
+           {{"survey_accuracy_m", "2.0"}}, {{"stale_after_ms", 999}},
+           {{"stale_after_ms", 60001}}, {{"status_file", "relative.json"}},
+           {{"status_file", ""}}}) {
+    auto content = Json::parse(ValidConfig());
+    content["rtk_base"] = rtk;
+    const auto result = config::LoadAppConfig(WriteTempConfig(content.dump()));
+    CHECK_FALSE(result.has_value());
+    if (!result) CHECK(result.error() == config::ConfigError::kInvalidValue);
+  }
+}
+
+TEST_CASE("启用RTK要求基站和PX4明确指定且三个端点互不相同") {
+  using Json = nlohmann::json;
+  for (const auto& [f407, px4, base] :
+       std::vector<std::tuple<std::string, std::string, std::string>>{
+           {"auto", "", "/dev/ttyACM0"},
+           {"auto", "auto", "/dev/ttyACM0"},
+           {"auto", "ttyUSB0", "/dev/ttyACM0"},
+           {"auto", "/dev/ttyUSB0", "auto"},
+           {"auto", "/dev/ttyUSB0", "ttyACM0"},
+           {"auto", "/dev/ttyUSB0", ""},
+           {"auto", "/dev/ttyUSB0", "/dev/ttyUSB0"},
+           {"auto", "/dev/ttyUSB0", "/dev/../dev/ttyUSB0"},
+           {"/dev/ttyUSB2", "/dev/ttyUSB0", "/dev/ttyUSB2"},
+           {"/dev/ttyUSB2", "/dev/ttyUSB2", "/dev/ttyACM0"}}) {
+    auto content = Json::parse(ValidConfig());
+    content["serial"]["device"] = f407;
+    content["rtk_base"] = {{"enabled", true}, {"device", base}, {"px4_device", px4}};
+    const auto result = config::LoadAppConfig(WriteTempConfig(content.dump()));
+    CHECK_FALSE(result.has_value());
+    if (!result) CHECK(result.error() == config::ConfigError::kInvalidValue);
+  }
+}
+
+TEST_CASE("启用RTK拒绝PX4波特率小数与超出整数范围的值") {
+  using Json = nlohmann::json;
+  for (const auto& baud : std::vector<Json>{115200.5, 4295082496ULL}) {
+    auto content = Json::parse(ValidConfig());
+    content["rtk_base"] = {{"enabled", true}, {"device", "/dev/ttyACM0"},
+        {"px4_device", "/dev/ttyUSB1"}, {"px4_baud", baud}};
+    const auto result = config::LoadAppConfig(WriteTempConfig(content.dump()));
+    CHECK_FALSE(result.has_value());
+    if (!result) CHECK(result.error() == config::ConfigError::kInvalidValue);
+  }
+}
+
+TEST_CASE("RTK默认关闭且配置中的测量参数不会丢失") {
+  using Json = nlohmann::json;
+  const auto old = config::LoadAppConfig(WriteTempConfig(ValidConfig()));
+  REQUIRE(old);
+  CHECK_FALSE(old->rtk_base.enabled);
+  CHECK(old->rtk_base.device.empty());
+  CHECK(old->rtk_base.baud == 115200);
+  CHECK(old->rtk_base.px4_device.empty());
+  CHECK(old->rtk_base.px4_baud == 57600);
+  CHECK(old->rtk_base.survey_min_duration_s == 60);
+  CHECK(old->rtk_base.survey_accuracy_m == 2.0);
+  CHECK(old->rtk_base.stale_after_ms == 3000);
+  CHECK(old->rtk_base.status_file == "/run/cns-rpi/rtk-base-status.json");
+  auto content = Json::parse(ValidConfig());
+  content["rtk_base"] = {{"enabled", true}, {"device", "/dev/ttyACM0"},
+      {"px4_device", "/dev/ttyUSB1"}, {"px4_baud", 38400},
+      {"baud", 230400}, {"survey_min_duration_s", 120},
+      {"survey_accuracy_m", 0.5}, {"stale_after_ms", 5000},
+      {"status_file", "/run/cns-rpi/base.json"}};
+  const auto enabled = config::LoadAppConfig(WriteTempConfig(content.dump()));
+  REQUIRE(enabled);
+  CHECK(enabled->rtk_base.enabled);
+  CHECK(enabled->rtk_base.device == "/dev/ttyACM0");
+  CHECK(enabled->rtk_base.baud == 230400);
+  CHECK(enabled->rtk_base.px4_device == "/dev/ttyUSB1");
+  CHECK(enabled->rtk_base.px4_baud == 38400);
+  CHECK(enabled->rtk_base.survey_min_duration_s == 120);
+  CHECK(enabled->rtk_base.survey_accuracy_m == 0.5);
+  CHECK(enabled->rtk_base.stale_after_ms == 5000);
+  CHECK(enabled->rtk_base.status_file == "/run/cns-rpi/base.json");
+}
+
+TEST_CASE("RTK配置接受测量边界和所有现有串口波特率") {
+  using Json = nlohmann::json;
+  for (const auto& [duration, accuracy, stale] :
+       std::vector<std::tuple<int, double, int>>{{10, 0.1, 1000}, {86400, 100.0, 60000}}) {
+    auto content = Json::parse(ValidConfig());
+    content["rtk_base"] = {{"enabled", true}, {"device", "/dev/ttyACM0"},
+        {"px4_device", "/dev/ttyUSB1"},
+        {"survey_min_duration_s", duration}, {"survey_accuracy_m", accuracy},
+        {"stale_after_ms", stale}};
+    CHECK(config::LoadAppConfig(WriteTempConfig(content.dump())).has_value());
+  }
+  for (const int baud : {9600, 19200, 38400, 57600, 115200, 230400}) {
+    auto content = Json::parse(ValidConfig());
+    content["rtk_base"] = {{"enabled", true}, {"device", "/dev/ttyACM0"},
+        {"px4_device", "/dev/ttyUSB1"}, {"baud", baud}, {"px4_baud", baud}};
+    CHECK(config::LoadAppConfig(WriteTempConfig(content.dump())).has_value());
+  }
+}
+
+TEST_CASE("RTK启用后启动摘要保留F407主控箱并标注RTK能力") {
+  config::AppConfig value;
+  value.rtk_base.enabled = true;
+  const auto summary = config::BuildStartupSummary(value);
+  CHECK(summary.find("受控设备=F407主控箱") != std::string::npos);
+  CHECK(summary.find("RTK基站实验=已启用") != std::string::npos);
+}
+
+TEST_CASE("三个串口不能通过符号链接占用同一个端点") {
+  using Json = nlohmann::json;
+  const auto directory = std::filesystem::temp_directory_path() / "cns_rpi_rtk_serial_alias_test";
+  std::filesystem::create_directories(directory);
+  const auto device = directory / "device";
+  const auto alias = directory / "by-id";
+  std::ofstream(device).close();
+  std::filesystem::create_symlink(device, alias);
+  auto content = Json::parse(ValidConfig());
+  std::vector<bool> accepted;
+  for (const auto& [f407, px4, base] :
+       std::vector<std::tuple<std::string, std::string, std::string>>{
+           {device.string(), "/dev/ttyUSB1", alias.string()},
+           {device.string(), alias.string(), "/dev/ttyACM0"},
+           {"auto", device.string(), alias.string()}}) {
+    content["serial"]["device"] = f407;
+    content["rtk_base"] = {{"enabled", true}, {"device", base}, {"px4_device", px4}};
+    accepted.push_back(config::LoadAppConfig(WriteTempConfig(content.dump())).has_value());
+  }
+  std::filesystem::remove(alias);
+  std::filesystem::remove(device);
+  std::filesystem::remove(directory);
+  for (const bool result : accepted) CHECK_FALSE(result);
+}
+
+TEST_CASE("RTK启用时F407可自动发现且其波特率配置保持原行为") {
+  using Json = nlohmann::json;
+  for (const auto& [f407, baud] :
+       std::vector<std::pair<std::string, int>>{{"auto", 115200}, {"/dev/ttyUSB2", 12345}}) {
+    auto content = Json::parse(ValidConfig());
+    content["serial"] = {{"device", f407}, {"baud", baud}};
+    content["rtk_base"] = {{"enabled", true}, {"device", "/dev/ttyACM0"},
+        {"px4_device", "/dev/ttyUSB0"}};
+    const auto result = config::LoadAppConfig(WriteTempConfig(content.dump()));
+    REQUIRE(result);
+    CHECK(result->serial.device == f407);
+    CHECK(result->serial.baud == baud);
   }
 }

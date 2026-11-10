@@ -1,0 +1,13 @@
+-- The CXX compiler identification is GNU 14.2.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Found nlohmann_json: /usr/share/cmake/nlohmann_json/nlohmann_jsonConfig.cmake (found suitable version "3.11.3", minimum required is "3.2.0")
+-- Found PkgConfig: /usr/bin/pkg-config (found version "1.8.1")
+-- Checking for module 'libmosquitto'
+--   Found libmosquitto, version 2.0.21
+-- Configuring done (5.2s)
+-- Generating done (0.1s)
+-- Build files have been written to: /home/dcdw/cns-rpi-rtk-deploy-20261109T104000/build

@@ -52,6 +52,10 @@ std::vector<std::string> OrderSerialCandidates(
 
 std::vector<std::string> EnumerateSerialCandidates();
 
+std::vector<std::string> ExcludeSerialCandidates(
+    std::span<const std::string> candidates,
+    std::span<const std::string> excluded);
+
 /// 候选串口打开或读取失败的设备路径与明确原因。
 struct CandidateFailure {
   std::string device;
@@ -87,7 +91,8 @@ DiscoveryAttempt ProbeMavlinkCandidates(
 DiscoveryAttempt DiscoverMavlinkPortOnce(
     std::string_view configured_device, int baud,
     std::chrono::milliseconds per_port_timeout,
-    const StopRequested& stop_requested);
+    const StopRequested& stop_requested,
+    std::span<const std::string> excluded = {});
 
 /// 在后台执行一轮串口发现，避免逐口探测阻塞主事件循环。
 class AsyncMavlinkDiscovery {
@@ -97,7 +102,8 @@ class AsyncMavlinkDiscovery {
   AsyncMavlinkDiscovery& operator=(const AsyncMavlinkDiscovery&) = delete;
 
   bool Start(std::string configured_device, int baud,
-             std::chrono::milliseconds per_port_timeout);
+             std::chrono::milliseconds per_port_timeout,
+             std::vector<std::string> excluded = {});
   /// 在主循环独占串口前，停止后台候选读取并回收未消费的结果。
   void CancelAndJoin();
   bool IsRunning() const { return running_.load(std::memory_order_acquire); }

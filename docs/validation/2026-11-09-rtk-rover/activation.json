@@ -1,0 +1,179 @@
+{
+  "observed_at": "2026-11-09T07:31:57.782865+00:00",
+  "service": {
+    "MainPID": "34127",
+    "NRestarts": "0",
+    "ActiveState": "active",
+    "SubState": "running",
+    "ActiveEnterTimestamp": "Mon 2026-11-09 15:31:56 CST"
+  },
+  "cellular_service": {
+    "MainPID": "690",
+    "NRestarts": "0",
+    "ActiveState": "active",
+    "SubState": "running",
+    "ActiveEnterTimestamp": "Sun 2026-11-08 13:10:16 CST"
+  },
+  "binary_sha256": "9f7acd9026771f6b5c48b085391bf3147b701d680a5f54ff474e8f1a28ef361d",
+  "config_binding_units_helper_unchanged": true,
+  "cellular_service_unchanged": true,
+  "source_directory": "/home/dcdw/cns-rpi-rtk-rover-20261109T151840/source",
+  "backup_directory": "/home/dcdw/cns-rpi-rtk-rover-20261109T151840/backup",
+  "status": {
+    "base": {
+      "baud": 115200,
+      "configuration": {
+        "state": "idle",
+        "storage": "RAM",
+        "survey_accuracy_m": null,
+        "survey_min_duration_s": null,
+        "verified_age_ms": null
+      },
+      "connected": true,
+      "device": "/dev/serial/by-id/usb-u-blox_AG_-_www.u-blox.com_u-blox_GNSS_receiver-if00",
+      "last_error": null,
+      "last_rx_age_ms": 200,
+      "nmea": {
+        "checksum_errors": 0,
+        "valid_sentences": 15
+      },
+      "protocol": {
+        "checksum_errors": 0,
+        "firmware": "HPG 1.50",
+        "framing_errors": 0,
+        "hardware": "00190000",
+        "last_rx_age_ms": 1002,
+        "module": "ZED-F9P",
+        "name": "UBX",
+        "software": "EXT CORE 1.00 (f17067)",
+        "stale": false,
+        "valid_frames": 2,
+        "version": "27.50"
+      },
+      "receiver_verified": true,
+      "rtcm": {
+        "activation_barrier": false,
+        "bytes": 0,
+        "crc_errors": 0,
+        "last_rx_age_ms": null,
+        "message_types": {},
+        "queue_dropped": 0,
+        "stale": true,
+        "valid_frames": 0
+      },
+      "rx_bytes": 798,
+      "survey_in": {
+        "active": false,
+        "completed": false,
+        "duration_s": 0,
+        "ecef_m": null,
+        "i_tow_ms": 21044000,
+        "known": true,
+        "last_rx_age_ms": 200,
+        "last_sample_age_ms": 200,
+        "mean_accuracy_m": 94868.3264,
+        "observations": 0,
+        "raw_hex": "b562013b280000000000201b4101000000000000000000000000000000000000000000c28b3800000000000000006655",
+        "sample_sequence": 1,
+        "stale": false,
+        "valid": false
+      }
+    },
+    "box": {
+      "device_id": "DCDWCNS1GHC0G6LF8MY6",
+      "identity_verified": false
+    },
+    "box_identity_verified": false,
+    "observation": {
+      "capture_mode": "bounded_latest",
+      "complete_capture": false,
+      "latest_rtcm": null,
+      "latest_transfer": null,
+      "rtcm_sample_capacity": 1,
+      "rtcm_samples_replaced": 0,
+      "samples_included": true,
+      "transfer_sample_capacity": 1
+    },
+    "px4": {
+      "baud": 57600,
+      "component_id": 1,
+      "device": "/dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0",
+      "device_id": "393233510c004b0031",
+      "firmware": null,
+      "frame_age_ms": 0,
+      "gps_observation": {
+        "accuracy_kind": "receiver_estimate",
+        "alt_m": null,
+        "fix_name": "no_gps",
+        "fix_type": 0,
+        "frame_age_ms": 0,
+        "h_acc_m": null,
+        "known": true,
+        "last_fix_type": 0,
+        "lat_deg": null,
+        "lon_deg": null,
+        "raw_hex": "fd050000880101180000083c6f9405e85f",
+        "sample_age_ms": 0,
+        "sample_sequence": 1,
+        "satellites_visible": 0,
+        "source_time_usec": 23965154312,
+        "stale": false,
+        "transition_history_scope": "current_run",
+        "transitions": [],
+        "transitions_evicted": 0,
+        "v_acc_m": null
+      },
+      "identity_verified": true,
+      "serial_connected": true,
+      "system_id": 1,
+      "telemetry": {
+        "gps": {
+          "alt": 0.0,
+          "alt_ellipsoid": 0.0,
+          "eph": 0,
+          "epv": 0,
+          "fix_type": 0,
+          "h_acc": 0.0,
+          "lat": 0.0,
+          "lon": 0.0,
+          "satellites_visible": 0,
+          "time_usec": 23965154312,
+          "v_acc": 0.0
+        },
+        "heartbeat": {
+          "autopilot": 12,
+          "base_mode": 29,
+          "custom_mode": 50593792,
+          "mavlink_version": 3,
+          "system_status": 0,
+          "type": 13
+        }
+      }
+    },
+    "relay": {
+      "delivery_evidence": "local_serial_write_only",
+      "dropped_inactive": 0,
+      "dropped_overflow": 0,
+      "dropped_stale": 0,
+      "dropped_unready": 0,
+      "forwarded_frames": 0,
+      "last_error": null,
+      "last_sent_age_ms": null,
+      "max_frame_age_ms": 1000,
+      "pending_frames": 0,
+      "queue_capacity": 32,
+      "received_frames": 0,
+      "receiver_ack_available": false,
+      "requested": false,
+      "run_elapsed_ms": null,
+      "run_sequence": 0,
+      "send_failures": 0,
+      "sent_fragments": 0,
+      "sent_payload_bytes": 0,
+      "sent_wire_bytes": 0,
+      "state": "stopped"
+    },
+    "schema_version": 1,
+    "source": "live"
+  }
+}

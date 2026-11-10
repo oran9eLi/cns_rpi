@@ -1,0 +1,53 @@
+{"message": "NAV-SVIN", "itow": 11568000, "duration": 9905, "valid": 0, "active": 1, "stage": "initial", "elapsed_ms": 0}
+{"message": "VALGET", "key": "0x20030001", "mode": 1, "stage": "initial", "elapsed_ms": 3}
+{"message": "ACK", "target": "068b", "stage": "initial", "elapsed_ms": 3}
+{"message": "VALGET", "key": "0x20030001", "mode": 1, "stage": "initial", "elapsed_ms": 510}
+{"message": "ACK", "target": "068b", "stage": "initial", "elapsed_ms": 510}
+{"message": "NAV-SVIN", "itow": 11569000, "duration": 9906, "valid": 0, "active": 1, "stage": "initial", "elapsed_ms": 787}
+{"message": "ACK", "target": "068a", "stage": "disabled_ram", "elapsed_ms": 1091}
+{"message": "VALGET", "key": "0x20030001", "mode": 0, "stage": "disabled_ram", "elapsed_ms": 1091}
+{"message": "ACK", "target": "068b", "stage": "disabled_ram", "elapsed_ms": 1091}
+{"message": "VALGET", "key": "0x20030001", "mode": 0, "stage": "disabled_ram", "elapsed_ms": 1595}
+{"message": "ACK", "target": "068b", "stage": "disabled_ram", "elapsed_ms": 1595}
+{"message": "NAV-SVIN", "itow": 11570000, "duration": 0, "valid": 0, "active": 0, "stage": "disabled_ram", "elapsed_ms": 1784}
+{"message": "VALGET", "key": "0x20030001", "mode": 0, "stage": "disabled_ram", "elapsed_ms": 2188}
+{"message": "ACK", "target": "068b", "stage": "disabled_ram", "elapsed_ms": 2188}
+{"message": "VALGET", "key": "0x20030001", "mode": 0, "stage": "disabled_ram", "elapsed_ms": 2692}
+{"message": "ACK", "target": "068b", "stage": "disabled_ram", "elapsed_ms": 2692}
+{"message": "NAV-SVIN", "itow": 11571000, "duration": 0, "valid": 0, "active": 0, "stage": "disabled_ram", "elapsed_ms": 2785}
+{"message": "VALGET", "key": "0x20030001", "mode": 0, "stage": "disabled_ram", "elapsed_ms": 3289}
+{"message": "ACK", "target": "068b", "stage": "disabled_ram", "elapsed_ms": 3289}
+{"message": "NAV-SVIN", "itow": 11572000, "duration": 0, "valid": 0, "active": 0, "stage": "disabled_ram", "elapsed_ms": 3786}
+{"message": "VALGET", "key": "0x20030001", "mode": 0, "stage": "disabled_ram", "elapsed_ms": 3789}
+{"message": "ACK", "target": "068b", "stage": "disabled_ram", "elapsed_ms": 3789}
+{"message": "VALGET", "key": "0x20030001", "mode": 0, "stage": "disabled_ram", "elapsed_ms": 4293}
+{"message": "ACK", "target": "068b", "stage": "disabled_ram", "elapsed_ms": 4293}
+{"message": "NAV-SVIN", "itow": 11573000, "duration": 0, "valid": 0, "active": 0, "stage": "disabled_ram", "elapsed_ms": 4784}
+{"message": "VALGET", "key": "0x20030001", "mode": 0, "stage": "disabled_ram", "elapsed_ms": 4888}
+{"message": "ACK", "target": "068b", "stage": "disabled_ram", "elapsed_ms": 4888}
+{"message": "ACK", "target": "068a", "stage": "enabled_ram", "elapsed_ms": 5092}
+{"message": "VALGET", "key": "0x20030001", "mode": 1, "stage": "enabled_ram", "elapsed_ms": 5092}
+{"message": "ACK", "target": "068b", "stage": "enabled_ram", "elapsed_ms": 5092}
+{"message": "VALGET", "key": "0x20030001", "mode": 1, "stage": "enabled_ram", "elapsed_ms": 5596}
+{"message": "ACK", "target": "068b", "stage": "enabled_ram", "elapsed_ms": 5596}
+{"message": "NAV-SVIN", "itow": 11574000, "duration": 1, "valid": 0, "active": 1, "stage": "enabled_ram", "elapsed_ms": 5784}
+{"message": "VALGET", "key": "0x20030001", "mode": 1, "stage": "enabled_ram", "elapsed_ms": 6188}
+{"message": "ACK", "target": "068b", "stage": "enabled_ram", "elapsed_ms": 6188}
+{"message": "VALGET", "key": "0x20030001", "mode": 1, "stage": "enabled_ram", "elapsed_ms": 6692}
+{"message": "ACK", "target": "068b", "stage": "enabled_ram", "elapsed_ms": 6692}
+{"message": "NAV-SVIN", "itow": 11575000, "duration": 2, "valid": 0, "active": 1, "stage": "enabled_ram", "elapsed_ms": 6785}
+{"message": "VALGET", "key": "0x20030001", "mode": 1, "stage": "enabled_ram", "elapsed_ms": 7289}
+{"message": "ACK", "target": "068b", "stage": "enabled_ram", "elapsed_ms": 7289}
+{"message": "NAV-SVIN", "itow": 11576000, "duration": 3, "valid": 0, "active": 1, "stage": "enabled_ram", "elapsed_ms": 7786}
+{"message": "VALGET", "key": "0x20030001", "mode": 1, "stage": "enabled_ram", "elapsed_ms": 7889}
+{"message": "ACK", "target": "068b", "stage": "enabled_ram", "elapsed_ms": 7889}
+{"message": "VALGET", "key": "0x20030001", "mode": 1, "stage": "enabled_ram", "elapsed_ms": 8395}
+{"message": "ACK", "target": "068b", "stage": "enabled_ram", "elapsed_ms": 8396}
+{"message": "NAV-SVIN", "itow": 11577000, "duration": 4, "valid": 0, "active": 1, "stage": "enabled_ram", "elapsed_ms": 8787}
+{"message": "VALGET", "key": "0x20030001", "mode": 1, "stage": "enabled_ram", "elapsed_ms": 8993}
+{"message": "ACK", "target": "068b", "stage": "enabled_ram", "elapsed_ms": 8993}
+{"message": "VALGET", "key": "0x20030001", "mode": 1, "stage": "enabled_ram", "elapsed_ms": 9497}
+{"message": "ACK", "target": "068b", "stage": "enabled_ram", "elapsed_ms": 9497}
+{"message": "NAV-SVIN", "itow": 11578000, "duration": 5, "valid": 0, "active": 1, "stage": "enabled_ram", "elapsed_ms": 9785}
+{"message": "VALGET", "key": "0x20030001", "mode": 1, "stage": "enabled_ram", "elapsed_ms": 10089}
+{"message": "ACK", "target": "068b", "stage": "enabled_ram", "elapsed_ms": 10089}
