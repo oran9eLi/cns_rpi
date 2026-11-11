@@ -129,6 +129,51 @@ TEST_CASE("常规资料入口拒绝非法形状空字符串与只读字段") {
   }
 }
 
+TEST_CASE("GNSS配置在入口拒绝错误类型相对路径和未知字段") {
+  for (const auto& gnss : {
+           R"(null)", R"([])", R"("not-an-object")",
+           R"({"enabled":"true"})", R"({"enabled":1})",
+           R"({"enabled":null})", R"({"archive_directory":false})",
+           R"({"archive_directory":""})", R"({"archive_directory":"relative"})",
+           R"({"enable":true})", R"({"enabled":false,"unexpected":1})"}) {
+    const auto content = ReplaceOnce(ValidConfig(), "\"serial\":",
+        "\"gnss\":" + std::string(gnss) + ",\"serial\":");
+    const auto result = config::LoadAppConfig(WriteTempConfig(content));
+    CHECK_FALSE(result.has_value());
+    if (!result) CHECK(result.error() == config::ConfigError::kInvalidValue);
+  }
+}
+
+TEST_CASE("旧配置和空GNSS配置默认关闭采集并保留归档目录") {
+  for (const auto& content : {
+           ValidConfig(), ReplaceOnce(ValidConfig(), "\"serial\":",
+               R"("gnss":{},"serial":)")}) {
+    const auto result = config::LoadAppConfig(WriteTempConfig(content));
+    REQUIRE(result);
+    CHECK_FALSE(result->gnss.enabled);
+    CHECK(result->gnss.archive_directory == "/var/lib/cns-rpi/gnss");
+  }
+}
+
+TEST_CASE("GNSS配置支持显式开关和独立指定归档目录") {
+  for (const auto& [gnss, enabled, directory] :
+       std::vector<std::tuple<std::string, bool, std::string>>{
+           {R"({"enabled":true})", true, "/var/lib/cns-rpi/gnss"},
+           {R"({"archive_directory":"/run/cns-rpi/gnss"})", false,
+            "/run/cns-rpi/gnss"},
+           {R"({"enabled":true,"archive_directory":"/srv/gnss"})", true,
+            "/srv/gnss"},
+           {R"({"enabled":false,"archive_directory":"/srv/gnss"})", false,
+            "/srv/gnss"}}) {
+    const auto content = ReplaceOnce(ValidConfig(), "\"serial\":",
+        "\"gnss\":" + gnss + ",\"serial\":");
+    const auto result = config::LoadAppConfig(WriteTempConfig(content));
+    REQUIRE(result);
+    CHECK(result->gnss.enabled == enabled);
+    CHECK(result->gnss.archive_directory == directory);
+  }
+}
+
 TEST_CASE("视频配置在入口拒绝错误类型与相对工具路径") {
   for (const auto& video : {
            R"({"enabled":"yes"})", R"({"executable":"rpicam-vid"})",

@@ -1,4 +1,8 @@
 {
+  "gnss": {
+    "enabled": false,
+    "archive_directory": "/var/lib/cns-rpi/gnss"
+  },
   "rtk_base": {
     "enabled": false,
     "device": "",

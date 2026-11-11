@@ -46,6 +46,7 @@
 #include "experiment/pi_link_inspection.hpp"
 #include "experiment/rtk_base_experiment.hpp"
 #include "experiment/video_experiment.hpp"
+#include "experiment/gnss_experiment.hpp"
 #include "experiment/video_request.hpp"
 #include "experiment/link_lab.hpp"
 #include "experiment/deferred_serial_request.hpp"
@@ -265,6 +266,8 @@ int main(int argc, char** argv) {
                                 app_config->video.work_directory});
   experiment::VideoExperiment video_experiment(
       app_config->mqtt.topics.topic_namespace, app_config->video.enabled, video_manager);
+  experiment::GnssExperiment gnss_experiment(
+      app_config->mqtt.topics.topic_namespace, app_config->gnss);
   std::optional<experiment::LinkLabController> link_lab;
   std::optional<std::uint64_t> link_lab_connection_generation;
   if (persisted_binding.has_value()) {
@@ -373,6 +376,8 @@ int main(int argc, char** argv) {
     std::chrono::steady_clock::time_point deadline;
   };
   std::optional<PendingExperimentAck> pending_experiment_ack;
+  std::optional<PendingExperimentAck> pending_gnss_batch;
+  auto next_gnss_attempt = started_at;
   bool runtime_publish_failure_logged = false;
   std::optional<device::Binding> active_mqtt_binding;
   std::string registration_topic;
@@ -446,6 +451,11 @@ int main(int argc, char** argv) {
 
   auto close_mqtt_session = [&](bool publish_offline) {
     fail_pending_control();
+    gnss_experiment.TransportLost("mqtt_disconnected", std::chrono::system_clock::now());
+    if (mqtt_client && pending_gnss_batch) {
+      mqtt_client->ForgetTrackedPublish(pending_gnss_batch->mid);
+    }
+    pending_gnss_batch.reset();
     if (mqtt_client && pending_experiment_ack) {
       mqtt_client->ForgetTrackedPublish(pending_experiment_ack->mid);
     }
@@ -487,6 +497,7 @@ int main(int argc, char** argv) {
   };
 
   auto mark_link_disconnected = [&] {
+    gnss_experiment.TransportLost("serial_disconnected", std::chrono::system_clock::now());
     endpoint_revalidation.Reset();
     m1_held_for_identity = false;
     if (auto pending = deferred_serial_requests.Take()) {
@@ -514,6 +525,7 @@ int main(int argc, char** argv) {
   };
 
   auto reset_serial_for_link_lab = [&] {
+    gnss_experiment.TransportLost("serial_reset", std::chrono::system_clock::now());
     discovery.CancelAndJoin();
     enqueue_m1_result(m1_transaction.Abort(
         "serial_unavailable", std::chrono::system_clock::now()).publication);
@@ -686,6 +698,9 @@ int main(int argc, char** argv) {
         message.msgid == MAVLINK_MSG_ID_OPEN_DRONE_ID_BASIC_ID;
     const bool may_update_telemetry =
         device_session.CanAcceptTelemetryMessage(is_cns_basic_id);
+    if (may_update_telemetry) {
+      gnss_experiment.OnMessage(message, std::chrono::system_clock::now(), now);
+    }
     const bool decoded_standard =
         may_update_telemetry && protocol::DecodeAndStore(message, state_store);
     const bool decoded_extension =
@@ -1675,6 +1690,24 @@ int main(int argc, char** argv) {
                 }
               }
             }
+          } else if (experiment::IsGnssOperation(message->payload)) {
+            if (experiment_ack_outbox.Size() >= experiment::AckOutbox::kCapacity) {
+              (*logger)->Warn("实验ACK队列已满，GNSS动作未执行，等待平台重投");
+            } else {
+              const auto* binding = device_session.ActiveBinding();
+              const auto status = device_session.CurrentOnlineStatus();
+              const std::optional<std::string> identity =
+                  device_session.HasPersistedBinding() && binding && status &&
+                  status->identity_status != runtime_status::IdentityStatus::kConflict
+                      ? std::optional<std::string>{binding->device_id} : std::nullopt;
+              const auto outcome = gnss_experiment.Handle(
+                  message->topic, message->payload, identity,
+                  mqtt_client->IsConnected() && device_session.CanSendDeviceCommands() &&
+                      device_session.CurrentLinkIdentityVerified(),
+                  std::chrono::system_clock::now(), std::chrono::steady_clock::now());
+              if (!outcome.diagnostic.empty()) (*logger)->Warn(outcome.diagnostic);
+              if (outcome.publication) (void)experiment_ack_outbox.Enqueue(*outcome.publication);
+            }
           } else if (experiment::IsRtkBaseOperation(message->payload)) {
             if (pending_rtk_publication ||
                 experiment_ack_outbox.Size() >= experiment::AckOutbox::kCapacity) {
@@ -1768,6 +1801,7 @@ int main(int argc, char** argv) {
           } else if (control_transaction.HasPending() ||
                      uart_echo_transaction.HasPending() ||
                      m1_transaction.HasPending() || video_experiment.Busy() ||
+                     gnss_experiment.Busy() || gnss_experiment.FrontBatch() ||
                      experiment_ack_outbox.Size() != 0) {
             result.ack = config_command::BuildRejectedAck(
                 parsed->command_id,
@@ -1897,6 +1931,42 @@ int main(int argc, char** argv) {
             experiment_ack_outbox.Size() < experiment::AckOutbox::kCapacity)) {
       (void)experiment_ack_outbox.Enqueue(std::move(*result));
     }
+    const auto gnss_now = std::chrono::steady_clock::now();
+    if (!mqtt_client || !mqtt_client->IsConnected()) {
+      gnss_experiment.TransportLost("mqtt_disconnected", std::chrono::system_clock::now());
+    } else if (!device_session.CanSendDeviceCommands() ||
+               !device_session.CurrentLinkIdentityVerified()) {
+      gnss_experiment.TransportLost("device_identity_unavailable", std::chrono::system_clock::now());
+    }
+    gnss_experiment.Tick(std::chrono::system_clock::now(), gnss_now,
+        device_session.CanSendDeviceCommands() && device_session.CurrentLinkIdentityVerified());
+    if (pending_gnss_batch) {
+      const bool same_connection = mqtt_client && mqtt_client->IsConnected() &&
+          mqtt_client->ConnectionGeneration() == pending_gnss_batch->connection_generation;
+      if (same_connection && mqtt_client->TakePublishCompletion(pending_gnss_batch->mid)) {
+        gnss_experiment.ConfirmBatch();
+        pending_gnss_batch.reset();
+      } else if (!same_connection || gnss_now >= pending_gnss_batch->deadline) {
+        if (mqtt_client) mqtt_client->ForgetTrackedPublish(pending_gnss_batch->mid);
+        pending_gnss_batch.reset();
+        gnss_experiment.TransportLost(same_connection ? "upload_timeout" : "mqtt_disconnected",
+                                      std::chrono::system_clock::now());
+        next_gnss_attempt = gnss_now + std::chrono::seconds{1};
+      }
+    }
+    if (!pending_gnss_batch && mqtt_client && mqtt_client->IsConnected() &&
+        gnss_now >= next_gnss_attempt) {
+      if (const auto* batch = gnss_experiment.FrontBatch()) {
+        const auto generation = mqtt_client->ConnectionGeneration();
+        if (const auto mid = mqtt_client->PublishTracked(
+                batch->topic, batch->payload, batch->qos, batch->retain)) {
+          pending_gnss_batch = PendingExperimentAck{*mid, generation, gnss_now + std::chrono::seconds{5}};
+        } else {
+          gnss_experiment.TransportLost("upload_failed", std::chrono::system_clock::now());
+          next_gnss_attempt = gnss_now + std::chrono::seconds{1};
+        }
+      }
+    }
     (void)experiment::FeedRecoveredAckWhenIdle(
         experiment_ack_outbox, recovered_echo_publications);
 
@@ -2023,6 +2093,7 @@ int main(int argc, char** argv) {
     }
   }
 
+  gnss_experiment.TransportLost("process_stopping", std::chrono::system_clock::now());
   if (!health_device_id.empty() && device_session.HasPersistedBinding()) {
     device_health.Update(std::nullopt, std::chrono::steady_clock::now());
     save_device_health();

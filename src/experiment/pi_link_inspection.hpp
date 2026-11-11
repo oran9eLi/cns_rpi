@@ -31,7 +31,7 @@ struct Observation {
 /// 主线程未持有串口时，发现线程仍可能持有候选端点，故返回未知而非误报关闭。
 std::optional<bool> SerialEndpointFact(bool active_link_open);
 
-/// 设备侧终态 MQTT 发布物，固定 QoS 2 且不保留。
+/// 设备侧 MQTT 发布物；动作 ACK 使用 QoS 2，GNSS 原帧批次使用 QoS 1，均不保留。
 struct Publication {
   std::string topic;
   std::string payload;
