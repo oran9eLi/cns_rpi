@@ -328,7 +328,8 @@ class GatewayTest(unittest.TestCase):
                                         after=cached_begin)[1]
                 self.assertEqual(set(cached_status), {"device_id", "school_id", "dcdw_label",
                     "model_version", "device_name", "device_type", "capabilities", "product",
-                    "online", "device_status"})
+                    "online", "device_status", "fault_modules"})
+                self.assertIsNone(cached_status["fault_modules"])
                 cached_observation = lambda t, p: (
                     "/telemetry/" in t and
                     p.get("telemetry", {}).get("rtk", {}).get("box_identity_verified") is False and

@@ -92,7 +92,7 @@
   },
   "device_status": {
     "device_name": "CNS 一代实训平台",
-    "device_type": "xn_box",
+    "device_type": "cns_box",
     "capabilities": ["telemetry", "remote_id", "runtime_config", "box_private_control"]
   },
   "runtime": {

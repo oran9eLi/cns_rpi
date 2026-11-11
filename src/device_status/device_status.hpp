@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "registration/registration_payload.hpp"
 #include "device_status/metadata.hpp"
@@ -16,7 +17,8 @@ using Clock = std::chrono::steady_clock;
 std::string BuildPayload(const registration::OnlineRegistration& device,
                          const std::string& software_version, bool online,
                          const Metadata& metadata = {},
-                         const std::string& health_status = "0");
+                         const std::string& health_status = "0",
+                         const std::optional<std::vector<std::string>>& fault_modules = std::nullopt);
 
 class PublicationState {
  public:

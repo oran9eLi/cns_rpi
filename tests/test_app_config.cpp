@@ -72,7 +72,7 @@ TEST_CASE("常规资料缺省沿用已确定名称类型与能力列表") {
   const auto result = config::LoadAppConfig(WriteTempConfig(ValidConfig()));
   REQUIRE(result);
   CHECK(result->device_status.device_name == "CNS 一代实训平台");
-  CHECK(result->device_status.device_type == "xn_box");
+  CHECK(result->device_status.device_type == "cns_box");
   CHECK(result->device_status.capabilities == std::vector<std::string>{
       "telemetry", "remote_id", "runtime_config", "box_private_control"});
   CHECK_FALSE(result->device_status.dcdw_label.has_value());
@@ -118,7 +118,8 @@ TEST_CASE("常规资料入口拒绝非法形状空字符串与只读字段") {
            R"({"product":{"manufacturer_code":"DCDW","model_code":2}})",
            R"({"device_id":"other"})", R"({"model_version":"9.9.9"})",
            R"({"online":"1"})", R"({"school_id":"另一学校"})",
-           R"({"device_status":"1"})", R"({"unknown":"value"})"}) {
+           R"({"device_status":"1"})", R"({"fault_modules":["GNSS"]})",
+           R"({"fault_modules":null})", R"({"unknown":"value"})"}) {
     CAPTURE(metadata);
     const auto content = ReplaceOnce(ValidConfig(), "\"serial\":",
         "\"device_status\":" + std::string(metadata) + ",\"serial\":");

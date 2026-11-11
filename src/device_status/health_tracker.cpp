@@ -22,6 +22,7 @@ bool HealthTracker::Load(const std::string& device_id, std::string* error) {
   device_id_ = device_id;
   failure_time_.fill(HealthClock::duration::zero());
   failing_.fill(false);
+  modules_available_ = false;
   last_update_.reset();
   maintenance_ = false;
   if (device_id_.empty()) {
@@ -81,6 +82,7 @@ void HealthTracker::Update(
     const std::optional<std::array<std::uint8_t, state::kModuleCount>>& modules,
     HealthClock::time_point now) {
   if (device_id_.empty()) return;
+  modules_available_ = modules.has_value();
   for (std::size_t i = 0; i < failure_time_.size(); ++i) {
     if (last_update_ && failing_[i]) {
       failure_time_[i] =
@@ -161,6 +163,18 @@ std::string HealthTracker::Status() const {
     return "2";
   }
   return "0";
+}
+
+std::optional<std::vector<std::string>> HealthTracker::FaultModules() const {
+  std::vector<std::string> modules;
+  for (std::size_t i = 0; i < failure_time_.size(); ++i) {
+    // 致损进度已落盘；重启或身份暂不可核验时仍需说明损坏原因。
+    if (failing_[i] || failure_time_[i] >= kFailureLimit) {
+      modules.emplace_back(state::kModuleNames[i]);
+    }
+  }
+  if (!modules_available_ && modules.empty()) return std::nullopt;
+  return modules;
 }
 
 }  // namespace device_status

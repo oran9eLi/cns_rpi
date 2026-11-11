@@ -1188,7 +1188,7 @@ int main(int argc, char** argv) {
               MakeOnlineRegistration(*candidate_binding, snapshot,
                                      app_config->identity.school_name),
               CNS_RPI_VERSION, false, app_config->device_status,
-              device_health.Status());
+              device_health.Status(), device_health.FaultModules());
           runtime_will_health_status = device_health.Status();
           mqtt::WillOptions mqtt_will{
               .topic = runtime_status_topic,
@@ -1305,12 +1305,13 @@ int main(int argc, char** argv) {
           (*logger)->Warn("MQTT注册发布失败，下一轮重试");
         }
       }
+      const auto fault_modules = device_health.FaultModules();
       const auto status_payload = device_status::BuildPayload(
           metadata, CNS_RPI_VERSION, true, app_config->device_status,
-          device_health.Status());
+          device_health.Status(), fault_modules);
       runtime_offline_payload = device_status::BuildPayload(
           metadata, CNS_RPI_VERSION, false, app_config->device_status,
-          device_health.Status());
+          device_health.Status(), fault_modules);
       const auto connection_generation = mqtt_client->ConnectionGeneration();
       if (runtime_publication_state.ShouldPublish(
               mqtt_client->IsConnected(), connection_generation,
