@@ -137,6 +137,18 @@ TEST_CASE("首次连接立即发布随后每十秒发布一次") {
   CHECK(state.ShouldPublish(true, 1, "payload", kStart + 20s));
 }
 
+TEST_CASE("状态重发周期热改且资料变化和重连继续立即上报") {
+  device_status::PublicationState state;
+  state.MarkPublished(1, "old", kStart);
+  state.SetInterval(2000ms);
+  CHECK_FALSE(state.ShouldPublish(true, 1, "old", kStart + 1999ms));
+  CHECK(state.ShouldPublish(true, 1, "old", kStart + 2000ms));
+  state.SetInterval(60000ms);
+  CHECK_FALSE(state.ShouldPublish(true, 1, "old", kStart + 10s));
+  CHECK(state.ShouldPublish(true, 1, "new", kStart + 1ms));
+  CHECK(state.ShouldPublish(true, 2, "old", kStart + 1ms));
+}
+
 TEST_CASE("连接代数变化和资料变化立即重发") {
   device_status::PublicationState state;
   state.MarkPublished(1, "old", kStart);

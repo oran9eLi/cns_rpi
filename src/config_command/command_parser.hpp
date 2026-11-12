@@ -2,10 +2,11 @@
 
 /**
  * @file command_parser.hpp
- * @brief 解析服务器规范化的配置命令，只接受设计文档规定的四个白名单参数。
+ * @brief 解析运行参数和数据Topic周期补丁。
  */
 
 #include <expected>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -19,11 +20,19 @@ struct ConfigParameterPatch {
   std::optional<int> heartbeat_interval_ms;
   std::optional<int> mqtt_reconnect_delay_s;
   std::optional<int> mqtt_reconnect_delay_max_s;
+  std::map<std::string, int> topic_publish_intervals_ms;
+};
+
+struct ReportTopicNames {
+  std::string snapshot{"telemetry/snapshot/v1"};
+  std::string realtime{"telemetry/realtime/v1"};
+  bool operator==(const ReportTopicNames&) const = default;
 };
 
 struct ConfigCommand {
   std::string command_id;
   ConfigParameterPatch parameters;
+  ReportTopicNames report_topics{};
 };
 
 struct CommandError {
@@ -32,8 +41,9 @@ struct CommandError {
 };
 
 std::expected<void, CommandError> ValidateConfigParameterPatch(
-    const ConfigParameterPatch& parameters);
-std::expected<ConfigCommand, CommandError> ParseConfigCommand(std::string_view payload);
+    const ConfigParameterPatch& parameters, const ReportTopicNames& topics = {});
+std::expected<ConfigCommand, CommandError> ParseConfigCommand(
+    std::string_view payload, const ReportTopicNames& topics = {});
 nlohmann::json BuildRejectedAck(std::string_view command_id, const CommandError& error);
 
 }  // namespace config_command

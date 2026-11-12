@@ -92,6 +92,35 @@ TEST_CASE("GNSS capture is bounded by elapsed duration with a real archive") {
   std::filesystem::remove_all(directory);
 }
 
+TEST_CASE("GNSS batch wait changes during capture without dropping raw records") {
+  const auto directory=Directory();
+  experiment::GnssExperiment e("gnsstest",{true,directory});
+  REQUIRE(Act(e,LongStart())["status"]=="completed");
+  const std::vector<std::uint8_t> wire{'1','2','3','4','5','6','7','8','9'};
+  e.SetBatchInterval(std::chrono::milliseconds{1000});
+  Feed(e,wire,0x29B1,1);
+  e.Tick(wall,now+std::chrono::milliseconds{999},true);
+  CHECK(e.FrontBatch()==nullptr);
+  e.SetBatchInterval(std::chrono::milliseconds{500});
+  e.Tick(wall,now+std::chrono::milliseconds{999},true);
+  REQUIRE(e.FrontBatch());
+  CHECK(Json::parse(e.FrontBatch()->payload)["frames"].size()==1);
+  e.ConfirmBatch();
+  e.SetBatchInterval(std::chrono::milliseconds{60000});
+  for(unsigned i=2;i<=33;++i) Feed(e,wire,0x29B1,i,1,3,now+std::chrono::seconds{1});
+  REQUIRE(e.FrontBatch());
+  CHECK(Json::parse(e.FrontBatch()->payload)["frames"].size()==32);
+  e.ConfirmBatch();
+  CHECK(e.Busy());
+  Feed(e,wire,0x29B1,34,1,3,now+std::chrono::seconds{1});
+  CHECK(Act(e,Request("gnss_capture_stop",5))["status"]=="completed");
+  REQUIRE(e.FrontBatch());
+  CHECK(Json::parse(e.FrontBatch()->payload)["frames"][0]["record_seq"]==34);
+  CHECK(e.Status()["frames"]==34);
+  CHECK(Archive(directory/"current.jsonl").size()==36);
+  std::filesystem::remove_all(directory);
+}
+
 TEST_CASE("GNSS retains binary zeros CRLF and BAD source checksums in archive and batches") {
   const auto directory=Directory();
   experiment::GnssExperiment e("gnsstest",{true,directory});

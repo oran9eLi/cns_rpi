@@ -22,6 +22,7 @@ std::string BuildPayload(const registration::OnlineRegistration& device,
 
 class PublicationState {
  public:
+  void SetInterval(std::chrono::milliseconds interval) { interval_ = interval; }
   bool ShouldPublish(bool mqtt_connected, std::uint64_t connection_generation,
                      const std::string& payload, Clock::time_point now) const;
   void MarkPublished(std::uint64_t connection_generation,
@@ -31,6 +32,7 @@ class PublicationState {
   std::optional<std::string> last_payload_;
   std::uint64_t last_connection_generation_{0};
   Clock::time_point last_published_at_{};
+  std::chrono::milliseconds interval_{10000};
 };
 
 }  // namespace device_status

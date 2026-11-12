@@ -3,6 +3,14 @@
 
 #include "config_command/config_request.hpp"
 
+TEST_CASE("设备来源请求可携带数据Topic周期补丁") {
+  config_command::ConfigParameterPatch patch;
+  patch.topic_publish_intervals_ms = {{"gnss/raw/v1", 1000}, {"imu/sample/v1", 500}};
+  const auto payload = config_command::BuildConfigRequestPayload("rate-source", "DCDW-002", patch);
+  REQUIRE(payload);
+  CHECK((*payload)["parameters"]["topic_publish_intervals_ms"] == patch.topic_publish_intervals_ms);
+}
+
 TEST_CASE("设备请求只能表达内部编号目标") {
   config_command::ConfigParameterPatch parameters;
   parameters.heartbeat_interval_ms = 2000;

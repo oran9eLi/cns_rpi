@@ -261,6 +261,7 @@ int main(int argc, char** argv) {
   std::optional<mqtt::MqttClient> mqtt_client;
   registration::RegistrationState registration_state;
   device_status::PublicationState runtime_publication_state;
+  runtime_publication_state.SetInterval(app_config->reporting.runtime_status_interval);
   experiment::PiLinkInspector pi_link_inspector(
       app_config->mqtt.topics.topic_namespace);
   video::Manager video_manager({app_config->video.executable, app_config->video.ffprobe,
@@ -269,7 +270,9 @@ int main(int argc, char** argv) {
       app_config->mqtt.topics.topic_namespace, app_config->video.enabled, video_manager);
   experiment::GnssExperiment gnss_experiment(
       app_config->mqtt.topics.topic_namespace, app_config->gnss);
+  gnss_experiment.SetBatchInterval(app_config->reporting.gnss_batch_interval);
   imu::Stream imu_stream;
+  std::optional<std::chrono::steady_clock::time_point> last_imu_publish_attempt;
   std::optional<experiment::LinkLabController> link_lab;
   std::optional<std::uint64_t> link_lab_connection_generation;
   if (persisted_binding.has_value()) {
@@ -479,6 +482,8 @@ int main(int argc, char** argv) {
     mqtt_client.reset();
     registration_state = registration::RegistrationState{};
     runtime_publication_state = device_status::PublicationState{};
+    runtime_publication_state.SetInterval(app_config->reporting.runtime_status_interval);
+    last_imu_publish_attempt.reset();
     runtime_publish_failure_logged = false;
     active_mqtt_binding.reset();
     registration_topic.clear();
@@ -716,13 +721,16 @@ int main(int argc, char** argv) {
       if (!result.diagnostic.empty() && imu_log_limiter.ShouldLog(imu_now)) {
         (*logger)->Warn("BMI088解码: " + std::string(result.diagnostic));
       }
-      if (result.sample && mqtt_client && mqtt_client->IsConnected() && active_mqtt_binding) {
+      if (result.sample && mqtt_client && mqtt_client->IsConnected() && active_mqtt_binding &&
+          (!last_imu_publish_attempt ||
+           imu_now - *last_imu_publish_attempt >= app_config->reporting.imu_sample_interval)) {
         const auto* binding = device_session.ActiveBinding();
         if (binding && binding->device_id == active_mqtt_binding->device_id) {
           const auto topic = app_config->mqtt.topics.topic_namespace + "/" +
                              binding->device_id + "/imu/sample/v1";
           const auto frame = imu::SampleMessage(std::move(*result.sample), binding->device_id,
                                                 std::chrono::system_clock::now());
+          last_imu_publish_attempt = imu_now;
           if (!mqtt_client->Publish(topic, frame.dump(), 0, false) &&
               imu_log_limiter.ShouldLog(imu_now)) {
             (*logger)->Warn("BMI088采样对发布失败，已丢弃本条记录");
@@ -1828,23 +1836,21 @@ int main(int argc, char** argv) {
           }
         } else if (message->topic == config_set_topic && !restart_requested) {
           config_command::CommandProcessResult result;
-          auto parsed = config_command::ParseConfigCommand(message->payload);
+          auto parsed = config_command::ParseConfigCommand(message->payload,
+              {app_config->mqtt.topics.telemetry_snapshot.suffix,
+               app_config->mqtt.topics.telemetry_realtime.suffix});
+          const bool rates_only = parsed && !parsed->parameters.topic_publish_intervals_ms.empty();
           (*logger)->Info(
               "收到配置命令: command_id=" +
               (parsed ? parsed->command_id : std::string{"<解析失败>"}));
           if (!parsed) {
-            result = config_command::ProcessConfigCommand(
-                message->payload, nlohmann::json::object(),
-                [](const nlohmann::json&) ->
-                    std::expected<void, config_command::CommandError> {
-                  return std::unexpected(config_command::CommandError{
-                      .code = "config_write_failed", .message = "不可达的持久化分支"});
-                });
-          } else if (control_transaction.HasPending() ||
+            result.ack = config_command::BuildRejectedAckForPayload(
+                message->payload, parsed.error());
+          } else if (!rates_only && (control_transaction.HasPending() ||
                      uart_echo_transaction.HasPending() ||
                      m1_transaction.HasPending() || video_experiment.Busy() ||
                      gnss_experiment.Busy() || gnss_experiment.FrontBatch() ||
-                     experiment_ack_outbox.Size() != 0) {
+                     experiment_ack_outbox.Size() != 0)) {
             result.ack = config_command::BuildRejectedAck(
                 parsed->command_id,
                 {.code = "control_command_busy",
@@ -1855,17 +1861,31 @@ int main(int argc, char** argv) {
               result.ack = config_command::BuildRejectedAck(parsed->command_id, current.error());
             } else {
               result = config_command::ProcessConfigCommand(
-                  message->payload, *current,
+                  *parsed, *current,
                   [&](const nlohmann::json& candidate) {
                     return config_command::PersistConfig(*writer_options, config_path, candidate);
                   });
             }
           }
 
+          if (rates_only && result.ack.value("status", std::string{}) == "applied") {
+            config_command::ApplyReportIntervals(*app_config, parsed->parameters);
+            if (telemetry_publisher) {
+              telemetry_publisher->SetInterval(telemetry_snapshot_topic,
+                  app_config->telemetry_publish.snapshot.interval);
+              telemetry_publisher->SetInterval(telemetry_realtime_topic,
+                  app_config->telemetry_publish.realtime.interval);
+            }
+            runtime_publication_state.SetInterval(app_config->reporting.runtime_status_interval);
+            gnss_experiment.SetBatchInterval(app_config->reporting.gnss_batch_interval);
+          }
+
           (*logger)->Info(
               "配置命令回执: command_id=" + result.ack.value("command_id", std::string{}) +
               " status=" + result.ack.value("status", std::string{}));
-          const bool acked = mqtt_client->PublishAndWait(
+          const bool acked = rates_only ? mqtt_client->Publish(
+              config_ack_topic, result.ack.dump(), app_config->mqtt.topics.config_ack.qos,
+              /*retain=*/false) : mqtt_client->PublishAndWait(
               config_ack_topic, result.ack.dump(), app_config->mqtt.topics.config_ack.qos,
               /*retain=*/false, std::chrono::seconds(2));
           if (!acked) {

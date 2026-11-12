@@ -33,6 +33,9 @@ nlohmann::json ParametersToJson(const ConfigParameterPatch& parameters) {
   if (parameters.mqtt_reconnect_delay_max_s) {
     json["mqtt_reconnect_delay_max_s"] = *parameters.mqtt_reconnect_delay_max_s;
   }
+  if (!parameters.topic_publish_intervals_ms.empty()) {
+    json["topic_publish_intervals_ms"] = parameters.topic_publish_intervals_ms;
+  }
   return json;
 }
 }  // namespace

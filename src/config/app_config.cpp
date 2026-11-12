@@ -300,6 +300,26 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
     cfg.runtime.applied_command_ids =
         runtime.at("applied_command_ids").get<std::vector<std::string>>();
 
+    if (root.contains("reporting")) {
+      const auto& reporting = root.at("reporting");
+      if (!reporting.is_object()) return std::unexpected(ConfigError::kInvalidValue);
+      for (const auto& [name, target] : {
+               std::pair{"runtime_status_interval_ms", &cfg.reporting.runtime_status_interval},
+               std::pair{"imu_sample_interval_ms", &cfg.reporting.imu_sample_interval},
+               std::pair{"gnss_batch_interval_ms", &cfg.reporting.gnss_batch_interval}}) {
+        if (!reporting.contains(name)) continue;
+        const auto& value = reporting.at(name);
+        if (!value.is_number_integer() || value < 0 || value > 60000) {
+          return std::unexpected(ConfigError::kInvalidValue);
+        }
+        const auto milliseconds = value.get<int>();
+        if (milliseconds < 100 && !(std::string_view{name} == "imu_sample_interval_ms" && milliseconds == 0)) {
+          return std::unexpected(ConfigError::kInvalidValue);
+        }
+        *target = std::chrono::milliseconds{milliseconds};
+      }
+    }
+
     if (root.contains("cellular")) {
       const auto& cellular = root.at("cellular");
       if (cellular.contains("interface_name")) {
@@ -340,7 +360,7 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
       connection.reconnect.delay_max_seconds > 3600 ||
       connection.reconnect.delay_seconds > connection.reconnect.delay_max_seconds ||
       telemetry_snapshot_ms < 100 || telemetry_snapshot_ms > 60000 ||
-      telemetry_realtime_ms < 50 || telemetry_realtime_ms > 1000 ||
+      telemetry_realtime_ms < 50 || telemetry_realtime_ms > 60000 ||
       heartbeat_ms < 100 ||
       heartbeat_ms > 60000 || cfg.runtime.applied_command_ids.size() > 32 ||
       cfg.cellular.interface_name.empty() ||
@@ -366,6 +386,16 @@ std::expected<AppConfig, ConfigError> LoadAppConfig(const std::filesystem::path&
       !IsValidTopicPath(topics.control_ack.suffix) || topics.control_set.qos != 2 ||
       topics.control_ack.qos != 2) {
     return std::unexpected(ConfigError::kInvalidValue);
+  }
+
+  const std::string_view reserved_topics[] = {
+      topics.registration.suffix, topics.config_set.suffix, topics.config_ack.suffix,
+      topics.control_set.suffix, topics.control_ack.suffix, "runtime/status/v1",
+      "imu/sample/v1", "gnss/raw/v1", "experiment/set", "experiment/ack", "config/request"};
+  for (const auto reserved : reserved_topics) {
+    if (topics.telemetry_snapshot.suffix == reserved || topics.telemetry_realtime.suffix == reserved) {
+      return std::unexpected(ConfigError::kInvalidValue);
+    }
   }
 
   if (cfg.video.executable.empty() ||

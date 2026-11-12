@@ -15,7 +15,6 @@ constexpr std::uint64_t kSummaryReserve = 4096;
 constexpr std::size_t kBatchBytes = 16384;
 constexpr std::size_t kBatchFrames = 32;
 constexpr std::size_t kQueueCapacity = 8;
-constexpr auto kBatchWait = std::chrono::milliseconds{200};
 constexpr auto kActionRetention = std::chrono::seconds{300};
 
 std::string Utc(Wall::time_point now) {
@@ -215,7 +214,7 @@ void GnssExperiment::Tick(Wall::time_point wall, Steady::time_point now, bool li
     return;
   }
   assembler_.Tick(now);
-  if (!frames_batch_.empty() && now - batch_started_ >= kBatchWait && !Flush(wall)) {
+  if (!frames_batch_.empty() && now - batch_started_ >= batch_interval_ && !Flush(wall)) {
     Finish("batch_queue_full", true, wall);
   }
 }
