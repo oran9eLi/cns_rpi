@@ -46,6 +46,8 @@ add_library(cns_rpi_core
     src/experiment/gnss_request.cpp
     src/experiment/gnss_experiment.cpp
     src/gnss/raw_frame.cpp
+    src/imu/bmi088.cpp
+    src/imu/stream.cpp
     src/rtk/base_station.cpp
     src/rtk/rtcm_encoder.cpp
     src/rtk/px4_session.cpp
@@ -105,6 +107,23 @@ add_test(NAME release_cli COMMAND ${PYTHON3_EXECUTABLE}
 add_test(NAME release_deploy COMMAND ${PYTHON3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_release_deploy.py $<TARGET_FILE:cns_rpi>)
 target_link_libraries(cns_rpi PRIVATE cns_rpi_core cns_rpi_mqtt)
+
+add_executable(test_bmi088_decoder tests/test_bmi088_decoder.cpp)
+target_link_libraries(test_bmi088_decoder PRIVATE cns_rpi_core)
+target_compile_definitions(test_bmi088_decoder PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+add_test(NAME bmi088_decoder COMMAND test_bmi088_decoder)
+add_executable(test_imu_stream tests/test_imu_stream.cpp)
+target_link_libraries(test_imu_stream PRIVATE cns_rpi_core)
+target_compile_definitions(test_imu_stream PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+add_test(NAME imu_stream COMMAND test_imu_stream)
+add_executable(imu_mavlink_fixture tests/imu_mavlink_fixture.cpp)
+target_link_libraries(imu_mavlink_fixture PRIVATE cns_rpi_core)
+target_compile_definitions(imu_mavlink_fixture PRIVATE SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+add_test(NAME imu_gateway COMMAND ${PYTHON3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_imu_gateway.py
+    $<TARGET_FILE:cns_rpi> $<TARGET_FILE:imu_mavlink_fixture>)
+add_test(NAME imu_contract COMMAND ${PYTHON3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_imu_contract.py)
 
 foreach(gnss_test raw_frame request experiment)
   add_executable(test_gnss_${gnss_test} tests/test_gnss_${gnss_test}.cpp)

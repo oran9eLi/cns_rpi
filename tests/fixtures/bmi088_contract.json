@@ -1,0 +1,198 @@
+{
+  "realtime": {
+    "schema_version": 1,
+    "device_id": "DCDWCNS1S2MEAG1VTA0C",
+    "sequence": 200,
+    "sent_at": "2026-11-12T02:00:00.020Z",
+    "telemetry": {
+      "imu": {
+        "sensor": "BMI088",
+        "source_epoch": "9f54bdc3-3a55-4f21-9ae8-63c4a0f4d624",
+        "source": {
+          "system_id": 218,
+          "component_id": 193
+        },
+        "sample": {
+          "sample_sequence": 42,
+          "sample_time_ms": 10000,
+          "reinit_count": 1,
+          "raw_encode_time_ms": 10005,
+          "parsed_encode_time_ms": 10008,
+          "bus": "i2c",
+          "axis_map": [
+            1,
+            2,
+            3
+          ],
+          "axis_frame": "body",
+          "valid": true,
+          "invalid_reason": null,
+          "age_ms": 20,
+          "valid_for_ms": 180,
+          "value": {
+            "accel_mg": [
+              0,
+              0,
+              1000
+            ],
+            "gyro_mdps": [
+              0,
+              0,
+              0
+            ],
+            "temperature_cdeg": 2300,
+            "sample_period_us": 10000,
+            "accel_fullscale_mg": 12000,
+            "gyro_fullscale_dps": 1000,
+            "fifo_drop_count": 0,
+            "driver_error_count": 0
+          }
+        }
+      }
+    }
+  },
+  "snapshot": {
+    "schema_version": 3,
+    "device_id": "DCDWCNS1S2MEAG1VTA0C",
+    "device_type": "cns_box",
+    "school_name": "示例职业技术学院",
+    "sent_at": "2026-11-12T02:00:00Z",
+    "telemetry": {
+      "imu": {
+        "sensor": "BMI088",
+        "source_epoch": "9f54bdc3-3a55-4f21-9ae8-63c4a0f4d624",
+        "source": {
+          "system_id": 218,
+          "component_id": 193
+        },
+        "sample": {
+          "sample_sequence": 42,
+          "sample_time_ms": 10000,
+          "reinit_count": 1,
+          "raw_encode_time_ms": 10005,
+          "parsed_encode_time_ms": 10008,
+          "bus": "i2c",
+          "axis_map": [
+            1,
+            2,
+            3
+          ],
+          "axis_frame": "body",
+          "valid": true,
+          "invalid_reason": null,
+          "age_ms": 20,
+          "valid_for_ms": 180,
+          "value": {
+            "accel_mg": [
+              0,
+              0,
+              1000
+            ],
+            "gyro_mdps": [
+              0,
+              0,
+              0
+            ],
+            "temperature_cdeg": 2300,
+            "sample_period_us": 10000,
+            "accel_fullscale_mg": 12000,
+            "gyro_fullscale_dps": 1000,
+            "fifo_drop_count": 0,
+            "driver_error_count": 0
+          }
+        },
+        "status": {
+          "received_age_ms": 0,
+          "stale": false,
+          "flags": {
+            "present": true,
+            "usable": true,
+            "stale": false,
+            "invalidated": false
+          },
+          "bus": "i2c",
+          "sample_sequence": 42,
+          "sample_time_ms": 10000,
+          "encode_time_ms": 10010,
+          "reinit_count": 1,
+          "source_age_ms": 10,
+          "diagnostics_available": true,
+          "source_available": true,
+          "device_ready": true,
+          "framework_state": 2,
+          "accel_chip_id": 30,
+          "gyro_chip_id": 15,
+          "accel_addr_7bit": 24,
+          "gyro_addr_7bit": 104,
+          "driver_stage": 0,
+          "driver_result": 0,
+          "bsp_result": 0,
+          "driver_error_count": 0,
+          "fifo_drop_count": 0,
+          "source_published_count": 42,
+          "source_overwrites": 39,
+          "completed_pairs": 3,
+          "abandoned_pairs": 0,
+          "tx_failures": 0
+        }
+      }
+    },
+    "drone_id": {
+      "basic_id": {
+        "id_type": 1,
+        "ua_type": 0
+      }
+    }
+  },
+  "pair": {
+    "schema_version": 1,
+    "device_id": "DCDWCNS1S2MEAG1VTA0C",
+    "sent_at": "2026-11-12T02:00:00.020Z",
+    "imu": {
+      "sensor": "BMI088",
+      "source_epoch": "9f54bdc3-3a55-4f21-9ae8-63c4a0f4d624",
+      "source": {
+        "system_id": 218,
+        "component_id": 193
+      },
+      "sample": {
+        "sample_sequence": 42,
+        "sample_time_ms": 10000,
+        "reinit_count": 1,
+        "raw_encode_time_ms": 10005,
+        "parsed_encode_time_ms": 10008,
+        "bus": "i2c",
+        "axis_map": [
+          1,
+          2,
+          3
+        ],
+        "axis_frame": "body",
+        "valid": true,
+        "invalid_reason": null,
+        "age_ms": 20,
+        "valid_for_ms": 180,
+        "value": {
+          "accel_mg": [
+            0,
+            0,
+            1000
+          ],
+          "gyro_mdps": [
+            0,
+            0,
+            0
+          ],
+          "temperature_cdeg": 2300,
+          "sample_period_us": 10000,
+          "accel_fullscale_mg": 12000,
+          "gyro_fullscale_dps": 1000,
+          "fifo_drop_count": 0,
+          "driver_error_count": 0
+        }
+      },
+      "raw_payload_hex": "010003012a00000010270000152700000100000018681e0f8001010100000000ab0a000000000000000000000000000000000000000000000000000000000000",
+      "parsed_payload_hex": "010103012a0000001027000018270000010000000000000000000000e8030000000000000000000000000000fc081027e02ee803010203010000000000000000"
+    }
+  }
+}

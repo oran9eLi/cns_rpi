@@ -68,6 +68,8 @@ GNSS 原始报文实验提供 `gnss_capture_start`、`gnss_capture_stop`、`gnss
 
 两个通道均为 QoS 0、`retain=false`，失败帧直接丢弃。快照包含实时通道的核心动态数据。服务端须先支持新 Topic，再更新设备。详细契约见 [高低频遥测发布协议](docs/高低频遥测发布协议.md) 和 [服务端迁移说明](docs/服务端对接-高低频遥测Topic迁移.md)。
 
+BMI088 IMU 上行已接入同一个 F407 MAVLink 接收器：解析六轴增加到既有 `telemetry.imu`，完整 RAW＋PARSED 采样对通过 `imu/sample/v1` 按新样本发布，不需要额外采集开关或 Python 解码器。Topic、JSON、原始字节和有效期规则见 [IMU 原始与解析数据接口](docs/IMU原始与解析数据接口.md)，软件验证及实机待验边界见 [实施记录](docs/validation/2026-11-12-bmi088-uplink.md)。
+
 正式发布基线见 [V1.0.8 发布说明](docs/V1.0.8发布说明.md)；当前候选包见 [V1.0.9 候选说明](docs/V1.0.9候选说明.md)。
 
 ## 主控箱常规状态与内部三态
