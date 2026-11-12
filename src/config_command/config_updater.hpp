@@ -13,11 +13,16 @@
 
 #include "config_command/command_parser.hpp"
 
+namespace config { struct AppConfig; }
+
 namespace config_command {
 
 std::expected<nlohmann::json, CommandError> LoadConfigJson(
     const std::filesystem::path& path);
 bool IsCommandApplied(const nlohmann::json& root, std::string_view command_id);
+ReportTopicNames ReportTopics(const nlohmann::json& config);
+nlohmann::json ReportIntervals(const nlohmann::json& config);
+void ApplyReportIntervals(config::AppConfig& config, const ConfigParameterPatch& patch);
 std::expected<nlohmann::json, CommandError> BuildUpdatedConfig(
     const nlohmann::json& current, const ConfigCommand& command);
 

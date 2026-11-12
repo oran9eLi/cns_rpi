@@ -63,4 +63,13 @@ void Publisher::Reset(Clock::time_point now) {
   }
 }
 
+void Publisher::SetInterval(const std::string& topic, std::chrono::milliseconds interval) {
+  for (auto& channel : channels_) {
+    if (channel.definition.options.topic == topic) {
+      channel.definition.options.interval = interval;
+      return;
+    }
+  }
+}
+
 }  // namespace telemetry

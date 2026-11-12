@@ -26,6 +26,21 @@ class MigrateTelemetryConfigTest(unittest.TestCase):
         path.write_text(json.dumps(root, ensure_ascii=False), encoding="utf-8")
         return temporary, path
 
+    def test_hot_adjusted_realtime_period_is_preserved_by_upgrade_migration(self):
+        current = json.loads(
+            (SCRIPT.parents[1] / "config/config.example.json").read_text(encoding="utf-8"))
+        current["telemetry_publish"]["realtime"]["interval_ms"] = 60000
+        current["reporting"] = {"runtime_status_interval_ms": 5000,
+                                "imu_sample_interval_ms": 500, "gnss_batch_interval_ms": 1000}
+        temporary, path = self.write_config(current)
+        self.addCleanup(temporary.cleanup)
+        before = path.read_bytes()
+
+        result = self.run_migration(path)
+
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(path.read_bytes(), before)
+
     def test_migrates_old_telemetry_configuration(self):
         old = {
             "runtime": {

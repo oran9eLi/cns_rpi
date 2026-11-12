@@ -72,7 +72,7 @@ def _is_new_configuration(root: object) -> bool:
     return (
         isinstance(topics, dict)
         and _channel_valid(publish.get("snapshot"), 100, 60000)
-        and _channel_valid(publish.get("realtime"), 50, 1000)
+        and _channel_valid(publish.get("realtime"), 50, 60000)
         and _topic_valid(snapshot_topic)
         and _topic_valid(realtime_topic)
         and snapshot_topic["suffix"] != realtime_topic["suffix"]

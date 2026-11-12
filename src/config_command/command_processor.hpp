@@ -23,7 +23,12 @@ struct CommandProcessResult {
 using PersistFunction =
     std::function<std::expected<void, CommandError>(const nlohmann::json&)>;
 
+nlohmann::json BuildRejectedAckForPayload(std::string_view payload, const CommandError& error);
+
 CommandProcessResult ProcessConfigCommand(std::string_view payload,
+                                          const nlohmann::json& current,
+                                          const PersistFunction& persist);
+CommandProcessResult ProcessConfigCommand(const ConfigCommand& command,
                                           const nlohmann::json& current,
                                           const PersistFunction& persist);
 

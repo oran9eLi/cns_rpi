@@ -49,6 +49,12 @@ struct TelemetryPublishConfig {
   TelemetryChannelConfig realtime{true, std::chrono::milliseconds(100)};
 };
 
+struct ReportingConfig {
+  std::chrono::milliseconds runtime_status_interval{10000};
+  std::chrono::milliseconds imu_sample_interval{0};
+  std::chrono::milliseconds gnss_batch_interval{200};
+};
+
 struct MqttConnectionConfig {
   std::string host;
   int port = 0;
@@ -142,6 +148,7 @@ struct RtkBaseConfig {
 struct AppConfig {
   SerialConfig serial;
   TelemetryPublishConfig telemetry_publish;
+  ReportingConfig reporting;
   MqttConfig mqtt;
   LoggingConfig logging;
   IdentityConfig identity;

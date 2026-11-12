@@ -7,6 +7,27 @@
 
 using config_command::ParseConfigCommand;
 
+TEST_CASE("Topic调频只允许数据后缀和整数周期且不能混合重启参数") {
+  const auto command = [](const nlohmann::json& values) {
+    return nlohmann::json{{"command_id", "rate"},
+        {"parameters", {{"topic_publish_intervals_ms", values}}}}.dump();
+  };
+  REQUIRE(ParseConfigCommand(command({{"imu/sample/v1", 0}, {"gnss/raw/v1", 60000}})));
+  for (const auto& value : {nlohmann::json(99), nlohmann::json(60001),
+                            nlohmann::json(100.0), nlohmann::json(true), nlohmann::json("100")}) {
+    CHECK_FALSE(ParseConfigCommand(command({{"telemetry/realtime/v1", value}})));
+  }
+  for (const auto& suffix : {"experiment/ack", "registration", "config/set", "unknown",
+                            "telemetry/#", "cns_rpi/other/imu/sample/v1"}) {
+    CHECK_FALSE(ParseConfigCommand(command({{suffix, 1000}})));
+  }
+  CHECK_FALSE(ParseConfigCommand(command(nlohmann::json::object())));
+  CHECK_FALSE(ParseConfigCommand(command({{"gnss/raw/v1", 0}})));
+  auto mixed = nlohmann::json::parse(command({{"gnss/raw/v1", 1000}}));
+  mixed["parameters"]["heartbeat_interval_ms"] = 2000;
+  CHECK_FALSE(ParseConfigCommand(mixed.dump()));
+}
+
 TEST_CASE("合法部分更新解析为类型安全补丁") {
   auto result = ParseConfigCommand(R"({
     "command_id":"cmd-001",

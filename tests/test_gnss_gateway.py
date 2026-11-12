@@ -95,7 +95,7 @@ class GatewayTest(unittest.TestCase):
                             return
                 streamer = threading.Thread(target=stream, daemon=True)
                 streamer.start()
-                app = subprocess.Popen([BINARY, str(path), "--config-writer=disabled"],
+                app = subprocess.Popen([BINARY, str(path), "--config-writer=direct"],
                                        stdout=app_log, stderr=app_log)
                 processes.append(app)
 
@@ -154,6 +154,20 @@ class GatewayTest(unittest.TestCase):
                                                       "duration_seconds": 10})
                 self.assertEqual(start["status"], "completed")
                 self.assertEqual(start["fact"]["gnss"]["capture_id"], capture_id)
+                rate_request = {"command_id": "gnss-batch-rate", "parameters": {
+                    "topic_publish_intervals_ms": {"gnss/raw/v1": 1000}}}
+                subprocess.run(["mosquitto_pub", "-h", "127.0.0.1", "-p", str(port),
+                    "-q", "2", "-t", f"{TOPIC}/config/set", "-s"],
+                    input=json.dumps(rate_request), text=True, check=True, timeout=2)
+                rate_ack = lambda item: item["topic"] == f"{TOPIC}/config/ack" and \
+                    item["payload"].get("command_id") == "gnss-batch-rate"
+                self.wait(lambda: message(rate_ack), "rate ACK missing during GNSS capture", app, app_log)
+                ack = message(rate_ack)["payload"]
+                self.assertEqual(ack["status"], "applied")
+                self.assertFalse(ack["restart_required"])
+                self.assertEqual(ack["topic_publish_intervals_ms"]["gnss/raw/v1"], 1000)
+                self.assertEqual(action("gnss_status")["fact"]["gnss"]["state"], "capturing")
+                self.assertIsNone(app.poll())
 
                 def frames():
                     drain()
@@ -182,6 +196,12 @@ class GatewayTest(unittest.TestCase):
                 self.assertEqual(stop["fact"]["gnss"]["end_reason"], "capture_stopped")
                 time.sleep(0.4)
                 drain()
+                archived = [json.loads(line) for line in (folder / "gnss/current.jsonl").read_text().splitlines()]
+                archived_frames = [item for item in archived if item.get("kind") == "raw"]
+                self.assertEqual(len(frames()), stop["fact"]["gnss"]["frames"])
+                self.assertEqual([frame["record_seq"] for frame in frames()],
+                                 list(range(1, len(frames()) + 1)))
+                self.assertEqual(len(archived_frames), len(frames()))
                 stopped_after = len(received)
                 latest_gps = max(item["payload"].get("telemetry", {}).get("gps", {})
                                  .get("time_usec", 0) for item in received)

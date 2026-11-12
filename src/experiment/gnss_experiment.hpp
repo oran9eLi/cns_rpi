@@ -33,6 +33,7 @@ class GnssExperiment {
   /// 只在收到对应MQTT完成回调后ConfirmBatch；发布调用返回成功尚不移除原文。
   const Publication* FrontBatch() const;
   void ConfirmBatch();
+  void SetBatchInterval(std::chrono::milliseconds interval) { batch_interval_ = interval; }
   nlohmann::json Status() const;
 
  private:
@@ -53,6 +54,7 @@ class GnssExperiment {
   std::string write_error_;
   bool active_{false};
   Steady::time_point started_{}, deadline_{}, batch_started_{};
+  std::chrono::milliseconds batch_interval_{200};
   nlohmann::json frames_batch_ = nlohmann::json::array();
   std::ofstream archive_;
 };

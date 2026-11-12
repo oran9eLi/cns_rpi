@@ -56,6 +56,7 @@ class Publisher {
       Clock::time_point now, const SnapshotProvider& snapshot_provider,
       const PublishFunction& publish);
   void Reset(Clock::time_point now);
+  void SetInterval(const std::string& topic, std::chrono::milliseconds interval);
 
  private:
   struct ChannelState {

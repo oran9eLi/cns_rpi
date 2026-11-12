@@ -42,7 +42,7 @@ bool PublicationState::ShouldPublish(bool mqtt_connected,
   return mqtt_connected &&
          (!last_payload_ || payload != *last_payload_ ||
           connection_generation != last_connection_generation_ ||
-          now - last_published_at_ >= std::chrono::seconds(10));
+          now - last_published_at_ >= interval_);
 }
 
 void PublicationState::MarkPublished(std::uint64_t connection_generation,

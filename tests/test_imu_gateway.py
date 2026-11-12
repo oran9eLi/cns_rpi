@@ -35,8 +35,11 @@ class ImuGatewayTest(unittest.TestCase):
     def test_cached_identity_cannot_authorize_imu(self):
         self.run_gateway(telemetry=False, cached_identity=True)
 
-    def run_gateway(self, telemetry, cached_identity=False):
-        if any(not shutil.which(name) for name in ["mosquitto", "mosquitto_sub"]):
+    def test_report_rates_apply_without_restart_and_survive_restart(self):
+        self.run_gateway(telemetry=True, rate_control=True)
+
+    def run_gateway(self, telemetry, cached_identity=False, rate_control=False):
+        if any(not shutil.which(name) for name in ["mosquitto", "mosquitto_sub", "mosquitto_pub"]):
             self.skipTest("requires mosquitto and mosquitto-clients")
         contract = json.loads((ROOT / "tests/fixtures/bmi088_contract.json").read_text())
         with tempfile.TemporaryDirectory(prefix="cns-imu-gateway-") as directory:
@@ -71,6 +74,8 @@ class ImuGatewayTest(unittest.TestCase):
                 config["mqtt"]["connection"].update(host="127.0.0.1", port=port, client_id="imu-test")
                 config["mqtt"]["auth"] = {"username": "", "password": ""}
                 config["mqtt"]["topics"]["namespace"] = "imutest"
+                if rate_control:
+                    config["mqtt"]["topics"]["telemetry_snapshot"]["suffix"] = "custom/snapshot"
                 config["identity"]["binding_file"] = str(folder / "binding.json")
                 if cached_identity:
                     (folder / "binding.json").write_text(json.dumps({
@@ -86,7 +91,7 @@ class ImuGatewayTest(unittest.TestCase):
 
                 def read_messages():
                     for line in subscriber.stdout:
-                        incoming.put(line)
+                        incoming.put((time.monotonic(), line))
                 threading.Thread(target=read_messages, daemon=True).start()
 
                 def stream():
@@ -110,7 +115,9 @@ class ImuGatewayTest(unittest.TestCase):
                             return
                 streamer = threading.Thread(target=stream, daemon=True)
                 streamer.start()
-                app = subprocess.Popen([BINARY, str(path), "--config-writer=disabled"],
+                app_command = [BINARY, str(path), "--config-writer=" +
+                               ("direct" if rate_control else "disabled")]
+                app = subprocess.Popen(app_command,
                                        stdout=app_log, stderr=app_log)
                 processes.append(app)
 
@@ -121,9 +128,10 @@ class ImuGatewayTest(unittest.TestCase):
 
                 def drain():
                     while not incoming.empty():
-                        qos, retain, topic, payload = incoming.get_nowait().rstrip("\n").split(" ", 3)
+                        when, line = incoming.get_nowait()
+                        qos, retain, topic, payload = line.rstrip("\n").split(" ", 3)
                         messages.append({"topic": topic, "qos": int(qos), "retain": int(retain),
-                                         "payload": json.loads(payload)})
+                                         "payload": json.loads(payload), "when": when})
 
                 def find(topic, predicate=lambda payload: True, after=0):
                     drain()
@@ -135,6 +143,74 @@ class ImuGatewayTest(unittest.TestCase):
                     return find(topic, predicate, after)["payload"]
 
                 wait(f"{PREFIX}/registration", lambda p: p.get("status") == "online")
+                if rate_control:
+                    mode("samples")
+                    wait(SAMPLE)
+                    wait(REALTIME)
+
+                    def set_rates(command_id, intervals):
+                        drain()
+                        after = len(messages)
+                        request = {"command_id": command_id, "parameters": {
+                            "topic_publish_intervals_ms": intervals}}
+                        subprocess.run(["mosquitto_pub", "-h", "127.0.0.1", "-p", str(port),
+                            "-q", "2", "-t", f"{PREFIX}/config/set", "-s"],
+                            input=json.dumps(request), text=True, check=True, timeout=2)
+                        return wait(f"{PREFIX}/config/ack",
+                                    lambda p: p.get("command_id") == command_id, after)
+
+                    rejected = set_rates("old-default-topic", {"telemetry/snapshot/v1": 1000})
+                    self.assertEqual(rejected["status"], "rejected")
+                    self.assertEqual(rejected["error_code"], "unknown_parameter")
+                    intervals = {"custom/snapshot": 500, "telemetry/realtime/v1": 500,
+                                 "runtime/status/v1": 1000, "imu/sample/v1": 1000,
+                                 "gnss/raw/v1": 1000}
+                    pid = app.pid
+                    ack = set_rates("rates-1", intervals)
+                    self.assertEqual(ack["status"], "applied")
+                    self.assertFalse(ack["restart_required"])
+                    self.assertEqual(ack["topic_publish_intervals_ms"], intervals)
+                    self.assertEqual(app.pid, pid)
+                    self.assertIsNone(app.poll())
+                    saved = json.loads(path.read_text())
+                    self.assertEqual(saved["reporting"]["imu_sample_interval_ms"], 1000)
+                    self.assertEqual(saved["telemetry_publish"]["realtime"]["interval_ms"], 500)
+                    start = time.monotonic() + 0.25
+                    time.sleep(3.4)
+                    drain()
+                    for topic, minimum, gap in [(SAMPLE, 2, 0.8), (REALTIME, 4, 0.4),
+                                                 (f"{PREFIX}/custom/snapshot", 4, 0.4)]:
+                        records = [m for m in messages if m["topic"] == topic and m["when"] >= start]
+                        self.assertGreaterEqual(len(records), minimum, topic)
+                        self.assertTrue(all(b["when"] - a["when"] >= gap
+                                            for a, b in zip(records, records[1:])), records)
+                    pairs = [m["payload"]["imu"] for m in messages if m["topic"] == SAMPLE]
+                    keys = [(p["source_epoch"], p["sample"]["sample_sequence"]) for p in pairs]
+                    self.assertEqual(len(keys), len(set(keys)), "rate limiter repeated stale samples")
+                    ack = set_rates("rates-2", {"telemetry/realtime/v1": 2000, "imu/sample/v1": 0})
+                    self.assertEqual(ack["status"], "applied")
+                    duplicate = set_rates("rates-1", intervals)
+                    self.assertEqual(duplicate["status"], "already_applied")
+                    self.assertEqual(duplicate["topic_publish_intervals_ms"]["telemetry/realtime/v1"], 2000)
+                    self.assertEqual(duplicate["topic_publish_intervals_ms"]["imu/sample/v1"], 0)
+                    self.assertEqual(json.loads(path.read_text())["telemetry_publish"]["realtime"]["interval_ms"], 2000)
+                    app.terminate()
+                    app.wait(timeout=3)
+                    drain()
+                    after = len(messages)
+                    app = subprocess.Popen(app_command, stdout=app_log, stderr=app_log)
+                    processes.append(app)
+                    wait(f"{PREFIX}/registration", lambda p: p.get("status") == "online", after)
+                    wait(REALTIME, after=after)
+                    drain()
+                    wait(REALTIME, after=len(messages))
+                    realtime = [m for m in messages[after:] if m["topic"] == REALTIME]
+                    self.assertGreaterEqual(realtime[1]["when"] - realtime[0]["when"], 1.8)
+                    samples = [m for m in messages[after:] if m["topic"] == SAMPLE]
+                    self.assertGreaterEqual(len(samples), 4, "IMU default new-pair mode was not restored")
+                    self.assertIsNone(app.poll())
+                    self.assertFalse(errors, errors)
+                    return
                 if cached_identity:
                     time.sleep(0.6)
                     self.assertIsNone(find(SAMPLE), "cached SN authorized an unverified source")

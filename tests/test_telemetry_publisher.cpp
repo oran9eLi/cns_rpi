@@ -28,6 +28,26 @@ telemetry::ChannelDefinition Channel(std::string name, std::string topic,
 
 }  // namespace
 
+TEST_CASE("热改周期保留序号且只影响目标通道") {
+  const auto start = telemetry::Clock::time_point{};
+  telemetry::Publisher publisher({Channel("快照", "snapshot", 1000ms),
+                                  Channel("实时", "realtime", 100ms)}, start);
+  std::vector<std::pair<std::string, std::uint64_t>> frames;
+  auto snapshot = [] { return state::TelemetryState{}; };
+  auto publish = [&](const std::string& topic, const std::string& payload, int, bool) {
+    frames.emplace_back(topic, nlohmann::json::parse(payload)["sequence"].get<std::uint64_t>());
+    return true;
+  };
+  publisher.Tick(start + 100ms, snapshot, publish);
+  publisher.SetInterval("realtime", 500ms);
+  CHECK(publisher.Tick(start + 599ms, snapshot, publish).empty());
+  publisher.Tick(start + 600ms, snapshot, publish);
+  publisher.Tick(start + 1000ms, snapshot, publish);
+  publisher.Tick(start + 1100ms, snapshot, publish);
+  CHECK(frames == std::vector<std::pair<std::string, std::uint64_t>>{
+      {"realtime", 0}, {"realtime", 1}, {"snapshot", 0}, {"realtime", 2}});
+}
+
 TEST_CASE("到期通道共享一次最新状态快照") {
   const auto start = telemetry::Clock::time_point{};
   telemetry::Publisher publisher(

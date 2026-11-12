@@ -252,6 +252,29 @@ TEST_CASE("旧QGC UDP启用配置必须明确拒绝") {
   CHECK(result.error() == config::ConfigError::kInvalidValue);
 }
 
+TEST_CASE("Topic周期配置可重启恢复且缺省不改变原上报行为") {
+  const auto original = config::LoadAppConfig(WriteTempConfig(ValidConfig()));
+  REQUIRE(original);
+  CHECK(original->reporting.runtime_status_interval == std::chrono::milliseconds{10000});
+  CHECK(original->reporting.imu_sample_interval == std::chrono::milliseconds{0});
+  CHECK(original->reporting.gnss_batch_interval == std::chrono::milliseconds{200});
+  auto json = nlohmann::json::parse(ValidConfig());
+  json["reporting"] = {{"runtime_status_interval_ms", 2000},
+      {"imu_sample_interval_ms", 500}, {"gnss_batch_interval_ms", 1000}};
+  json["telemetry_publish"]["realtime"]["interval_ms"] = 60000;
+  const auto updated = config::LoadAppConfig(WriteTempConfig(json.dump()));
+  REQUIRE(updated);
+  CHECK(updated->reporting.runtime_status_interval == std::chrono::milliseconds{2000});
+  CHECK(updated->reporting.imu_sample_interval == std::chrono::milliseconds{500});
+  CHECK(updated->reporting.gnss_batch_interval == std::chrono::milliseconds{1000});
+  CHECK(updated->telemetry_publish.realtime.interval == std::chrono::milliseconds{60000});
+  for (const auto& invalid : {nlohmann::json(99), nlohmann::json(60001),
+                              nlohmann::json(200.5), nlohmann::json("200")}) {
+    json["reporting"]["gnss_batch_interval_ms"] = invalid;
+    CHECK_FALSE(config::LoadAppConfig(WriteTempConfig(json.dump())));
+  }
+}
+
 TEST_CASE("完整合法嵌套配置能正确解析") {
   auto result = config::LoadAppConfig(WriteTempConfig(ValidConfig()));
 
@@ -381,6 +404,23 @@ TEST_CASE("配置命令和ACK必须使用QoS2") {
   CHECK(result.error() == config::ConfigError::kInvalidValue);
 }
 
+TEST_CASE("遥测后缀不能占用固定数据和实际命令应答Topic") {
+  for (const auto& suffix : {"runtime/status/v1", "imu/sample/v1", "gnss/raw/v1",
+                            "registration", "config/set", "config/ack", "control/set",
+                            "control/ack", "experiment/set", "experiment/ack", "config/request"}) {
+    auto root = nlohmann::json::parse(ValidConfig());
+    for (const auto& channel : {"telemetry_snapshot", "telemetry_realtime"}) {
+      auto candidate = root;
+      candidate["mqtt"]["topics"][channel]["suffix"] = suffix;
+      CHECK_FALSE(config::LoadAppConfig(WriteTempConfig(candidate.dump())).has_value());
+    }
+  }
+  auto root = nlohmann::json::parse(ValidConfig());
+  root["mqtt"]["topics"]["config_set"]["suffix"] = "maintenance/config";
+  root["mqtt"]["topics"]["telemetry_snapshot"]["suffix"] = "maintenance/config";
+  CHECK_FALSE(config::LoadAppConfig(WriteTempConfig(root.dump())).has_value());
+}
+
 TEST_CASE("运行参数范围或重连组合非法时返回kInvalidValue") {
   for (const auto& [name, original, replacement] : {
            std::tuple{"快照周期低于100毫秒", "\"interval_ms\": 1000",
@@ -390,9 +430,9 @@ TEST_CASE("运行参数范围或重连组合非法时返回kInvalidValue") {
            std::tuple{"实时周期低于50毫秒",
                       "\"realtime\": {\"enabled\": true, \"interval_ms\": 100}",
                       "\"realtime\": {\"enabled\": true, \"interval_ms\": 49}"},
-           std::tuple{"实时周期高于1000毫秒",
+           std::tuple{"实时周期高于60000毫秒",
                       "\"realtime\": {\"enabled\": true, \"interval_ms\": 100}",
-                      "\"realtime\": {\"enabled\": true, \"interval_ms\": 1001}"},
+                      "\"realtime\": {\"enabled\": true, \"interval_ms\": 60001}"},
        }) {
     SUBCASE(name) {
       auto result = config::LoadAppConfig(

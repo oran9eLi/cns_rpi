@@ -50,10 +50,16 @@ bool IsAllowedParameter(std::string_view name) {
   return false;
 }
 
+bool IsReportTopic(std::string_view topic, const ReportTopicNames& names) {
+  return topic == names.snapshot || topic == names.realtime ||
+         topic == "runtime/status/v1" || topic == "imu/sample/v1" ||
+         topic == "gnss/raw/v1";
+}
+
 }  // namespace
 
 std::expected<void, CommandError> ValidateConfigParameterPatch(
-    const ConfigParameterPatch& parameters) {
+    const ConfigParameterPatch& parameters, const ReportTopicNames& topics) {
   const auto valid = [](const std::optional<int>& value, int minimum, int maximum) {
     return !value || (*value >= minimum && *value <= maximum);
   };
@@ -68,10 +74,25 @@ std::expected<void, CommandError> ValidateConfigParameterPatch(
     return std::unexpected(
         Error("invalid_parameter", "mqtt_reconnect_delay_s不能大于最大等待"));
   }
+  if (!parameters.topic_publish_intervals_ms.empty() &&
+      (parameters.telemetry_publish_interval_ms || parameters.heartbeat_interval_ms ||
+       parameters.mqtt_reconnect_delay_s || parameters.mqtt_reconnect_delay_max_s)) {
+    return std::unexpected(Error("invalid_parameter", "Topic调频须与重启参数分开下发"));
+  }
+  for (const auto& [topic, interval] : parameters.topic_publish_intervals_ms) {
+    if (!IsReportTopic(topic, topics)) {
+      return std::unexpected(Error("unknown_parameter", topic + "不是数据上报Topic"));
+    }
+    if (!((interval >= 100 && interval <= 60000) ||
+          (topic == "imu/sample/v1" && interval == 0))) {
+      return std::unexpected(Error("invalid_parameter", topic + "周期超出允许范围"));
+    }
+  }
   return {};
 }
 
-std::expected<ConfigCommand, CommandError> ParseConfigCommand(std::string_view payload) {
+std::expected<ConfigCommand, CommandError> ParseConfigCommand(
+    std::string_view payload, const ReportTopicNames& topics) {
   nlohmann::json root;
   try {
     root = nlohmann::json::parse(payload);
@@ -100,6 +121,25 @@ std::expected<ConfigCommand, CommandError> ParseConfigCommand(std::string_view p
 
   ConfigParameterPatch patch;
   const auto& parameters = root["parameters"];
+  if (parameters.contains("topic_publish_intervals_ms")) {
+    const auto& intervals = parameters["topic_publish_intervals_ms"];
+    if (parameters.size() != 1 || !intervals.is_object() || intervals.empty()) {
+      return std::unexpected(Error("invalid_parameter", "Topic周期须为非空对象且单独下发"));
+    }
+    for (auto it = intervals.begin(); it != intervals.end(); ++it) {
+      if (!IsReportTopic(it.key(), topics)) {
+        return std::unexpected(Error("unknown_parameter", it.key() + "不是数据上报Topic"));
+      }
+      auto interval = ReadInteger(it.value(), it.key(), it.key() == "imu/sample/v1" ? 0 : 100, 60000);
+      if (!interval) return std::unexpected(interval.error());
+      if (*interval != 0 && *interval < 100) {
+        return std::unexpected(Error("invalid_parameter", "周期必须为100至60000毫秒"));
+      }
+      patch.topic_publish_intervals_ms.emplace(it.key(), *interval);
+    }
+    return ConfigCommand{.command_id = command_id, .parameters = std::move(patch),
+                         .report_topics = topics};
+  }
   for (auto it = parameters.begin(); it != parameters.end(); ++it) {
     if (!IsAllowedParameter(it.key())) {
       return std::unexpected(Error("unknown_parameter", it.key() + "不允许远程修改"));
@@ -120,9 +160,9 @@ std::expected<ConfigCommand, CommandError> ParseConfigCommand(std::string_view p
     }
   }
 
-  auto validation = ValidateConfigParameterPatch(patch);
+  auto validation = ValidateConfigParameterPatch(patch, topics);
   if (!validation) return std::unexpected(validation.error());
-  return ConfigCommand{.command_id = command_id, .parameters = patch};
+  return ConfigCommand{.command_id = command_id, .parameters = patch, .report_topics = topics};
 }
 
 nlohmann::json BuildRejectedAck(std::string_view command_id, const CommandError& error) {
