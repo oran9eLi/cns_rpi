@@ -24,7 +24,7 @@ constexpr auto kStart = device_status::Clock::time_point{};
 
 }  // namespace
 
-TEST_CASE("常规状态严格包含当前约定的十个字段") {
+TEST_CASE("常规状态严格包含当前约定的十一个字段") {
   const auto payload = nlohmann::json::parse(device_status::BuildPayload(Box(), "2.3.4", true));
   CHECK(payload == nlohmann::json{
                        {"device_id", "DCDWCNS1S2MEAG1VTA0C"},
@@ -32,12 +32,13 @@ TEST_CASE("常规状态严格包含当前约定的十个字段") {
                        {"dcdw_label", "DCDW-001"},
                        {"model_version", "2.3.4"},
                        {"device_name", "CNS 一代实训平台"},
-                       {"device_type", "xn_box"},
+                       {"device_type", "cns_box"},
                        {"capabilities", {"telemetry", "remote_id", "runtime_config",
                                          "box_private_control"}},
                        {"product", {{"manufacturer_code", "DCDW"}, {"model_code", "CNS1"}}},
                        {"online", "0"},
                        {"device_status", "0"},
+                       {"fault_modules", nullptr},
                    });
   const auto registration = nlohmann::json::parse(registration::BuildOnlinePayload(Box()));
   CHECK(payload.at("capabilities") == registration.at("capabilities"));
@@ -63,6 +64,40 @@ TEST_CASE("正常离线只改变online字符串保留设备资料") {
   const auto offline = nlohmann::json::parse(device_status::BuildPayload(Box(), "2.3.4", false));
   online["online"] = "1";
   CHECK(offline == online);
+}
+
+TEST_CASE("异常模块字段保留未知空列表多模块及正常离线资料") {
+  const auto unknown = nlohmann::json::parse(device_status::BuildPayload(Box(), "2.3.4", true));
+  CHECK(unknown.at("fault_modules").is_null());
+  const std::vector<std::string> none;
+  const auto healthy = nlohmann::json::parse(
+      device_status::BuildPayload(Box(), "2.3.4", true, {}, "0", none));
+  CHECK(healthy.at("fault_modules") == nlohmann::json::array());
+  const std::vector<std::string> modules{"GNSS", "IMU"};
+  auto online = nlohmann::json::parse(
+      device_status::BuildPayload(Box(), "2.3.4", true, {}, "0", modules));
+  CHECK(online.at("fault_modules") == nlohmann::json::array({"GNSS", "IMU"}));
+  CHECK(online.at("device_status") == "0");
+  const auto offline = nlohmann::json::parse(
+      device_status::BuildPayload(Box(), "2.3.4", false, {}, "0", modules));
+  online["online"] = "1";
+  CHECK(offline == online);
+  const auto maintained = nlohmann::json::parse(
+      device_status::BuildPayload(Box(), "2.3.4", true, {}, "1", modules));
+  CHECK(maintained.at("fault_modules") == online.at("fault_modules"));
+}
+
+TEST_CASE("整机仍可用时异常模块变化也立即触发状态上报") {
+  const std::vector<std::string> none;
+  const std::vector<std::string> faults{"GNSS"};
+  const auto normal = device_status::BuildPayload(Box(), "2.3.4", true, {}, "0", none);
+  const auto faulty = device_status::BuildPayload(Box(), "2.3.4", true, {}, "0", faults);
+  device_status::PublicationState state;
+  state.MarkPublished(1, normal, kStart);
+  CHECK(state.ShouldPublish(true, 1, faulty, kStart + 1s));
+  state.MarkPublished(1, faulty, kStart + 1s);
+  CHECK_FALSE(state.ShouldPublish(true, 1, faulty, kStart + 2s));
+  CHECK(state.ShouldPublish(true, 1, normal, kStart + 2s));
 }
 
 TEST_CASE("资料覆盖只改变可编辑字段并保留健康和连接状态的独立来源") {

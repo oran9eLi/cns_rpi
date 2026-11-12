@@ -22,6 +22,7 @@
 #include "common/mavlink.h"
 #include "device/device_type.hpp"
 #include "device/product_info.hpp"
+#include "state/module_status.hpp"
 
 namespace state {
 
@@ -32,10 +33,6 @@ enum class DeviceIdUpdate {
   kUnchanged,  ///< 与已锁定值相同，正常的周期重复上报
   kConflict,   ///< 与已锁定值不同，调用方必须走会话清理并重新识别设备
 };
-
-/// 固件端模块总数（`Px4Lite_ModuleId_t`，见 V1设计文档.md §4.1），
-/// MODSTAT0 覆盖 0-7 号，MODSTAT1 覆盖 8-13 号。
-constexpr std::size_t kModuleCount = 14;
 
 /// BATTERY_STATUS.id 目前只处理电池1(id=0)/电池2(id=1)两块，超出范围的id丢弃。
 constexpr std::size_t kBatteryCount = 2;

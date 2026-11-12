@@ -58,6 +58,7 @@
 #include "experiment/uart_echo_request.hpp"
 #include "experiment/uart_echo_transaction.hpp"
 #include "logging/logger.hpp"
+#include "imu/stream.hpp"
 #include "mqtt/mqtt_client.hpp"
 #include "mqtt/topic.hpp"
 #include "payload/json_serializer.hpp"
@@ -268,6 +269,7 @@ int main(int argc, char** argv) {
       app_config->mqtt.topics.topic_namespace, app_config->video.enabled, video_manager);
   experiment::GnssExperiment gnss_experiment(
       app_config->mqtt.topics.topic_namespace, app_config->gnss);
+  imu::Stream imu_stream;
   std::optional<experiment::LinkLabController> link_lab;
   std::optional<std::uint64_t> link_lab_connection_generation;
   if (persisted_binding.has_value()) {
@@ -414,6 +416,7 @@ int main(int argc, char** argv) {
   uart::DiscoveryLogLimiter identity_wait_log_limiter(kIdentityWarningInterval);
   uart::DiscoveryLogLimiter uas_id_invalid_log_limiter(kIdentityWarningInterval);
   uart::DiscoveryLogLimiter binding_error_log_limiter(kIdentityWarningInterval);
+  uart::DiscoveryLogLimiter imu_log_limiter(kIdentityWarningInterval);
   uart::MavlinkSilenceWatchdog silence_watchdog(kMavlinkSilenceTimeout);
   // systemd watchdog 只证明主循环还在转，不反映业务健康：串口断开和 MQTT 断连
   // 各有自己的恢复逻辑（且已验证能自愈），不应升级成整个进程重启。
@@ -520,6 +523,7 @@ int main(int argc, char** argv) {
     controlled_device.reset();
     ambiguous_endpoint = false;
     state_store.ResetDeviceState();
+    imu_stream.Reset();
     silence_watchdog.Reset();
     next_discovery = std::chrono::steady_clock::now();
   };
@@ -541,6 +545,7 @@ int main(int argc, char** argv) {
     h1_endpoint_identity_verified = false;
     device_session.SetLinkAvailable(false);
     state_store.ResetDeviceState();
+    imu_stream.Reset();
     silence_watchdog.Reset();
     next_discovery = std::chrono::steady_clock::now();
   };
@@ -584,6 +589,7 @@ int main(int argc, char** argv) {
           *controlled_device, *classified, true, now);
       if (observed == control_command::HeartbeatObservation::kCandidate) {
         device_session.InvalidateCurrentIdentity();
+        imu_stream.Reset();
         h1_endpoint_identity_verified = false;
         m1_held_for_identity = m1_transaction.HasPending();
         (*logger)->Warn("F407节点编号变化，暂停新串口下行并等待Basic ID复核: 旧sysid=" +
@@ -606,6 +612,7 @@ int main(int argc, char** argv) {
       h1_endpoint_identity_verified = false;
       close_mqtt_session(/*publish_offline=*/true);
       state_store.ResetDeviceState();
+      imu_stream.Reset();
       controlled_device.reset();
       ambiguous_endpoint = true;
       return;
@@ -623,6 +630,7 @@ int main(int argc, char** argv) {
           controlled_device->endpoint = *candidate;
           endpoint_revalidation.Reset();
           state_store.ResetDeviceState();
+          imu_stream.Reset();
           state_store.UpdateControlledDevice(
               device::Type::kCnsBox, candidate->system_id,
               candidate->component_id);
@@ -698,8 +706,29 @@ int main(int argc, char** argv) {
         message.msgid == MAVLINK_MSG_ID_OPEN_DRONE_ID_BASIC_ID;
     const bool may_update_telemetry =
         device_session.CanAcceptTelemetryMessage(is_cns_basic_id);
+    bool decoded_imu = false;
     if (may_update_telemetry) {
       gnss_experiment.OnMessage(message, std::chrono::system_clock::now(), now);
+      const auto imu_now = std::chrono::steady_clock::now();
+      auto result = imu_stream.Receive(message,
+          wire_frame ? wire_frame->received_at : imu_now, imu_now);
+      decoded_imu = result.recognized;
+      if (!result.diagnostic.empty() && imu_log_limiter.ShouldLog(imu_now)) {
+        (*logger)->Warn("BMI088解码: " + std::string(result.diagnostic));
+      }
+      if (result.sample && mqtt_client && mqtt_client->IsConnected() && active_mqtt_binding) {
+        const auto* binding = device_session.ActiveBinding();
+        if (binding && binding->device_id == active_mqtt_binding->device_id) {
+          const auto topic = app_config->mqtt.topics.topic_namespace + "/" +
+                             binding->device_id + "/imu/sample/v1";
+          const auto frame = imu::SampleMessage(std::move(*result.sample), binding->device_id,
+                                                std::chrono::system_clock::now());
+          if (!mqtt_client->Publish(topic, frame.dump(), 0, false) &&
+              imu_log_limiter.ShouldLog(imu_now)) {
+            (*logger)->Warn("BMI088采样对发布失败，已丢弃本条记录");
+          }
+        }
+      }
     }
     const bool decoded_standard =
         may_update_telemetry && protocol::DecodeAndStore(message, state_store);
@@ -712,7 +741,7 @@ int main(int argc, char** argv) {
         message.msgid == MAVLINK_MSG_ID_OPEN_DRONE_ID_SYSTEM ||
         message.msgid == MAVLINK_MSG_ID_OPEN_DRONE_ID_OPERATOR_ID ||
         message.msgid == MAVLINK_MSG_ID_OPEN_DRONE_ID_SELF_ID;
-    if ((decoded_standard || decoded_extension) && !is_identity_or_metadata) {
+    if ((decoded_standard || decoded_extension || decoded_imu) && !is_identity_or_metadata) {
       device_session.ObserveBusinessFrame(now);
       if (wire_frame && experiment::IsFreshEchoBusinessFrame(
                             message, decoded_standard, decoded_extension,
@@ -754,6 +783,7 @@ int main(int argc, char** argv) {
           "F407未绑定候选身份发生变化，保持首次候选并拒绝建绑: 新device_id=" +
           uas_id);
       state_store.ResetDeviceState();
+      imu_stream.Reset();
       state_store.UpdateControlledDevice(
           controlled_device->type, controlled_device->endpoint.system_id,
           controlled_device->endpoint.component_id);
@@ -796,6 +826,7 @@ int main(int argc, char** argv) {
           "F407身份与持久化绑定冲突，保持原Topic并阻断遥测和控制: 新device_id=" +
           uas_id);
       state_store.ResetDeviceState();
+      imu_stream.Reset();
       state_store.UpdateControlledDevice(
           controlled_device->type, controlled_device->endpoint.system_id,
           controlled_device->endpoint.component_id);
@@ -859,6 +890,7 @@ int main(int argc, char** argv) {
                          uas_id);
         close_mqtt_session(/*publish_offline=*/true);
         state_store.ResetDeviceState();
+        imu_stream.Reset();
         endpoint_revalidation.Reset();
         controlled_device.reset();
         break;
@@ -867,6 +899,7 @@ int main(int argc, char** argv) {
 
   while (!g_exit_requested) {
     auto now = std::chrono::steady_clock::now();
+    imu_stream.Tick(now);
     if (rtk_service) {
       const auto box = device_session.CurrentOnlineStatus();
       if (box && box->identity_status == runtime_status::IdentityStatus::kConflict)
@@ -1203,7 +1236,7 @@ int main(int argc, char** argv) {
               MakeOnlineRegistration(*candidate_binding, snapshot,
                                      app_config->identity.school_name),
               CNS_RPI_VERSION, false, app_config->device_status,
-              device_health.Status());
+              device_health.Status(), device_health.FaultModules());
           runtime_will_health_status = device_health.Status();
           mqtt::WillOptions mqtt_will{
               .topic = runtime_status_topic,
@@ -1255,6 +1288,10 @@ int main(int argc, char** argv) {
                            frame["drone_id"] = {{"basic_id", nlohmann::json::object()}};
                          }
                        }
+                       if (device_session.CanPublishTelemetry()) {
+                         if (auto imu = imu_stream.Snapshot(std::chrono::steady_clock::now(), true))
+                           frame["telemetry"]["imu"] = std::move(*imu);
+                       }
                        return frame;
                      }},
                     {{"遥测实时通道", telemetry_realtime_topic,
@@ -1266,6 +1303,10 @@ int main(int argc, char** argv) {
                         std::uint64_t sequence) {
                        auto frame = payload::ToRealtimeJson(state, sequence);
                        if (rtk_service) frame["telemetry"]["rtk"] = rtk_status(false);
+                       if (device_session.CanPublishTelemetry()) {
+                         if (auto imu = imu_stream.Snapshot(std::chrono::steady_clock::now(), false))
+                           frame["telemetry"]["imu"] = std::move(*imu);
+                       }
                        return frame;
                      }},
                 },
@@ -1320,12 +1361,13 @@ int main(int argc, char** argv) {
           (*logger)->Warn("MQTT注册发布失败，下一轮重试");
         }
       }
+      const auto fault_modules = device_health.FaultModules();
       const auto status_payload = device_status::BuildPayload(
           metadata, CNS_RPI_VERSION, true, app_config->device_status,
-          device_health.Status());
+          device_health.Status(), fault_modules);
       runtime_offline_payload = device_status::BuildPayload(
           metadata, CNS_RPI_VERSION, false, app_config->device_status,
-          device_health.Status());
+          device_health.Status(), fault_modules);
       const auto connection_generation = mqtt_client->ConnectionGeneration();
       if (runtime_publication_state.ShouldPublish(
               mqtt_client->IsConnected(), connection_generation,
@@ -1574,6 +1616,7 @@ int main(int argc, char** argv) {
                       h1_endpoint_identity_verified = false;
                       device_session.SetLinkAvailable(false);
                       state_store.ResetDeviceState();
+                      imu_stream.Reset();
                       silence_watchdog.Reset();
                     },
                     [&](int baud) -> std::expected<int, std::string> {

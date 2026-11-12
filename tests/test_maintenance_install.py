@@ -110,11 +110,12 @@ class InstallTests(unittest.TestCase):
         self.assertEqual(self.services.calls, [])
 
     def test_release_is_traversable_and_restage_keeps_running_inode(self):
-        release = self.stage('v1')
+        archive, artifact = self.package('v1')
+        release = self.inst.stage(archive, artifact)
         self.assertEqual(release.stat().st_mode & 511, 493)
         executable = release / 'app/bin/cns_rpi'
         inode = executable.stat().st_ino
-        self.assertEqual(self.stage('v1'), release)
+        self.assertEqual(self.inst.stage(archive, artifact), release)
         self.assertEqual(executable.stat().st_ino, inode)
 
     def test_app_update_and_rollback_preserve_bindings(self):

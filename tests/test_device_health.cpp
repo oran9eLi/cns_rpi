@@ -41,6 +41,70 @@ Modules Failing(std::size_t index = 0) {
 
 }  // namespace
 
+TEST_CASE("异常模块立即列出且只包含离线或故障模块") {
+  HealthFile file;
+  device_status::HealthTracker health(file.Path());
+  REQUIRE(health.Load(kDeviceId, nullptr));
+  CHECK_FALSE(health.FaultModules().has_value());
+  Modules modules{4, 5, 3, 6, 0, 1, 2, 7, 15, 2, 2, 2, 2, 5};
+  health.Update(modules, kStart);
+  REQUIRE(health.FaultModules().has_value());
+  CHECK(*health.FaultModules() == std::vector<std::string>{"GNSS", "IMU", "BUSINESS"});
+  CHECK(health.Status() == "0");
+  health.Update(std::nullopt, kStart + 1min);
+  CHECK_FALSE(health.FaultModules().has_value());
+  CHECK(health.Status() == "0");
+  modules.fill(2);
+  health.Update(modules, kStart + 2min);
+  REQUIRE(health.FaultModules().has_value());
+  CHECK(health.FaultModules()->empty());
+}
+
+TEST_CASE("致损模块跨重启和未知状态保留并在恢复时逐项清除") {
+  HealthFile file;
+  device_status::HealthTracker health(file.Path());
+  REQUIRE(health.Load(kDeviceId, nullptr));
+  auto modules = Failing();
+  modules[1] = 5;
+  health.Update(modules, kStart);
+  health.Update(modules, kStart + 12h);
+  REQUIRE(health.Save(nullptr));
+  device_status::HealthTracker restored(file.Path());
+  REQUIRE(restored.Load(kDeviceId, nullptr));
+  CHECK(restored.Status() == "2");
+  REQUIRE(restored.FaultModules().has_value());
+  CHECK(*restored.FaultModules() == std::vector<std::string>{"GNSS", "IMU"});
+  restored.Update(std::nullopt, kStart + 100h);
+  CHECK(*restored.FaultModules() == std::vector<std::string>{"GNSS", "IMU"});
+  modules[0] = 2;
+  modules[1] = 1;
+  restored.Update(modules, kStart + 101h);
+  CHECK(*restored.FaultModules() == std::vector<std::string>{"IMU"});
+  CHECK(restored.Status() == "2");
+  modules[1] = 3;
+  restored.Update(modules, kStart + 102h);
+  CHECK(restored.FaultModules()->empty());
+  CHECK(restored.Status() == "0");
+}
+
+TEST_CASE("维修不隐藏异常模块且更换身份不沿用旧模块资料") {
+  HealthFile file;
+  device_status::HealthTracker health(file.Path());
+  REQUIRE(health.Load(kDeviceId, nullptr));
+  health.Update(Failing(13), kStart);
+  REQUIRE(health.SetMaintenance(true, nullptr));
+  CHECK(health.Status() == "1");
+  CHECK(*health.FaultModules() == std::vector<std::string>{"BUSINESS"});
+  auto modules = Failing(13);
+  modules[13] = 6;
+  health.Update(modules, kStart + 1min);
+  CHECK(health.FaultModules()->empty());
+  CHECK(health.Status() == "1");
+  REQUIRE(health.Load("DCDWCNS1D9J1GK0Y5U5S", nullptr));
+  CHECK_FALSE(health.FaultModules().has_value());
+  CHECK(health.Status() == "0");
+}
+
 TEST_CASE("单模块故障运行满十二小时才报损坏") {
   HealthFile file;
   device_status::HealthTracker health(file.Path());

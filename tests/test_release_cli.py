@@ -1,6 +1,7 @@
 """发布入口验证：版本查询和配置预检不得进入硬件运行循环。"""
 import json
 from pathlib import Path
+import re
 import subprocess
 import sys
 import tempfile
@@ -8,6 +9,8 @@ import unittest
 
 BINARY = sys.argv.pop(1)
 ROOT = Path(__file__).resolve().parents[1]
+VERSION = re.search(r"project\(cns_rpi VERSION ([0-9.]+)",
+                    (ROOT / "CMakeLists.txt").read_text(encoding="utf-8")).group(1)
 
 
 class ReleaseCliTest(unittest.TestCase):
@@ -18,7 +21,7 @@ class ReleaseCliTest(unittest.TestCase):
     def test_version_without_configuration(self):
         result = self.run_cli("--version")
         self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertIn("1.0.8", result.stdout)
+        self.assertEqual(f"cns_rpi {VERSION}\n", result.stdout)
 
     def test_valid_configuration_without_hardware(self):
         result = self.run_cli("--check-config", str(ROOT / "config/config.example.json"))

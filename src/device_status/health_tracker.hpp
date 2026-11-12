@@ -2,11 +2,13 @@
 
 #include <array>
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <vector>
 
-#include "state/state_store.hpp"
+#include "state/module_status.hpp"
 
 namespace device_status {
 
@@ -25,12 +27,14 @@ class HealthTracker {
   /// 供后续云端管理入口使用；持久化失败时保留原维修状态。
   bool SetMaintenance(bool maintenance, std::string* error);
   std::string Status() const;
+  std::optional<std::vector<std::string>> FaultModules() const;
 
  private:
   std::filesystem::path state_file_;
   std::string device_id_;
   std::array<HealthClock::duration, state::kModuleCount> failure_time_{};
   std::array<bool, state::kModuleCount> failing_{};
+  bool modules_available_{false};
   std::optional<HealthClock::time_point> last_update_;
   bool maintenance_{false};
 };

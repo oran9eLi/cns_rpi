@@ -94,10 +94,10 @@ class F407Port {
     Write(identity);
   }
 
-  void SendModuleFailure() {
+  void SendModuleStatus(std::int32_t packed = 4) {
     mavlink_message_t message{};
     const std::array<char, 10> name{'M', 'O', 'D', 'S', 'T', 'A', 'T', '0'};
-    mavlink_msg_named_value_int_pack(1, 193, &message, 0, name.data(), 4);
+    mavlink_msg_named_value_int_pack(1, 193, &message, 0, name.data(), packed);
     Write(message);
   }
 
@@ -115,13 +115,13 @@ class F407Port {
 std::optional<nlohmann::json> WaitFor(mqtt::MqttClient& client,
                                     const std::string& topic,
                                     const std::string& field,
-                                    const std::string& value,
+                                    const nlohmann::json& value,
                                     std::chrono::seconds timeout) {
   const auto deadline = std::chrono::steady_clock::now() + timeout;
   while (std::chrono::steady_clock::now() < deadline) {
     if (auto message = client.TryPopMessage(); message && message->topic == topic) {
       auto payload = nlohmann::json::parse(message->payload);
-      if (payload.value(field, "") == value) return payload;
+      if (payload.contains(field) && payload.at(field) == value) return payload;
     }
     std::this_thread::sleep_for(10ms);
   }
@@ -186,11 +186,12 @@ TEST_CASE("真实进程验证常规状态、离线遗嘱和首次绑定恢复") 
     PiProcess pi(config_path, directory.path / "graceful.log");
     auto first = WaitFor(*observer, status_topic, "online", "0", 5s);
     REQUIRE(first.has_value());
-    CHECK(first->size() == 10);
+    CHECK(first->size() == 11);
+    CHECK(first->at("fault_modules").is_null());
     CHECK(first->at("school_id") == "示例职业技术学院");
     CHECK(first->at("device_status") == "0");
     CHECK(first->at("device_id") == device_id);
-    CHECK(first->at("device_type") == "xn_box");
+    CHECK(first->at("device_type") == "cns_box");
     CHECK(first->at("device_name") == "CNS 一代实训平台");
     CHECK(first->at("model_version") == EXPECTED_RPI_VERSION);
     CHECK_FALSE(first->contains("provisioned_at"));
@@ -221,16 +222,52 @@ TEST_CASE("真实进程验证常规状态、离线遗嘱和首次绑定恢复") 
     CHECK(WIFSIGNALED(status));
     auto will = WaitFor(*observer, status_topic, "online", "1", 5s);
     REQUIRE(will.has_value());
-    CHECK(will->size() == 10);
+    CHECK(will->size() == 11);
+    CHECK(will->at("fault_modules").is_null());
     CHECK(will->at("school_id") == "示例职业技术学院");
     CHECK(will->at("device_status") == "0");
     CHECK(will->at("device_id") == device_id);
-    CHECK(will->at("device_type") == "xn_box");
+    CHECK(will->at("device_type") == "cns_box");
     CHECK(will->at("device_name") == "CNS 一代实训平台");
     CHECK(will->at("model_version") == EXPECTED_RPI_VERSION);
     CHECK_FALSE(will->contains("provisioned_at"));
     CHECK(will->at("product").is_null());
     CHECK_FALSE(will->contains("control_status"));
+  }
+  {
+    F407Port f407;
+    config["serial"]["device"] = f407.path;
+    std::ofstream(config_path) << config.dump();
+    while (observer->TryPopMessage()) {}
+    PiProcess pi(config_path, directory.path / "immediate-module-fault.log");
+    const auto initial = WaitFor(*observer, status_topic, "online", "0", 5s);
+    REQUIRE(initial.has_value());
+    CHECK(initial->at("fault_modules").is_null());
+    std::optional<nlohmann::json> faulty;
+    for (int attempt = 0; attempt < 5 && !faulty; ++attempt) {
+      f407.SendIdentity(device_id);
+      f407.SendModuleStatus(0x22222254);
+      faulty = WaitFor(*observer, status_topic, "fault_modules",
+                       nlohmann::json::array({"GNSS", "IMU"}), 1s);
+    }
+    REQUIRE(faulty.has_value());
+    CHECK(faulty->at("device_status") == "0");
+    std::optional<nlohmann::json> recovered;
+    for (int attempt = 0; attempt < 5 && !recovered; ++attempt) {
+      f407.SendIdentity(device_id);
+      f407.SendModuleStatus(0x22222222);
+      recovered = WaitFor(*observer, status_topic, "fault_modules", nlohmann::json::array(), 1s);
+    }
+    REQUIRE(recovered.has_value());
+    CHECK(recovered->at("device_status") == "0");
+    const int status = pi.Stop(SIGTERM);
+    REQUIRE(WIFEXITED(status));
+    CHECK(WEXITSTATUS(status) == 0);
+    const auto offline = WaitFor(*observer, status_topic, "online", "1", 3s);
+    REQUIRE(offline.has_value());
+    CHECK(offline->at("fault_modules") == nlohmann::json::array());
+    CHECK(offline->size() == 11);
+    config["serial"]["device"] = "/dev/cns-status-test-no-device";
   }
   {
     const auto health_path = binding_path.string() + ".health.json";
@@ -253,6 +290,7 @@ TEST_CASE("真实进程验证常规状态、离线遗嘱和首次绑定恢复") 
     PiProcess pi(config_path, directory.path / "restored-damaged.log");
     auto online = WaitFor(*observer, status_topic, "device_status", "2", 5s);
     REQUIRE(online.has_value());
+    CHECK(online->at("fault_modules") == nlohmann::json::array({"GNSS"}));
     CHECK(online->at("online") == "0");
     CHECK(online->at("device_name") == "教学一号平台");
     CHECK(online->at("device_type") == "教学箱");
@@ -271,6 +309,7 @@ TEST_CASE("真实进程验证常规状态、离线遗嘱和首次绑定恢复") 
     auto maintenance = WaitFor(*observer, status_topic, "online", "0", 5s);
     REQUIRE(maintenance.has_value());
     CHECK(maintenance->at("device_status") == "1");
+    CHECK(maintenance->at("fault_modules") == nlohmann::json::array({"GNSS"}));
     CHECK(maintenance->at("device_name") == "教学一号平台");
     const int status = maintained.Stop(SIGTERM);
     REQUIRE(WIFEXITED(status));
@@ -278,6 +317,7 @@ TEST_CASE("真实进程验证常规状态、离线遗嘱和首次绑定恢复") 
     const auto offline = WaitFor(*observer, status_topic, "online", "1", 3s);
     REQUIRE(offline.has_value());
     CHECK(offline->at("device_status") == "1");
+    CHECK(offline->at("fault_modules") == nlohmann::json::array({"GNSS"}));
     device_status::HealthTracker restored(health_path);
     REQUIRE(restored.Load(device_id, &error));
     CHECK(restored.Status() == "1");
@@ -307,15 +347,17 @@ TEST_CASE("真实进程验证常规状态、离线遗嘱和首次绑定恢复") 
     std::optional<nlohmann::json> damaged;
     for (int attempt = 0; attempt < 8 && !damaged; ++attempt) {
       f407.SendIdentity(device_id);
-      f407.SendModuleFailure();
+      f407.SendModuleStatus();
       damaged = WaitFor(*observer, status_topic, "device_status", "2", 1s);
     }
     REQUIRE(damaged.has_value());
     CHECK(damaged->at("online") == "0");
+    CHECK(damaged->at("fault_modules") == nlohmann::json::array({"GNSS"}));
     pi.Stop(SIGKILL);
     const auto will = WaitFor(*observer, status_topic, "online", "1", 5s);
     REQUIRE(will.has_value());
     CHECK(will->at("device_status") == "2");
+    CHECK(will->at("fault_modules") == nlohmann::json::array({"GNSS"}));
   }
   {
     F407Port f407;
