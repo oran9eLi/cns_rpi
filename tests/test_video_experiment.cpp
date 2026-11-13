@@ -3,9 +3,11 @@
 
 #include <fstream>
 #include <thread>
+#include <vector>
 #include <unistd.h>
 #include <nlohmann/json.hpp>
 
+#include "command_feedback/result_feedback.hpp"
 #include "experiment/video_experiment.hpp"
 
 namespace {
@@ -146,6 +148,27 @@ TEST_CASE("探测等待实际退出并在ACK背压下保留终态") {
   CHECK(ack["status"] == "completed");
   CHECK_FALSE(controller.Tick(kWall, video::Clock::now(), true));
   CHECK_FALSE(controller.Busy());
+}
+
+TEST_CASE("视频终态在ACK队列满时立即通知且之后发布不重放提示") {
+  Fixture fixture; video::Manager manager(fixture.Settings());
+  command_feedback::ResultFeedback feedback;
+  std::vector<Json> observed;
+  experiment::VideoExperiment controller("cns_rpi", true, manager, [&](const Json& ack) {
+    observed.push_back(ack);
+    CHECK(feedback.Observe(kDevice, command_feedback::Channel::kExperiment, ack));
+  });
+  CHECK_FALSE(Handle(controller, Request("video_probe")).publication);
+  CHECK_FALSE(Poll(controller, false));
+  REQUIRE(observed.size() == 1);
+  CHECK(observed.front()["status"] == "completed");
+  const auto publication = controller.Tick(kWall, video::Clock::now(), true);
+  REQUIRE(publication);
+  CHECK(Json::parse(publication->payload) == observed.front());
+  CHECK_FALSE(feedback.Observe(kDevice, command_feedback::Channel::kExperiment,
+                              Json::parse(publication->payload)));
+  CHECK_FALSE(controller.Tick(kWall, video::Clock::now(), true));
+  CHECK(observed.size() == 1);
 }
 
 TEST_CASE("停止试采集保留原动作取消及停止动作的各自终态") {

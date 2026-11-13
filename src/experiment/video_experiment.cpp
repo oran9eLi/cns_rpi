@@ -73,6 +73,7 @@ struct VideoExperiment::Impl {
   std::string topic_namespace;
   bool enabled;
   video::Manager& manager;
+  VideoExperiment::TerminalObserver on_terminal;
   std::deque<Entry> entries;
   std::string owner_session, run_id, stream_path;
   std::string lease_session;
@@ -107,6 +108,7 @@ struct VideoExperiment::Impl {
     entry.terminal = Ack(entry.request, wall, error);
     if (include_fact) (*entry.terminal)["fact"] = Fact(entry.request);
     entry.terminated_at = steady;
+    if (on_terminal) on_terminal(*entry.terminal);
     return {.publication = Publish(entry, *entry.terminal), .diagnostic = {}};
   }
 
@@ -151,9 +153,11 @@ struct VideoExperiment::Impl {
   }
 };
 
-VideoExperiment::VideoExperiment(std::string topic_namespace, bool enabled, video::Manager& manager)
+VideoExperiment::VideoExperiment(std::string topic_namespace, bool enabled, video::Manager& manager,
+                                 TerminalObserver on_terminal)
     : impl_(std::make_unique<Impl>(Impl{.topic_namespace = std::move(topic_namespace),
                                       .enabled = enabled, .manager = manager,
+                                      .on_terminal = std::move(on_terminal),
                                       .entries = {}, .owner_session = {}, .run_id = {},
                                       .stream_path = {}, .lease_session = {}})) {}
 VideoExperiment::~VideoExperiment() = default;

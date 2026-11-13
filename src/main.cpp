@@ -31,6 +31,7 @@
 #include <vector>
 
 #include "cellular/cellular_status.hpp"
+#include "command_feedback/result_feedback.hpp"
 #include "common/mavlink.h"
 #include "config/app_config.hpp"
 #include "config/startup_summary.hpp"
@@ -266,8 +267,6 @@ int main(int argc, char** argv) {
       app_config->mqtt.topics.topic_namespace);
   video::Manager video_manager({app_config->video.executable, app_config->video.ffprobe,
                                 app_config->video.work_directory});
-  experiment::VideoExperiment video_experiment(
-      app_config->mqtt.topics.topic_namespace, app_config->video.enabled, video_manager);
   experiment::GnssExperiment gnss_experiment(
       app_config->mqtt.topics.topic_namespace, app_config->gnss);
   gnss_experiment.SetBatchInterval(app_config->reporting.gnss_batch_interval);
@@ -283,7 +282,51 @@ int main(int argc, char** argv) {
       (*logger)->Error("链路排障租约记录不可用，已禁止临时实验动作");
     }
   }
+  std::optional<control_command::ControlledDeviceEndpoint> controlled_device;
+  bool h1_endpoint_identity_verified = false;
+  control_command::EndpointRevalidation endpoint_revalidation;
+  std::optional<uart::MavlinkLink> link;
+  command_feedback::ResultFeedback result_feedback;
+  auto emit_command_feedback = [&](command_feedback::Channel channel,
+                                    const nlohmann::json& ack) {
+    const auto* binding = device_session.ActiveBinding();
+    if (!binding) return;
+    const auto result = result_feedback.Observe(binding->device_id, channel, ack);
+    if (!result) return;
+    if (!link || !controlled_device || !device_session.CanSendDeviceCommands() ||
+        !h1_endpoint_identity_verified || endpoint_revalidation.Pending()) {
+      (*logger)->Warn("命令结果提示未发送：F407链路或身份不可用");
+      return;
+    }
+    const auto endpoint = controlled_device->endpoint;
+    const auto message = command_feedback::Encode(*result, endpoint.system_id,
+        kComponentId, endpoint.system_id, endpoint.component_id);
+    if (!link->SendMessage(message)) {
+      (*logger)->Warn("命令结果提示写入F407串口失败");
+    }
+  };
+  auto emit_invalid_experiment_feedback = [&](std::string_view payload) {
+    nlohmann::json ack{{"status", "rejected"}};
+    if (payload.size() <= 4096) {
+      const auto request = nlohmann::json::parse(payload, nullptr, false);
+      if (request.is_object()) {
+        const auto id = request.find("action_id");
+        if (id != request.end() && id->is_string()) ack["action_id"] = *id;
+      }
+    }
+    emit_command_feedback(command_feedback::Channel::kExperiment, ack);
+  };
+  experiment::VideoExperiment video_experiment(
+      app_config->mqtt.topics.topic_namespace, app_config->video.enabled, video_manager,
+      [&](const nlohmann::json& ack) {
+        emit_command_feedback(command_feedback::Channel::kExperiment, ack);
+      });
   experiment::AckOutbox experiment_ack_outbox;
+  auto enqueue_experiment_ack = [&](experiment::Publication publication) {
+    emit_command_feedback(command_feedback::Channel::kExperiment,
+                          nlohmann::json::parse(publication.payload));
+    return experiment_ack_outbox.Enqueue(std::move(publication));
+  };
   std::deque<experiment::Publication> recovered_echo_publications;
   bool h1_journal_ready = false;
   bool m1_journal_ready = false;
@@ -322,14 +365,14 @@ int main(int argc, char** argv) {
   auto enqueue_echo_result = [&](std::optional<experiment::Publication> result) {
     const auto diagnostic = uart_echo_transaction.TakeDiagnostic();
     if (!diagnostic.empty()) (*logger)->Error(diagnostic);
-    if (result && !experiment_ack_outbox.Enqueue(std::move(*result))) {
+    if (result && !enqueue_experiment_ack(std::move(*result))) {
       (*logger)->Error("H1回显ACK待发队列已满，动作终态仍保留在去重记录中");
     }
   };
   auto enqueue_m1_result = [&](std::optional<experiment::Publication> result) {
     const auto diagnostic = m1_transaction.TakeDiagnostic();
     if (!diagnostic.empty()) (*logger)->Error(diagnostic);
-    if (result && !experiment_ack_outbox.Enqueue(std::move(*result))) {
+    if (result && !enqueue_experiment_ack(std::move(*result))) {
       (*logger)->Error("M1实验ACK待发队列已满，终态仍保留在去重记录中");
     }
   };
@@ -400,12 +443,8 @@ int main(int argc, char** argv) {
   std::string experiment_set_topic;
   std::string experiment_ack_topic;
   control_command::ControlTransaction control_transaction(kControlAckTimeout);
-  control_command::EndpointRevalidation endpoint_revalidation;
   experiment::DeferredSerialRequestQueue deferred_serial_requests;
   bool m1_held_for_identity = false;
-  std::optional<control_command::ControlledDeviceEndpoint> controlled_device;
-  bool h1_endpoint_identity_verified = false;
-  std::optional<uart::MavlinkLink> link;
   std::string active_serial_device;
   std::string last_affinity_node;
   std::optional<std::pair<std::uint8_t, std::uint8_t>> last_affinity_endpoint;
@@ -437,18 +476,24 @@ int main(int argc, char** argv) {
   auto next_discovery = std::chrono::steady_clock::now();
   bool ever_connected_to_device = false;
   bool restart_requested = false;
+  auto publish_control_ack = [&](const nlohmann::json& ack, bool wait = false) {
+    emit_command_feedback(command_feedback::Channel::kControl, ack);
+    return wait ? mqtt_client->PublishAndWait(control_ack_topic, ack.dump(),
+        app_config->mqtt.topics.control_ack.qos, false, std::chrono::seconds(2))
+        : mqtt_client->Publish(control_ack_topic, ack.dump(),
+            app_config->mqtt.topics.control_ack.qos, false);
+  };
   auto fail_pending_control = [&] {
     if (control_transaction.HasPending()) {
       (void)control_transaction.HandleLocalFailure(
           {.code = "device_link_unavailable",
            .message = "受控设备 MAVLink 链路不可用"});
+      emit_command_feedback(command_feedback::Channel::kControl,
+                            *control_transaction.PendingAck());
       if (mqtt_client && mqtt_client->IsConnected() &&
           control_transaction.PendingAck() != nullptr &&
           !control_ack_topic.empty()) {
-        if (mqtt_client->PublishAndWait(
-                control_ack_topic, control_transaction.PendingAck()->dump(),
-                app_config->mqtt.topics.control_ack.qos, /*retain=*/false,
-                std::chrono::seconds(2))) {
+        if (publish_control_ack(*control_transaction.PendingAck(), true)) {
           control_transaction.ConfirmAckPublished();
         }
       }
@@ -505,6 +550,7 @@ int main(int argc, char** argv) {
   };
 
   auto mark_link_disconnected = [&] {
+    device_session.SetLinkAvailable(false);
     gnss_experiment.TransportLost("serial_disconnected", std::chrono::system_clock::now());
     endpoint_revalidation.Reset();
     m1_held_for_identity = false;
@@ -517,7 +563,6 @@ int main(int argc, char** argv) {
     enqueue_echo_result(uart_echo_transaction.Abort(
         "serial_unavailable", std::chrono::system_clock::now()));
     fail_pending_control();
-    device_session.SetLinkAvailable(false);
     h1_endpoint_identity_verified = false;
     // MQTT 控制入口绑定于持久化身份，瞬时串口故障仍保留远程维护入口。
     (*logger)->Error("受控设备串口断开: " + active_serial_device);
@@ -534,6 +579,7 @@ int main(int argc, char** argv) {
   };
 
   auto reset_serial_for_link_lab = [&] {
+    device_session.SetLinkAvailable(false);
     gnss_experiment.TransportLost("serial_reset", std::chrono::system_clock::now());
     discovery.CancelAndJoin();
     enqueue_m1_result(m1_transaction.Abort(
@@ -548,7 +594,6 @@ int main(int argc, char** argv) {
     endpoint_revalidation.Reset();
     controlled_device.reset();
     h1_endpoint_identity_verified = false;
-    device_session.SetLinkAvailable(false);
     state_store.ResetDeviceState();
     imu_stream.Reset();
     silence_watchdog.Reset();
@@ -919,7 +964,7 @@ int main(int argc, char** argv) {
         pending_rtk_publication = std::move(*terminal);
       }
       if (pending_rtk_publication &&
-          experiment_ack_outbox.Enqueue(*pending_rtk_publication)) {
+          enqueue_experiment_ack(*pending_rtk_publication)) {
         pending_rtk_publication.reset();
       }
       rtk_service->Tick(now);
@@ -1500,9 +1545,10 @@ int main(int argc, char** argv) {
               }
               if (!result.diagnostic.empty()) {
                 (*logger)->Warn("拒绝链路排障请求: " + result.diagnostic);
+                if (!result.publication) emit_invalid_experiment_feedback(message->payload);
               }
               if (result.publication &&
-                  !experiment_ack_outbox.Enqueue(*result.publication)) {
+                  !enqueue_experiment_ack(*result.publication)) {
                 (*logger)->Error("链路排障ACK待发队列已满，终态无法发布");
               }
             }
@@ -1511,6 +1557,7 @@ int main(int argc, char** argv) {
                 message->payload, active_mqtt_binding->device_id);
             if (!parsed) {
               (*logger)->Warn("拒绝非法M1实验请求: " + parsed.error());
+              emit_invalid_experiment_feedback(message->payload);
             } else if (link_lab && link_lab->SessionActive()) {
               reject_deferred(*parsed, "serial_unavailable");
             } else if (!replay_deferred &&
@@ -1535,7 +1582,7 @@ int main(int argc, char** argv) {
                     *parsed, app_config->mqtt.topics.topic_namespace,
                     "duplicate_conflict",
                     std::chrono::system_clock::now());
-                if (!experiment_ack_outbox.Enqueue(rejection)) {
+                if (!enqueue_experiment_ack(rejection)) {
                   (*logger)->Error("M1待发请求拒绝ACK队列已满");
                 }
               }
@@ -1674,6 +1721,7 @@ int main(int argc, char** argv) {
                 message->payload, active_mqtt_binding->device_id,
                 std::chrono::system_clock::now());
             if (!parsed) {
+              emit_invalid_experiment_feedback(message->payload);
               (*logger)->Warn("拒绝非法H1回显请求: " + parsed.error());
             } else if (link_lab && link_lab->SessionActive()) {
               reject_deferred(*parsed, "serial_unavailable");
@@ -1698,7 +1746,7 @@ int main(int argc, char** argv) {
                     *parsed, app_config->mqtt.topics.topic_namespace,
                     "duplicate_conflict",
                     std::chrono::system_clock::now());
-                if (!experiment_ack_outbox.Enqueue(rejection)) {
+                if (!enqueue_experiment_ack(rejection)) {
                   (*logger)->Error("H1待发请求拒绝ACK队列已满");
                 }
               }
@@ -1755,8 +1803,11 @@ int main(int argc, char** argv) {
                   mqtt_client->IsConnected() && device_session.CanSendDeviceCommands() &&
                       device_session.CurrentLinkIdentityVerified(),
                   std::chrono::system_clock::now(), std::chrono::steady_clock::now());
-              if (!outcome.diagnostic.empty()) (*logger)->Warn(outcome.diagnostic);
-              if (outcome.publication) (void)experiment_ack_outbox.Enqueue(*outcome.publication);
+              if (!outcome.diagnostic.empty()) {
+                (*logger)->Warn(outcome.diagnostic);
+                if (!outcome.publication) emit_invalid_experiment_feedback(message->payload);
+              }
+              if (outcome.publication) (void)enqueue_experiment_ack(*outcome.publication);
             }
           } else if (experiment::IsRtkBaseOperation(message->payload)) {
             if (pending_rtk_publication ||
@@ -1783,8 +1834,11 @@ int main(int argc, char** argv) {
                     return rtk_service ? rtk_status()
                                        : nlohmann::json{{"enabled", false}};
                   });
-              if (!outcome.diagnostic.empty()) (*logger)->Warn(outcome.diagnostic);
-              if (outcome.publication) (void)experiment_ack_outbox.Enqueue(*outcome.publication);
+              if (!outcome.diagnostic.empty()) {
+                (*logger)->Warn(outcome.diagnostic);
+                if (!outcome.publication) emit_invalid_experiment_feedback(message->payload);
+              }
+              if (outcome.publication) (void)enqueue_experiment_ack(*outcome.publication);
             }
           } else if (experiment::IsVideoOperation(message->payload)) {
             if (experiment_ack_outbox.Size() >= experiment::AckOutbox::kCapacity) {
@@ -1803,8 +1857,11 @@ int main(int argc, char** argv) {
                         .serial_port_open = std::nullopt,
                         .mqtt_connected = mqtt_client->IsConnected()};
                   }, std::chrono::system_clock::now(), now);
-              if (!outcome.diagnostic.empty()) (*logger)->Warn("视频动作未执行: " + outcome.diagnostic);
-              if (outcome.publication) (void)experiment_ack_outbox.Enqueue(*outcome.publication);
+              if (!outcome.diagnostic.empty()) {
+                (*logger)->Warn("视频动作未执行: " + outcome.diagnostic);
+                if (!outcome.publication) emit_invalid_experiment_feedback(message->payload);
+              }
+              if (outcome.publication) (void)enqueue_experiment_ack(*outcome.publication);
             }
           } else {
             const auto* current_binding = device_session.ActiveBinding();
@@ -1828,9 +1885,10 @@ int main(int argc, char** argv) {
                 std::chrono::steady_clock::now());
             if (!outcome.diagnostic.empty()) {
               (*logger)->Warn("拒绝实验自检请求: " + outcome.diagnostic);
+              if (!outcome.publication) emit_invalid_experiment_feedback(message->payload);
             }
             if (outcome.publication &&
-                !experiment_ack_outbox.Enqueue(*outcome.publication)) {
+                !enqueue_experiment_ack(*outcome.publication)) {
               (*logger)->Warn("实验自检ACK待发队列已满，无法保存本次终态");
             }
           }
@@ -1883,6 +1941,7 @@ int main(int argc, char** argv) {
           (*logger)->Info(
               "配置命令回执: command_id=" + result.ack.value("command_id", std::string{}) +
               " status=" + result.ack.value("status", std::string{}));
+          emit_command_feedback(command_feedback::Channel::kConfig, result.ack);
           const bool acked = rates_only ? mqtt_client->Publish(
               config_ack_topic, result.ack.dump(), app_config->mqtt.topics.config_ack.qos,
               /*retain=*/false) : mqtt_client->PublishAndWait(
@@ -1900,26 +1959,20 @@ int main(int argc, char** argv) {
             (*logger)->Warn("收到无法解析的主控箱命令: " + command.error().code);
             const auto ack = control_command::BuildRejectedAck(
                 command.error().command_id, command.error().command, command.error());
-            (void)mqtt_client->Publish(control_ack_topic, ack.dump(),
-                                       app_config->mqtt.topics.control_ack.qos,
-                                       /*retain=*/false);
+            (void)publish_control_ack(ack);
           } else if (uart_echo_transaction.HasPending() ||
                      m1_transaction.HasPending()) {
             const auto ack = control_command::BuildRejectedAck(
                 command->command_id, command->command,
                 {.code = "device_link_unavailable",
                  .message = "实验回显动作尚未结束，串口下行暂不可用"});
-            (void)mqtt_client->Publish(
-                control_ack_topic, ack.dump(),
-                app_config->mqtt.topics.control_ack.qos, /*retain=*/false);
+            (void)publish_control_ack(ack);
           } else if (!link || !controlled_device) {
             const auto ack = control_command::BuildRejectedAck(
                 command->command_id, command->command,
                 {.code = "device_link_unavailable",
                  .message = "受控设备串口链路不可用"});
-            (void)mqtt_client->Publish(
-                control_ack_topic, ack.dump(),
-                app_config->mqtt.topics.control_ack.qos, /*retain=*/false);
+            (void)publish_control_ack(ack);
           } else if (!device_session.CanSendDeviceCommands()) {
             const auto status = device_session.CurrentOnlineStatus();
             const bool conflict =
@@ -1931,17 +1984,13 @@ int main(int argc, char** argv) {
                                   : "device_identity_unverified",
                  .message = conflict ? "F407身份与持久化绑定冲突"
                                      : "F407身份尚未与持久化绑定完成核验"});
-            (void)mqtt_client->Publish(
-                control_ack_topic, ack.dump(),
-                app_config->mqtt.topics.control_ack.qos, /*retain=*/false);
+            (void)publish_control_ack(ack);
           } else {
             (*logger)->Info("收到主控箱命令: command_id=" + command->command_id +
                             " command=" + command->command);
             const auto submission = control_transaction.Submit(*command, now);
             if (submission.ack) {
-              (void)mqtt_client->Publish(control_ack_topic, submission.ack->dump(),
-                                         app_config->mqtt.topics.control_ack.qos,
-                                         /*retain=*/false);
+              (void)publish_control_ack(*submission.ack);
             } else if (submission.should_send_to_mcu && !rpi_system_id) {
               (void)control_transaction.HandleLocalFailure(
                   {.code = "device_identity_unknown",
@@ -1955,9 +2004,7 @@ int main(int argc, char** argv) {
                 mark_link_disconnected();
               } else {
                 const auto pending_ack = control_command::BuildPendingAck(*command);
-                if (!mqtt_client->Publish(control_ack_topic, pending_ack.dump(),
-                                          app_config->mqtt.topics.control_ack.qos,
-                                          /*retain=*/false)) {
+                if (!publish_control_ack(pending_ack)) {
                   (*logger)->Warn("主控箱命令执行中回执发布失败: command_id=" +
                                   command->command_id);
                 }
@@ -1991,7 +2038,7 @@ int main(int argc, char** argv) {
     if (auto result = video_experiment.Tick(
             std::chrono::system_clock::now(), std::chrono::steady_clock::now(),
             experiment_ack_outbox.Size() < experiment::AckOutbox::kCapacity)) {
-      (void)experiment_ack_outbox.Enqueue(std::move(*result));
+      (void)enqueue_experiment_ack(std::move(*result));
     }
     const auto gnss_now = std::chrono::steady_clock::now();
     if (!mqtt_client || !mqtt_client->IsConnected()) {
@@ -2087,17 +2134,8 @@ int main(int argc, char** argv) {
 
     (void)control_transaction.CheckTimeout(now);
     if (mqtt_client && control_transaction.PendingAck() != nullptr) {
-      const bool published = control_transaction.PendingAckIsFinal()
-                                 ? mqtt_client->PublishAndWait(
-                                       control_ack_topic,
-                                       control_transaction.PendingAck()->dump(),
-                                       app_config->mqtt.topics.control_ack.qos,
-                                       /*retain=*/false, std::chrono::seconds(2))
-                                 : mqtt_client->Publish(
-                                       control_ack_topic,
-                                       control_transaction.PendingAck()->dump(),
-                                       app_config->mqtt.topics.control_ack.qos,
-                                       /*retain=*/false);
+      const bool published = publish_control_ack(
+          *control_transaction.PendingAck(), control_transaction.PendingAckIsFinal());
       if (published) {
         control_transaction.ConfirmAckPublished();
       }

@@ -68,6 +68,7 @@ add_library(cns_rpi_core
     src/config_command/config_updater.cpp
     src/config_command/config_store.cpp
     src/config_command/command_processor.cpp
+    src/command_feedback/result_feedback.cpp
     src/control_command/control_command.cpp
     src/control_command/control_transaction.cpp
     src/control_command/control_endpoint.cpp
@@ -107,6 +108,17 @@ add_test(NAME release_cli COMMAND ${PYTHON3_EXECUTABLE}
 add_test(NAME release_deploy COMMAND ${PYTHON3_EXECUTABLE}
     ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_release_deploy.py $<TARGET_FILE:cns_rpi>)
 target_link_libraries(cns_rpi PRIVATE cns_rpi_core cns_rpi_mqtt)
+
+add_executable(test_command_feedback tests/test_command_feedback.cpp)
+target_link_libraries(test_command_feedback PRIVATE cns_rpi_core)
+add_test(NAME command_feedback COMMAND test_command_feedback)
+
+add_executable(command_feedback_fixture tests/command_feedback_fixture.cpp)
+target_link_libraries(command_feedback_fixture PRIVATE cns_rpi_core)
+add_test(NAME command_feedback_gateway COMMAND ${PYTHON3_EXECUTABLE}
+    ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_command_feedback_gateway.py
+    $<TARGET_FILE:cns_rpi> $<TARGET_FILE:gnss_mavlink_fixture>
+    $<TARGET_FILE:command_feedback_fixture>)
 
 add_executable(test_bmi088_decoder tests/test_bmi088_decoder.cpp)
 target_link_libraries(test_bmi088_decoder PRIVATE cns_rpi_core)
