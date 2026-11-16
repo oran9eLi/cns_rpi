@@ -1,6 +1,7 @@
 #include "control_command/control_command.hpp"
 
 #include <cstdint>
+#include <optional>
 #include <utility>
 
 namespace control_command {
@@ -11,6 +12,20 @@ CommandError Error(std::string code, std::string message) {
           .message = std::move(message),
           .command_id = {},
           .command = {}};
+}
+
+std::optional<float> IntegerInRange(const nlohmann::json& value,
+                                   std::int64_t minimum, std::int64_t maximum) {
+  if (!value.is_number_integer()) return std::nullopt;
+  if (value.is_number_unsigned()) {
+    const auto number = value.get<std::uint64_t>();
+    if (number < static_cast<std::uint64_t>(minimum) ||
+        number > static_cast<std::uint64_t>(maximum)) return std::nullopt;
+    return static_cast<float>(number);
+  }
+  const auto number = value.get<std::int64_t>();
+  if (number < minimum || number > maximum) return std::nullopt;
+  return static_cast<float>(number);
 }
 
 }  // namespace
@@ -74,66 +89,54 @@ std::expected<ControlCommand, CommandError> Parse(std::string_view payload) {
     return std::unexpected(contextual_error("invalid_command_id", "command_id长度非法"));
   }
 
-  const nlohmann::json empty_parameters = nlohmann::json::object();
-  const auto& parameters = root.contains("parameters") ? root["parameters"] : empty_parameters;
-  if (!parameters.is_object()) {
-    return std::unexpected(contextual_error("invalid_parameter", "parameters必须是对象"));
+  if (!root.contains("parameters") || !root["parameters"].is_object()) {
+    return std::unexpected(contextual_error("invalid_parameter", "parameters必须提供对象"));
   }
+  const auto& parameters = root["parameters"];
 
   if (result.command == "set_motor_pwm") {
-    if (parameters.size() != 1 || !parameters.contains("pwm_us")) {
+    if (parameters.size() != 2 || !parameters.contains("motor_id") ||
+        !parameters.contains("pwm_us")) {
       return std::unexpected(
-          contextual_error("invalid_parameter", "set_motor_pwm只接受pwm_us参数"));
+          contextual_error("invalid_parameter", "set_motor_pwm只接受motor_id和pwm_us参数"));
     }
-    if (!parameters.contains("pwm_us") || !parameters["pwm_us"].is_array() ||
-        parameters["pwm_us"].size() != 4) {
-      return std::unexpected(contextual_error("invalid_parameter", "pwm_us必须包含4路脉宽"));
+    const auto motor_id = IntegerInRange(parameters["motor_id"], 1, 4);
+    if (!motor_id) {
+      return std::unexpected(contextual_error("invalid_parameter", "motor_id必须为1到4的整数"));
     }
-    for (std::size_t i = 0; i < result.params.size(); ++i) {
-      const auto& value = parameters["pwm_us"][i];
-      if (!value.is_number_integer() && !value.is_number_unsigned()) {
-        return std::unexpected(contextual_error(
-            "invalid_parameter", "PWM脉宽必须在1000到2000us之间"));
-      }
-      std::int64_t pulse_us = 0;
-      if (value.is_number_unsigned()) {
-        const auto unsigned_value = value.get<std::uint64_t>();
-        if (unsigned_value > 2000U) {
-          return std::unexpected(contextual_error(
-              "invalid_parameter", "PWM脉宽必须在1000到2000us之间"));
-        }
-        pulse_us = static_cast<std::int64_t>(unsigned_value);
-      } else {
-        pulse_us = value.get<std::int64_t>();
-      }
-      if (pulse_us < 1000 || pulse_us > 2000) {
-        return std::unexpected(contextual_error(
-            "invalid_parameter", "PWM脉宽必须在1000到2000us之间"));
-      }
-      result.params[i] = static_cast<float>(pulse_us);
+    const auto pulse_us = IntegerInRange(parameters["pwm_us"], 1000, 2000);
+    if (!pulse_us) {
+      return std::unexpected(contextual_error(
+          "invalid_parameter", "pwm_us必须为1000到2000的整数"));
     }
+    result.params[0] = *motor_id;
+    result.params[1] = *pulse_us;
     result.mavlink_command = kSetMotorPwmUs;
-  } else if (result.command == "takeoff") {
-    if (!parameters.empty()) {
-      return std::unexpected(contextual_error("invalid_parameter", "takeoff不接受参数"));
-    }
-    result.mavlink_command = kAutoTakeoff;
-  } else if (result.command == "land") {
-    if (!parameters.empty()) {
-      return std::unexpected(contextual_error("invalid_parameter", "land不接受参数"));
-    }
-    result.mavlink_command = kAutoLanding;
-  } else if (result.command == "emergency_stop") {
-    if (!parameters.empty()) {
-      return std::unexpected(
-          contextual_error("invalid_parameter", "emergency_stop不接受参数"));
-    }
-    result.mavlink_command = kEmergencyStop;
   } else {
-    return std::unexpected(contextual_error("unsupported_command", "不支持的控制命令"));
+    if (!parameters.empty()) {
+      return std::unexpected(contextual_error("invalid_parameter", "该命令不接受参数"));
+    }
+    if (result.command == "arm") {
+      result.mavlink_command = kArm;
+    } else if (result.command == "disarm") {
+      result.mavlink_command = kDisarm;
+    } else if (result.command == "takeoff") {
+      result.mavlink_command = kAutoTakeoff;
+    } else if (result.command == "land") {
+      result.mavlink_command = kAutoLanding;
+    } else if (result.command == "emergency_stop") {
+      result.mavlink_command = kEmergencyStop;
+    } else {
+      return std::unexpected(contextual_error("unsupported_command", "不支持的控制命令"));
+    }
   }
 
   return result;
+}
+
+bool IsPriorityCommand(const ControlCommand& command) {
+  return command.mavlink_command == kDisarm ||
+         command.mavlink_command == kEmergencyStop;
 }
 
 mavlink_message_t EncodeCommandLong(const ControlCommand& command, std::uint8_t source_system,
@@ -164,25 +167,38 @@ nlohmann::json BuildPendingAck(const ControlCommand& command) {
           {"mavlink_command", command.mavlink_command},
           {"status", "in_progress"},
           {"result_code", "pending"},
-          {"message", "命令已下发，正在等待单片机应答"}};
+          {"message", "命令已下发，等待F407受理"}};
 }
 
 nlohmann::json BuildMavlinkAck(const ControlCommand& command, std::uint8_t result,
-                               std::uint8_t progress, std::int32_t result_param2) {
+                               std::uint8_t /*progress*/, std::int32_t result_param2) {
   const bool accepted = result == MAV_RESULT_ACCEPTED;
-  const bool in_progress = result == MAV_RESULT_IN_PROGRESS;
   auto payload = nlohmann::json{{"command_id", command.command_id},
           {"command", command.command},
           {"mavlink_command", command.mavlink_command},
-          {"status", accepted ? "accepted" : (in_progress ? "in_progress" : "rejected")},
+          {"status", accepted ? "accepted" : "rejected"},
           {"result", result},
           {"result_code", ResultCode(result)},
-          {"message", accepted ? "单片机已执行命令"
-                               : (in_progress ? "单片机正在执行命令"
-                                              : "单片机拒绝或执行命令失败")}};
-  if (in_progress) {
-    payload["progress"] = progress;
-    payload["result_param2"] = result_param2;
+          {"result_param2", result_param2},
+          {"message", accepted ? "F407已接受命令" : "F407拒绝命令"}};
+  if (!accepted) {
+    payload["error_code"] = "mcu_rejected";
+    if (result == MAV_RESULT_UNSUPPORTED) {
+      payload["error_code"] = "unsupported_command";
+      payload["message"] = "F407不支持该命令";
+    }
+  }
+  constexpr std::array<std::pair<std::string_view, std::string_view>, 5> reasons{{
+      {"device_locked", "设备未解锁"},
+      {"device_busy", "设备正在执行其他动作"},
+      {"invalid_parameter", "命令参数非法"},
+      {"invalid_state", "当前动作状态不允许"},
+      {"device_check_failed", "设备内部起飞检查未通过"}}};
+  if (!accepted && result_param2 >= 1 &&
+      result_param2 <= static_cast<std::int32_t>(reasons.size())) {
+    const auto& [code, message] = reasons[result_param2 - 1];
+    payload["error_code"] = code;
+    payload["message"] = message;
   }
   return payload;
 }
@@ -193,7 +209,7 @@ nlohmann::json BuildTimeoutAck(const ControlCommand& command) {
           {"mavlink_command", command.mavlink_command},
           {"status", "timeout"},
           {"error_code", "mcu_ack_timeout"},
-          {"message", "等待单片机执行结果超时"}};
+          {"message", "未收到F407受理结果，执行状态未知"}};
 }
 
 }  // namespace control_command

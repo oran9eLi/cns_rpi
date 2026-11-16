@@ -137,7 +137,7 @@ TEST_CASE("读取直接命令内容和命令文件") {
 
 TEST_CASE("空运行输出实际MAVLink映射但不伪造目标系统编号") {
   auto command = control_command::Parse(
-      R"({"command_id":"local-1","command":"set_motor_pwm","parameters":{"pwm_us":[1500,1510,1520,1530]}})");
+      R"({"command_id":"local-1","command":"set_motor_pwm","parameters":{"motor_id":2,"pwm_us":1510}})");
   REQUIRE(command.has_value());
 
   const auto result = control_test::BuildDryRunResult(*command);
@@ -148,7 +148,21 @@ TEST_CASE("空运行输出实际MAVLink映射但不伪造目标系统编号") {
   CHECK(result["target_system"] == nullptr);
   CHECK(result["target_component"] == 193);
   CHECK(result["params"] ==
-        nlohmann::json::array({1500, 1510, 1520, 1530, 0, 0, 0}));
+        nlohmann::json::array({2, 1510, 0, 0, 0, 0, 0}));
+}
+
+TEST_CASE("解锁和上锁空运行输出各自独立命令号") {
+  for (const auto& [name, expected] :
+       std::array<std::pair<const char*, std::uint16_t>, 2>{{
+           {"arm", 31093}, {"disarm", 31094}}}) {
+    const nlohmann::json request{{"command_id", name}, {"command", name},
+                                {"parameters", nlohmann::json::object()}};
+    const auto command = control_command::Parse(request.dump());
+    REQUIRE(command.has_value());
+    const auto result = control_test::BuildDryRunResult(*command);
+    CHECK(result["mavlink_command"] == expected);
+    CHECK(result["params"] == nlohmann::json::array({0, 0, 0, 0, 0, 0, 0}));
+  }
 }
 
 TEST_CASE("最终回执只在接受时返回成功退出码") {

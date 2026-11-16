@@ -104,8 +104,8 @@ bool IsExpectedCommandAck(const mavlink_message_t& message,
 
   mavlink_command_ack_t ack{};
   mavlink_msg_command_ack_decode(&message, &ack);
-  return (ack.target_system == 0 || ack.target_system == rpi_system_id) &&
-         (ack.target_component == 0 || ack.target_component == rpi_component_id);
+  return ack.target_system == rpi_system_id &&
+         ack.target_component == rpi_component_id;
 }
 
 }  // namespace control_command

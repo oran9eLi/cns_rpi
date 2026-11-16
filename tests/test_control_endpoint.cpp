@@ -92,6 +92,13 @@ TEST_CASE("COMMAND_ACK必须匹配来源和目标") {
       CommandAck(7, control_command::kStm32Usart6ComponentId, 8,
                  MAV_COMP_ID_ONBOARD_COMPUTER),
       endpoint, 7, MAV_COMP_ID_ONBOARD_COMPUTER));
+  CHECK_FALSE(control_command::IsExpectedCommandAck(
+      CommandAck(7, control_command::kStm32Usart6ComponentId, 0,
+                 MAV_COMP_ID_ONBOARD_COMPUTER),
+      endpoint, 7, MAV_COMP_ID_ONBOARD_COMPUTER));
+  CHECK_FALSE(control_command::IsExpectedCommandAck(
+      CommandAck(7, control_command::kStm32Usart6ComponentId, 7, 0),
+      endpoint, 7, MAV_COMP_ID_ONBOARD_COMPUTER));
 }
 
 TEST_CASE("非主控箱心跳不会抢占端点且随后可学习F407主控箱") {

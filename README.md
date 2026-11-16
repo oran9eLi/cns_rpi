@@ -1,6 +1,6 @@
 # CNS RPi
 
-树莓派端 MAVLink 数据汇聚与 MQTT 转发程序。默认单台树莓派连接一台采用 STM32F407 的 CNS 主控箱，负责身份获取、遥测解析与上报；主控箱下行命令经 MAVLink 转发并回传执行结果。固件、MQTT broker 和服务器数据库、路由程序不属于本仓库。
+树莓派端 MAVLink 数据汇聚与 MQTT 转发程序。默认单台树莓派连接一台采用 STM32F407 的 CNS 主控箱，负责身份获取、遥测解析与上报；主控箱下行命令经 MAVLink 转发并回传受理结果。固件、MQTT broker 和服务器数据库、路由程序不属于本仓库。
 
 ## 当前支持范围
 
@@ -73,6 +73,12 @@ GNSS 原始报文实验提供 `gnss_capture_start`、`gnss_capture_stop`、`gnss
 BMI088 IMU 上行已接入同一个 F407 MAVLink 接收器：解析六轴增加到既有 `telemetry.imu`，完整 RAW＋PARSED 采样对通过 `imu/sample/v1` 按新样本发布，不需要额外采集开关或 Python 解码器。Topic、JSON、原始字节和有效期规则见 [IMU 原始与解析数据接口](docs/IMU原始与解析数据接口.md)，软件验证及实机待验边界见 [实施记录](docs/validation/2026-11-12-bmi088-uplink.md)。
 
 正式发布基线见 [V1.0.8 发布说明](docs/V1.0.8发布说明.md)；当前候选包见 [V1.0.9 候选说明](docs/V1.0.9候选说明.md)。
+
+## 主控箱控制
+
+六动作 V0.1 支持 `arm`、`takeoff`、`land`、`disarm`、`emergency_stop`、`set_motor_pwm`。单电机调速使用 `{"motor_id":1,"pwm_us":1300}`，旧四路 PWM 数组不再接受。MQTT `control/ack` 的 `accepted` 仅表示 F407 已受理，不表示动作完成；2 秒受理超时表示执行状态未知，不自动重发。
+
+不同命令号的上锁、急停可优先下发；同号在途或超时后 10 秒隔离期间返回 `command_busy`。F407 负责锁门禁、实际电机与动作声光，Pi 透传心跳的实际解锁位；只有 F407 明确拒绝业务控制时，Pi 才追加失败声光通知。接口、职责和本地工具见 [主控箱控制接口](docs/下行飞行控制协议.md)、[结果提示接口](docs/Pi命令结果提示与F407接口.md)、[本地主控箱命令测试工具](docs/本地飞控下发测试工具.md)。本次实施与验证边界见 [变更记录](docs/change_history/2026-11-16_主控箱控制接口.md)。
 
 ## 主控箱常规状态与内部三态
 
