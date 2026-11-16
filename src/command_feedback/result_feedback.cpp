@@ -21,8 +21,12 @@ std::optional<Result> ResultFeedback::Observe(std::string_view device_id, Channe
                                              const nlohmann::json& ack) {
   const auto status = ack.value("status", std::string{});
   std::optional<Result> result;
-  if ((channel == Channel::kConfig && (status == "applied" || status == "already_applied")) ||
-      (channel == Channel::kControl && status == "accepted") ||
+  if (channel == Channel::kControl) {
+    const auto result_code = ack.value("result", -1);
+    if (status != "rejected" || result_code < MAV_RESULT_TEMPORARILY_REJECTED ||
+        result_code > MAV_RESULT_FAILED) return std::nullopt;
+    result = Result::kFailure;
+  } else if ((channel == Channel::kConfig && (status == "applied" || status == "already_applied")) ||
       (channel == Channel::kExperiment && status == "completed")) {
     result = Result::kSuccess;
   } else if (status == "rejected" || status == "timeout" || status == "failed" ||

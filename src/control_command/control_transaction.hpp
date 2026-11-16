@@ -34,10 +34,10 @@ enum class MavlinkAckStatus {
 };
 
 /**
- * @brief 管理单条主控箱命令从下发到回执发布的完整事务。
+ * @brief 管理主控箱命令从下发到受理回执发布的事务。
  *
- * 一个实例同时只允许一条命令等待单片机响应。成功发布的最终回执会保存在
- * 有界的进程内缓存中，用于识别重复 command_id 并重放结果。
+ * 普通命令串行等待受理，不同命令号的上锁和急停可以优先下发。成功发布的
+ * 受理结果保存在有界进程内缓存中，用于识别重复 command_id 并重放结果。
  */
 class ControlTransaction {
  public:
@@ -51,7 +51,7 @@ class ControlTransaction {
   MavlinkAckStatus HandleMavlinkAck(std::uint16_t mavlink_command, std::uint8_t result,
                                     std::uint8_t progress, std::int32_t result_param2,
                                     TimePoint now);
-  bool HandleLocalFailure(const CommandError& error);
+  bool HandleLocalFailure(const CommandError& error, TimePoint now = Clock::now());
   bool CheckTimeout(TimePoint now);
 
   [[nodiscard]] bool HasPending() const;
@@ -68,6 +68,7 @@ class ControlTransaction {
   struct PendingCommand {
     ControlCommand command;
     TimePoint deadline;
+    std::optional<nlohmann::json> ack;
   };
 
   struct CompletedCommand {
@@ -82,9 +83,7 @@ class ControlTransaction {
 
   std::chrono::milliseconds timeout_;
   std::size_t completed_capacity_;
-  std::optional<PendingCommand> pending_;
-  std::optional<nlohmann::json> pending_ack_;
-  bool pending_ack_is_final_ = false;
+  std::deque<PendingCommand> pending_;
   std::unordered_map<std::uint16_t, TimePoint> stale_ack_guards_;
   std::deque<CompletedCommand> completed_;
 };

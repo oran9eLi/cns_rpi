@@ -12,10 +12,12 @@
 
 namespace control_command {
 
-constexpr std::uint16_t kSetMotorPwmUs = 31013;
+constexpr std::uint16_t kSetMotorPwmUs = 31014;
 constexpr std::uint16_t kEmergencyStop = 31090;
 constexpr std::uint16_t kAutoTakeoff = 31091;
 constexpr std::uint16_t kAutoLanding = 31092;
+constexpr std::uint16_t kArm = 31093;
+constexpr std::uint16_t kDisarm = 31094;
 
 struct ControlCommand {
   std::string command_id;
@@ -33,6 +35,7 @@ struct CommandError {
 };
 
 std::expected<ControlCommand, CommandError> Parse(std::string_view payload);
+bool IsPriorityCommand(const ControlCommand& command);
 mavlink_message_t EncodeCommandLong(const ControlCommand& command, std::uint8_t source_system,
                                     std::uint8_t source_component,
                                     std::uint8_t target_system,
@@ -41,7 +44,7 @@ nlohmann::json BuildRejectedAck(std::string_view command_id, std::string_view co
                                 const CommandError& error);
 nlohmann::json BuildPendingAck(const ControlCommand& command);
 nlohmann::json BuildMavlinkAck(const ControlCommand& command, std::uint8_t result,
-                               std::uint8_t progress = 0,
+                               std::uint8_t progress = 255,
                                std::int32_t result_param2 = 0);
 nlohmann::json BuildTimeoutAck(const ControlCommand& command);
 

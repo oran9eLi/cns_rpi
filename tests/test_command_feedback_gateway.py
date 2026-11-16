@@ -25,7 +25,7 @@ PREFIX = 'feedbacktest/' + BOX_ID + '/'
 
 class FeedbackGatewayTest(unittest.TestCase):
     def test_final_command_results_reach_f407(self):
-        if any(not shutil.which(name) for name in ('mosquitto', 'mosquitto_pub')):
+        if any(not shutil.which(name) for name in ('mosquitto', 'mosquitto_pub', 'mosquitto_sub')):
             self.skipTest('requires Mosquitto and clients')
         with tempfile.TemporaryDirectory(prefix='cns-feedback-') as directory:
             folder = Path(directory)
@@ -69,6 +69,22 @@ class FeedbackGatewayTest(unittest.TestCase):
                             return False
 
                     self.wait(ready, 'Broker did not start', app_log)
+                    messages = []
+                    subscriber = subprocess.Popen(['mosquitto_sub', '-h', '127.0.0.1',
+                        '-p', str(port), '-q', '2', '-t', PREFIX + 'control/ack',
+                        '-t', PREFIX + 'experiment/ack'],
+                        stdout=subprocess.PIPE, text=True)
+                    processes.append(subscriber)
+
+                    def receive_acks():
+                        for line in subscriber.stdout:
+                            messages.append(json.loads(line))
+
+                    threading.Thread(target=receive_acks, daemon=True).start()
+
+                    def acked(command_id, status):
+                        return any(item.get('command_id') == command_id and
+                                   item.get('status') == status for item in messages)
 
                     def stream():
                         tick = 0
@@ -187,16 +203,18 @@ class FeedbackGatewayTest(unittest.TestCase):
                         self.assertEqual(len(feedback()), count, 'Invalid action retry repeated prompt')
                     expect_next('experiment/set', [], 0)
 
-                    def start_control(command_id):
+                    def start_control(command_id, command='set_motor_pwm', parameters=None):
                         before = len([item for item in decoded() if item['kind'] == 'control'])
-                        send('control/set', {'command_id': command_id, 'command': 'set_motor_pwm',
-                            'parameters': {'pwm_us': [1000, 1000, 1000, 1000]}})
+                        send('control/set', {'command_id': command_id, 'command': command,
+                            'parameters': parameters if parameters is not None else
+                            {'motor_id': 2, 'pwm_us': 1300} if command == 'set_motor_pwm' else {}})
                         self.wait(lambda: len([item for item in decoded()
                             if item['kind'] == 'control']) == before + 1,
                             'Control command did not reach F407', app_log)
 
-                    def reply(result):
-                        data = subprocess.check_output([FEEDBACK_FIXTURE, str(result)], timeout=2)
+                    def reply(result, command=31014, reason=0, target=191):
+                        data = subprocess.check_output([FEEDBACK_FIXTURE, str(result),
+                            str(command), str(reason), str(target)], timeout=2)
                         with lock:
                             os.write(master, data)
 
@@ -208,39 +226,99 @@ class FeedbackGatewayTest(unittest.TestCase):
                     time.sleep(0.2)
                     self.assertEqual(len(feedback()), count, 'Progress prompted early')
                     reply(0)  # MAV_RESULT_ACCEPTED
-                    self.wait(lambda: len(feedback()) == count + 1,
-                              'Final control acceptance did not prompt', app_log)
-                    self.assertEqual(feedback()[-1]['result'], 1)
+                    self.wait(lambda: acked('control-success', 'accepted'),
+                              'Control acceptance did not reach MQTT', app_log)
                     time.sleep(0.2)
+                    self.assertEqual(len(feedback()), count, 'Accepted control repeated success sound')
+                    sent = [item for item in decoded() if item['kind'] == 'control'][-1]
+                    self.assertEqual(sent['command'], 31014)
+                    self.assertEqual(sent['params'], [2, 1300, 0, 0, 0, 0, 0])
+                    self.assertEqual((sent['system'], sent['component'],
+                        sent['target_system'], sent['target_component']), (42, 191, 42, 193))
 
                     count = len(feedback())
                     start_control('control-denied')
-                    reply(2)  # MAV_RESULT_DENIED
+                    reply(2, reason=1)  # locked
                     self.wait(lambda: len(feedback()) == count + 1,
                               'Final control rejection did not prompt', app_log)
                     self.assertEqual(feedback()[-1]['result'], 0)
+                    self.wait(lambda: acked('control-denied', 'rejected'),
+                              'Control rejection did not reach MQTT', app_log)
+                    refusal = next(item for item in messages if
+                                   item.get('command_id') == 'control-denied' and
+                                   item.get('status') == 'rejected')
+                    self.assertEqual(refusal['error_code'], 'device_locked')
+                    send('control/set', {'command_id': 'control-denied',
+                        'command': 'set_motor_pwm', 'parameters': {'motor_id': 2, 'pwm_us': 1300}})
                     time.sleep(0.2)
+                    self.assertEqual(len(feedback()), count + 1, 'Refusal replay repeated sound')
 
                     count = len(feedback())
                     start_control('control-timeout')
-                    self.wait(lambda: len(feedback()) == count + 1,
-                              'Control timeout did not prompt', app_log)
-                    self.assertEqual(feedback()[-1]['result'], 0)
-                    expect_next('control/set', {'command_id': 'unsupported',
-                                               'command': 'unsupported'}, 0)
+                    self.wait(lambda: acked('control-timeout', 'timeout'),
+                              'Control receipt did not time out', app_log)
+                    self.assertEqual(len(feedback()), count, 'Unknown receipt prompted failure')
+                    send('control/set', {'command_id': 'unsupported',
+                                        'command': 'unsupported', 'parameters': {}})
+                    self.wait(lambda: acked('unsupported', 'rejected'),
+                              'Unsupported command did not reject', app_log)
+                    time.sleep(0.2)
+                    self.assertEqual(len(feedback()), count, 'Local refusal prompted F407')
+
+                    start_control('arm', 'arm')
+                    self.assertEqual([item for item in decoded() if item['kind'] == 'control'][-1]
+                                     ['command'], 31093)
+                    reply(0, 31093)
+                    self.wait(lambda: acked('arm', 'accepted'), 'Arm was not accepted', app_log)
+                    start_control('pending-takeoff', 'takeoff')
+                    start_control('priority-disarm', 'disarm')
+                    start_control('priority-stop', 'emergency_stop')
+                    reply(0, 31090, target=190)
+                    reply(0, 31090, target=0)
+                    time.sleep(0.15)
+                    self.assertFalse(acked('priority-stop', 'accepted'), 'Wrong target ACK matched')
+                    reply(0, 31090)
+                    reply(0, 31094)
+                    reply(0, 31091)
+                    for request_id in ('priority-stop', 'priority-disarm', 'pending-takeoff'):
+                        self.wait(lambda: acked(request_id, 'accepted'),
+                                  'Out of order acceptance missing: ' + request_id, app_log)
+                    self.assertEqual(len(feedback()), count, 'Priority acceptance repeated sound')
                     self.assertTrue(all(item['length'] == 2 and item['version'] == 1
                                         for item in feedback()))
+
+                    echo = experiment_request('uart_echo')
+                    echo['text'] = 'priority-control-test'
+                    echo_count = (folder / 'app.log').read_text().count('H1回显帧已写入串口')
+                    send('experiment/set', echo)
+                    self.wait(lambda: (folder / 'app.log').read_text().count(
+                        'H1回显帧已写入串口') == echo_count + 1,
+                        'Echo experiment did not occupy the serial link', app_log)
+                    start_control('disarm-preempts-echo', 'disarm')
+                    reply(0, 31094)
+                    self.wait(lambda: acked('disarm-preempts-echo', 'accepted') and
+                              acked(echo['command_id'], 'rejected'),
+                              'Priority control did not abort echo and report both receipts', app_log)
+                    self.assertEqual(len(feedback()), count,
+                                     'Experiment cancellation overrode the disarm prompt')
+                    send('experiment/set', echo)
+                    time.sleep(0.3)
+                    self.assertEqual(len(feedback()), count,
+                                     'Cancelled experiment replay produced a failure prompt')
 
                     paused.set()
                     time.sleep(8.8)
                     count = len(feedback())
                     before = len([item for item in decoded() if item['kind'] == 'control'])
-                    send('control/set', {'command_id': 'disconnect-pending', 'command': 'land'})
+                    send('control/set', {'command_id': 'disconnect-pending', 'command': 'land',
+                                         'parameters': {}})
                     self.wait(lambda: len([item for item in decoded()
                         if item['kind'] == 'control']) == before + 1,
                         'Disconnect test control was not pending', app_log)
                     self.wait(lambda: '受控设备串口断开' in (folder / 'app.log').read_text(),
                               'Silent F407 link did not disconnect', app_log)
+                    self.wait(lambda: acked('disconnect-pending', 'timeout'),
+                              'Lost receipt did not report unknown execution', app_log)
                     time.sleep(0.2)
                     with self.subTest('disconnect abort must not write old feedback'):
                         self.assertEqual(len(feedback()), count)

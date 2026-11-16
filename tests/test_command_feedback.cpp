@@ -17,11 +17,11 @@ TEST_CASE("Command feedback maps only terminal results for each channel") {
       {{"command_id", "c1"}, {"status", "applied"}}) == Result::kSuccess);
   CHECK(feedback.Observe("box", Channel::kConfig,
       {{"command_id", "c2"}, {"status", "already_applied"}}) == Result::kSuccess);
-  CHECK(feedback.Observe("box", Channel::kControl,
-      {{"command_id", "c3"}, {"status", "accepted"}, {"result", 0}}) == Result::kSuccess);
+  CHECK_FALSE(feedback.Observe("box", Channel::kControl,
+      {{"command_id", "c3"}, {"status", "accepted"}, {"result", 0}}));
   CHECK(feedback.Observe("box", Channel::kExperiment,
       {{"action_id", "a1"}, {"status", "completed"}}) == Result::kSuccess);
-  for (const auto channel : {Channel::kConfig, Channel::kControl, Channel::kExperiment}) {
+  for (const auto channel : {Channel::kConfig, Channel::kExperiment}) {
     for (const auto* status : {"rejected", "timeout", "failed", "cancelled"}) {
       CAPTURE(status);
       CHECK(feedback.Observe("box", channel, {{"status", status}}) == Result::kFailure);
@@ -34,6 +34,24 @@ TEST_CASE("Command feedback maps only terminal results for each channel") {
   CHECK_FALSE(feedback.Observe("box", Channel::kControl, {{"status", "completed"}}));
 }
 
+TEST_CASE("Control feedback only follows an explicit F407 refusal") {
+  ResultFeedback feedback;
+  for (int result = 1; result <= 4; ++result) {
+    const nlohmann::json ack{{"command_id", std::to_string(result)},
+                             {"status", "rejected"}, {"result", result}};
+    CHECK(feedback.Observe("box", Channel::kControl, ack) == Result::kFailure);
+    CHECK_FALSE(feedback.Observe("box", Channel::kControl, ack));
+  }
+  for (const auto* status : {"accepted", "rejected", "timeout", "failed", "cancelled",
+                            "in_progress"}) {
+    CHECK_FALSE(feedback.Observe("box", Channel::kControl, {{"status", status}}));
+  }
+  for (const int result : {0, 5, 6, 255}) {
+    CHECK_FALSE(feedback.Observe("box", Channel::kControl,
+        {{"status", "rejected"}, {"result", result}}));
+  }
+}
+
 TEST_CASE("Repeated ACK delivery does not repeat feedback") {
   ResultFeedback feedback;
   const nlohmann::json config{{"command_id", "rate"}, {"status", "applied"}};
@@ -42,7 +60,7 @@ TEST_CASE("Repeated ACK delivery does not repeat feedback") {
   CHECK_FALSE(feedback.Observe("box", Channel::kConfig,
       {{"command_id", "rate"}, {"status", "already_applied"}}));
   CHECK(feedback.Observe("box", Channel::kControl,
-      {{"command_id", "rate"}, {"status", "accepted"}}) == Result::kSuccess);
+      {{"command_id", "rate"}, {"status", "rejected"}, {"result", 2}}) == Result::kFailure);
   CHECK(feedback.Observe("box", Channel::kConfig,
       {{"command_id", "rate"}, {"status", "rejected"}}) == Result::kFailure);
   CHECK(feedback.Observe("box", Channel::kExperiment,
@@ -56,14 +74,14 @@ TEST_CASE("Repeated ACK delivery does not repeat feedback") {
 TEST_CASE("Feedback history is bounded and invalid requests without IDs still fail") {
   ResultFeedback feedback;
   for (int index = 0; index < 129; ++index) {
-    CHECK(feedback.Observe("box", Channel::kControl,
-        {{"command_id", std::to_string(index)}, {"status", "accepted"}})
+    CHECK(feedback.Observe("box", Channel::kConfig,
+        {{"command_id", std::to_string(index)}, {"status", "applied"}})
         == Result::kSuccess);
   }
-  CHECK_FALSE(feedback.Observe("box", Channel::kControl,
-      {{"command_id", "128"}, {"status", "accepted"}}));
-  CHECK(feedback.Observe("box", Channel::kControl,
-      {{"command_id", "0"}, {"status", "accepted"}}) == Result::kSuccess);
+  CHECK_FALSE(feedback.Observe("box", Channel::kConfig,
+      {{"command_id", "128"}, {"status", "applied"}}));
+  CHECK(feedback.Observe("box", Channel::kConfig,
+      {{"command_id", "0"}, {"status", "applied"}}) == Result::kSuccess);
   for (int attempt = 0; attempt < 2; ++attempt) {
     CHECK(feedback.Observe("box", Channel::kExperiment, {{"status", "rejected"}})
         == Result::kFailure);

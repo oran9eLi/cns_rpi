@@ -56,8 +56,8 @@ RPi 是"汇总遥测+身份数据的总入口"（`docs/V1设计文档.md` §1）
 
 ## 4. 命令下行（非周期，事件驱动）
 
-- `COMMAND_LONG`：RPi → STM32，见 `docs/V1设计文档.md` §5
-- `COMMAND_ACK`：STM32 → RPi，命令执行结果
+- `COMMAND_LONG`：RPi → F407，六动作及参数见 [主控箱控制接口](下行飞行控制协议.md)
+- `COMMAND_ACK`：F407 → RPi，命令受理结果；`accepted` 不表示动作完成
 
 命令是事件驱动的，不适用"频率"这个概念，来一条处理一条。
 
@@ -73,17 +73,17 @@ RPi 是"汇总遥测+身份数据的总入口"（`docs/V1设计文档.md` §1）
 - `COMMAND_LONG` 定向发送到已学习的 STM32 端点，不再使用
   `target_system=0`/`target_component=0` 广播。
 - `COMMAND_ACK` 只有在帧头来源匹配 STM32，且 payload 目标为
-  `0/0` 或“动态 `sysid` / `compid=191`”时才会进入命令状态机。
+  “动态 `sysid` / `compid=191`”时才会进入命令状态机，不接受广播目标。
 
 ### 4.2 命令事务规则
 
-- 同时只允许一条命令等待 STM32，`command_id` 用于业务幂等。
-- 执行中的重复 `command_id` 不重复写 UART；已完成的重复请求重放原 ACK。
-- `MAV_RESULT_IN_PROGRESS` 不是终态，会刷新等待超时时间；其他
-  MAVLink result 作为终态回执。
-- 终态 ACK 必须等待 MQTT QoS 完成回调后才能清理事务。
-- STM32 超时后，同 MAVLink command 在 `5 × 超时时间` 内禁止重新下发，
-  用于隔离无法携带 `command_id` 的迟到 `COMMAND_ACK`。
+- 普通命令等待受理期间，新的普通请求返回 `command_busy`；不同命令号的 `disarm`、`emergency_stop` 可优先下发，按命令号各自匹配 ACK，允许乱序应答。
+- 同一命令号只能有一个在途请求；同号新请求返回 `command_busy`。相同 `command_id` 不重复写 UART，缓存内已结束请求重放原回执，标识复用为不同内容则拒绝。
+- 只用 `result=0..4` 作为本版受理结果；`MAV_RESULT_IN_PROGRESS=5` 等其他结果忽略，不刷新 2 秒等待时间。超时为执行状态未知，不自动重发。
+- MQTT 回执非阻塞提交，避免回执确认等待阻塞优先命令；F407 的受理结果与动作完成是不同事实。
+- 某命令号超时后保留 10 秒迟到 ACK 隔离期；同号新请求返回 `command_busy`，避免把没有 `command_id` 的旧 `COMMAND_ACK` 误配给新请求。
+
+2026-11-16 六动作 V0.1 替代此前单在途、进度刷新和最终完成 ACK 的控制语义。F407 负责实际锁门禁及动作声光；Pi 只在 F407 明确拒绝后另发失败通知，见 [Pi 命令结果提示与 F407 接口](Pi命令结果提示与F407接口.md)。
 
 ## 5. 开放问题
 

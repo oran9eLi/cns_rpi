@@ -13,7 +13,7 @@
 #include "uart/mavlink_link.hpp"
 
 int main(int argc, char** argv) {
-  if (argc != 2) return 2;
+  if (argc < 2 || argc > 5) return 2;
   if (std::string{argv[1]} == "unverified") {
     mavlink_message_t message{};
     std::uint8_t bytes[MAVLINK_MAX_PACKET_LEN]{};
@@ -33,9 +33,12 @@ int main(int argc, char** argv) {
   if (std::string{argv[1]} != "decode") {
     mavlink_message_t message{};
     mavlink_msg_command_ack_pack(42, 193, &message,
-        control_command::kSetMotorPwmUs,
+        argc > 2 ? static_cast<std::uint16_t>(std::strtoul(argv[2], nullptr, 10))
+                 : control_command::kSetMotorPwmUs,
         static_cast<std::uint8_t>(std::strtoul(argv[1], nullptr, 10)),
-        50, 0, 42, MAV_COMP_ID_ONBOARD_COMPUTER);
+        255, argc > 3 ? static_cast<std::int32_t>(std::strtol(argv[3], nullptr, 10)) : 0,
+        42, argc > 4 ? static_cast<std::uint8_t>(std::strtoul(argv[4], nullptr, 10))
+                    : MAV_COMP_ID_ONBOARD_COMPUTER);
     std::uint8_t bytes[MAVLINK_MAX_PACKET_LEN]{};
     const auto size = mavlink_msg_to_send_buffer(bytes, &message);
     std::cout.write(reinterpret_cast<const char*>(bytes), size);
@@ -59,7 +62,12 @@ int main(int argc, char** argv) {
     } else if (message->msgid == MAVLINK_MSG_ID_COMMAND_LONG) {
       mavlink_command_long_t command{};
       mavlink_msg_command_long_decode(&*message, &command);
-      results.push_back({{"kind", "control"}, {"command", command.command}});
+      results.push_back({{"kind", "control"}, {"command", command.command},
+          {"params", {command.param1, command.param2, command.param3, command.param4,
+                       command.param5, command.param6, command.param7}},
+          {"system", message->sysid}, {"component", message->compid},
+          {"target_system", command.target_system},
+          {"target_component", command.target_component}});
     }
     message = assembler.Feed({});
   }

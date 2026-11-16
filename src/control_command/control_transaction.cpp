@@ -26,8 +26,8 @@ nlohmann::json BuildStaleAckGuard(const ControlCommand& command) {
   return {{"command_id", command.command_id},
           {"command", command.command},
           {"status", "rejected"},
-          {"error_code", "stale_ack_guard"},
-          {"message", "同类命令刚刚超时，暂停下发以隔离迟到应答"}};
+          {"error_code", "command_busy"},
+          {"message", "同类命令的受理结果未知，暂停下发以隔离迟到应答"}};
 }
 
 }  // namespace
@@ -37,16 +37,20 @@ ControlTransaction::ControlTransaction(std::chrono::milliseconds timeout,
     : timeout_(timeout), completed_capacity_(completed_capacity) {}
 
 SubmitResult ControlTransaction::Submit(const ControlCommand& command, TimePoint now) {
-  if (pending_ && pending_->command.command_id == command.command_id) {
-    if (!SameContent(pending_->command, command)) {
+  const auto duplicate = std::find_if(
+      pending_.begin(), pending_.end(), [&command](const PendingCommand& entry) {
+        return entry.command.command_id == command.command_id;
+      });
+  if (duplicate != pending_.end()) {
+    if (!SameContent(duplicate->command, command)) {
       return {.status = SubmitStatus::kCommandIdConflict,
               .should_send_to_mcu = false,
               .ack = BuildConflictAck(command)};
     }
     return {.status = SubmitStatus::kDuplicatePending,
             .should_send_to_mcu = false,
-            .ack = pending_ack_ ? pending_ack_
-                                : std::optional<nlohmann::json>(BuildPendingAck(command))};
+            .ack = duplicate->ack ? duplicate->ack
+                                 : std::optional<nlohmann::json>(BuildPendingAck(command))};
   }
 
   if (const auto* completed = FindCompleted(command.command_id); completed != nullptr) {
@@ -70,13 +74,17 @@ SubmitResult ControlTransaction::Submit(const ControlCommand& command, TimePoint
     stale_ack_guards_.erase(stale_guard);
   }
 
-  if (pending_) {
+  const bool same_command_pending = std::any_of(
+      pending_.begin(), pending_.end(), [&command](const PendingCommand& entry) {
+        return entry.command.mavlink_command == command.mavlink_command;
+      });
+  if (same_command_pending || (!pending_.empty() && !IsPriorityCommand(command))) {
     return {.status = SubmitStatus::kBusy,
             .should_send_to_mcu = false,
             .ack = BuildBusyAck(command)};
   }
 
-  pending_ = PendingCommand{.command = command, .deadline = now + timeout_};
+  pending_.push_back({.command = command, .deadline = now + timeout_, .ack = std::nullopt});
   return {.status = SubmitStatus::kAccepted,
           .should_send_to_mcu = true,
           .ack = std::nullopt};
@@ -87,52 +95,66 @@ MavlinkAckStatus ControlTransaction::HandleMavlinkAck(std::uint16_t mavlink_comm
                                                      std::uint8_t progress,
                                                      std::int32_t result_param2,
                                                      TimePoint now) {
-  if (!pending_ || pending_->command.mavlink_command != mavlink_command ||
-      pending_ack_is_final_) {
+  CheckTimeout(now);
+  if (result > MAV_RESULT_FAILED) {
+    return MavlinkAckStatus::kIgnored;
+  }
+  const auto pending = std::find_if(
+      pending_.begin(), pending_.end(), [mavlink_command](const PendingCommand& entry) {
+        return entry.command.mavlink_command == mavlink_command && !entry.ack;
+      });
+  if (pending == pending_.end()) {
     return MavlinkAckStatus::kIgnored;
   }
 
-  pending_ack_ = BuildMavlinkAck(pending_->command, result, progress, result_param2);
-  pending_ack_is_final_ = result != MAV_RESULT_IN_PROGRESS;
-  if (!pending_ack_is_final_) {
-    pending_->deadline = now + timeout_;
-    return MavlinkAckStatus::kInProgress;
-  }
+  pending->ack = BuildMavlinkAck(pending->command, result, progress, result_param2);
   return MavlinkAckStatus::kFinal;
 }
 
-bool ControlTransaction::HandleLocalFailure(const CommandError& error) {
-  if (!pending_ || pending_ack_is_final_) {
-    return false;
+bool ControlTransaction::HandleLocalFailure(const CommandError& error, TimePoint now) {
+  bool changed = false;
+  for (auto& pending : pending_) {
+    if (pending.ack) {
+      continue;
+    }
+    pending.ack = BuildTimeoutAck(pending.command);
+    (*pending.ack)["error_code"] = error.code;
+    (*pending.ack)["message"] = error.message + "，未收到F407受理结果，执行状态未知";
+    stale_ack_guards_[pending.command.mavlink_command] = now + timeout_ * 5;
+    changed = true;
   }
-  pending_ack_ =
-      BuildRejectedAck(pending_->command.command_id, pending_->command.command, error);
-  pending_ack_is_final_ = true;
-  return true;
+  return changed;
 }
 
 bool ControlTransaction::CheckTimeout(TimePoint now) {
-  if (!pending_ || pending_ack_is_final_ || now < pending_->deadline) {
-    return false;
+  bool changed = false;
+  for (auto& pending : pending_) {
+    if (pending.ack || now < pending.deadline) {
+      continue;
+    }
+    pending.ack = BuildTimeoutAck(pending.command);
+    stale_ack_guards_[pending.command.mavlink_command] = now + timeout_ * 5;
+    changed = true;
   }
-  pending_ack_ = BuildTimeoutAck(pending_->command);
-  pending_ack_is_final_ = true;
-  stale_ack_guards_[pending_->command.mavlink_command] = now + timeout_ * 5;
-  return true;
+  return changed;
 }
 
-bool ControlTransaction::HasPending() const { return pending_.has_value(); }
+bool ControlTransaction::HasPending() const { return !pending_.empty(); }
 
 const nlohmann::json* ControlTransaction::PendingAck() const {
-  return pending_ack_ ? &*pending_ack_ : nullptr;
+  const auto ready = std::find_if(pending_.begin(), pending_.end(),
+                                  [](const PendingCommand& entry) {
+                                    return entry.ack.has_value();
+                                  });
+  return ready == pending_.end() ? nullptr : &*ready->ack;
 }
 
 bool ControlTransaction::PendingAckIsFinal() const {
-  return pending_ack_ && pending_ack_is_final_;
+  return PendingAck() != nullptr;
 }
 
 void ControlTransaction::ResetIdentityScope() {
-  if (pending_) {
+  if (!pending_.empty()) {
     return;
   }
   completed_.clear();
@@ -140,20 +162,16 @@ void ControlTransaction::ResetIdentityScope() {
 }
 
 void ControlTransaction::ConfirmAckPublished() {
-  if (!pending_ack_) {
-    return;
-  }
-  if (!pending_ack_is_final_) {
-    pending_ack_.reset();
+  const auto ready = std::find_if(pending_.begin(), pending_.end(),
+                                  [](const PendingCommand& entry) {
+                                    return entry.ack.has_value();
+                                  });
+  if (ready == pending_.end()) {
     return;
   }
 
-  if (pending_) {
-    CacheCompleted(pending_->command, *pending_ack_);
-  }
-  pending_.reset();
-  pending_ack_.reset();
-  pending_ack_is_final_ = false;
+  CacheCompleted(ready->command, *ready->ack);
+  pending_.erase(ready);
 }
 
 bool ControlTransaction::SameContent(const ControlCommand& left,
