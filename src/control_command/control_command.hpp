@@ -13,6 +13,7 @@
 namespace control_command {
 
 constexpr std::uint16_t kSetMotorPwmUs = 31014;
+constexpr std::uint16_t kSetModuleEnabled = 31015;
 constexpr std::uint16_t kEmergencyStop = 31090;
 constexpr std::uint16_t kAutoTakeoff = 31091;
 constexpr std::uint16_t kAutoLanding = 31092;

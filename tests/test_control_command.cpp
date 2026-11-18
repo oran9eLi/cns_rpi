@@ -36,6 +36,78 @@ TEST_CASE("单电机PWM命令解析并编码为31014") {
   CHECK(packet.param7 == 0.0F);
 }
 
+TEST_CASE("五模块启停命令按USART6约定编码") {
+  constexpr std::array<std::pair<const char*, float>, 5> modules{{
+      {"gnss", 0.0F}, {"imu", 1.0F}, {"baro", 2.0F}, {"lora", 4.0F}, {"rid", 7.0F}}};
+  for (const auto& [module, wire_id] : modules) {
+    for (const bool enabled : {false, true}) {
+      CAPTURE(module);
+      CAPTURE(enabled);
+      const nlohmann::json request{{"command_id", "module-test"},
+                                  {"command", "set_module_enabled"},
+                                  {"parameters", {{"module", module}, {"enabled", enabled}}}};
+      const auto command = control_command::Parse(request.dump());
+      REQUIRE(command.has_value());
+      CHECK_FALSE(control_command::IsPriorityCommand(*command));
+
+      const auto message = control_command::EncodeCommandLong(*command, 42, 191, 42, 193);
+      mavlink_command_long_t packet{};
+      mavlink_msg_command_long_decode(&message, &packet);
+      CHECK(message.magic == MAVLINK_STX);
+      CHECK(static_cast<std::uint32_t>(message.msgid) == 76);
+      CHECK(message.sysid == 42);
+      CHECK(message.compid == 191);
+      CHECK(packet.target_system == 42);
+      CHECK(packet.target_component == 193);
+      CHECK(packet.command == 31015);
+      CHECK(packet.confirmation == 0);
+      CHECK(packet.param1 == wire_id);
+      CHECK(packet.param2 == (enabled ? 1.0F : 0.0F));
+      CHECK(packet.param3 == 0.0F);
+      CHECK(packet.param4 == 0.0F);
+      CHECK(packet.param5 == 0.0F);
+      CHECK(packet.param6 == 0.0F);
+      CHECK(packet.param7 == 0.0F);
+    }
+  }
+}
+
+TEST_CASE("模块启停只接受指定模块和JSON布尔值") {
+  for (const auto& parameters : nlohmann::json::array({
+           nlohmann::json::object(), {{"module", "imu"}}, {{"enabled", true}},
+           {{"module", "imu"}, {"enabled", true}, {"extra", 0}},
+           {{"module", "IMU"}, {"enabled", true}},
+           {{"module", "remote_id"}, {"enabled", true}},
+           {{"module", "5g"}, {"enabled", true}},
+           {{"module", 4}, {"enabled", true}},
+           {{"module", nullptr}, {"enabled", true}},
+           {{"module", "imu"}, {"enabled", "true"}},
+           {{"module", "imu"}, {"enabled", "false"}},
+           {{"module", "imu"}, {"enabled", 1}},
+           {{"module", "imu"}, {"enabled", 0}},
+           {{"module", "imu"}, {"enabled", nullptr}}})) {
+    CAPTURE(parameters);
+    const nlohmann::json request{{"command_id", "bad-module"},
+                                {"command", "set_module_enabled"},
+                                {"parameters", parameters}};
+    const auto command = control_command::Parse(request.dump());
+    REQUIRE_FALSE(command.has_value());
+    CHECK(command.error().code == "invalid_parameter");
+    CHECK(command.error().command_id == "bad-module");
+    CHECK(command.error().command == "set_module_enabled");
+  }
+}
+
+TEST_CASE("模块启停拒绝全空白的请求标识") {
+  for (const auto id : {" \t\r\n", "\u3000 \t"}) {
+    const nlohmann::json request{{"command_id", id}, {"command", "set_module_enabled"},
+                                {"parameters", {{"module", "imu"}, {"enabled", true}}}};
+    const auto command = control_command::Parse(request.dump());
+    REQUIRE_FALSE(command.has_value());
+    CHECK(command.error().code == "invalid_command_id");
+  }
+}
+
 TEST_CASE("五种无参数命令采用独立命令号且全部参数为零") {
   for (const auto& [name, expected] :
        std::array<std::pair<const char*, std::uint16_t>, 5>{{

@@ -254,6 +254,58 @@ class FeedbackGatewayTest(unittest.TestCase):
                     self.assertEqual(len(feedback()), count + 1, 'Refusal replay repeated sound')
 
                     count = len(feedback())
+                    start_control('module-on', 'set_module_enabled',
+                                  {'module': 'lora', 'enabled': True})
+                    sent = [item for item in decoded() if item['kind'] == 'control'][-1]
+                    self.assertEqual(sent, {'kind': 'control', 'command': 31015,
+                        'params': [4, 1, 0, 0, 0, 0, 0], 'system': 42, 'component': 191,
+                        'target_system': 42, 'target_component': 193})
+                    reply(0, 31015)
+                    self.wait(lambda: acked('module-on', 'accepted'),
+                              'Module acceptance did not reach MQTT', app_log)
+                    time.sleep(0.2)
+                    self.assertEqual(len(feedback()), count, 'Module acceptance repeated sound')
+
+                    before = decoded()
+                    send('control/set', {'command_id': 'module-on', 'command': 'set_module_enabled',
+                                         'parameters': {'enabled': True, 'module': 'lora'}})
+                    self.wait(lambda: sum(item.get('command_id') == 'module-on' and
+                                          item.get('status') == 'accepted' for item in messages) == 2,
+                              'Module retry did not replay acceptance', app_log)
+                    send('control/set', {'command_id': 'module-on', 'command': 'set_module_enabled',
+                                         'parameters': {'module': 'lora', 'enabled': False}})
+                    self.wait(lambda: any(item.get('command_id') == 'module-on' and
+                                          item.get('error_code') == 'command_id_conflict'
+                                          for item in messages),
+                              'Reused module ID did not reject the new parameters', app_log)
+                    self.assertEqual(decoded(), before, 'Replay or ID conflict wrote to F407')
+
+                    start_control('module-off', 'set_module_enabled',
+                                  {'module': 'rid', 'enabled': False})
+                    sent = [item for item in decoded() if item['kind'] == 'control'][-1]
+                    self.assertEqual(sent['command'], 31015)
+                    self.assertEqual(sent['params'], [7, 0, 0, 0, 0, 0, 0])
+                    reply(2, 31015, reason=4)
+                    self.wait(lambda: acked('module-off', 'rejected') and
+                              len(feedback()) == count + 1,
+                              'Module rejection did not reach MQTT and F407', app_log)
+                    refusal = next(item for item in messages if
+                                   item.get('command_id') == 'module-off' and
+                                   item.get('status') == 'rejected')
+                    self.assertEqual(refusal['error_code'], 'invalid_state')
+                    self.assertEqual(feedback()[-1], {'kind': 'feedback', 'version': 1,
+                        'result': 0, 'length': 2, 'system': 42, 'component': 191,
+                        'target_system': 42, 'target_component': 193})
+
+                    before = decoded()
+                    send('control/set', {'command_id': 'module-invalid', 'command': 'set_module_enabled',
+                                         'parameters': {'module': 'lora', 'enabled': 'true'}})
+                    self.wait(lambda: acked('module-invalid', 'rejected'),
+                              'Non-boolean module state did not reject', app_log)
+                    time.sleep(0.2)
+                    self.assertEqual(decoded(), before, 'Local module rejection wrote to F407')
+
+                    count = len(feedback())
                     start_control('control-timeout')
                     self.wait(lambda: acked('control-timeout', 'timeout'),
                               'Control receipt did not time out', app_log)

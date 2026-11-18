@@ -1,11 +1,34 @@
 #include "control_command/control_command.hpp"
 
+#include <algorithm>
 #include <cstdint>
 #include <optional>
 #include <utility>
 
 namespace control_command {
 namespace {
+
+using ModuleWireId = std::pair<std::string_view, float>;
+constexpr std::array<ModuleWireId, 5> kModuleWireIds{{
+    {"gnss", 0.0F}, {"imu", 1.0F}, {"baro", 2.0F}, {"lora", 4.0F}, {"rid", 7.0F}}};
+
+bool IsBlankCommandId(std::string_view id) {
+  // The JSON parser has already validated UTF-8.
+  constexpr std::string_view ascii_whitespace = " \t\n\v\f\r";
+  constexpr auto unicode_whitespace = std::to_array<std::string_view>({
+      "\u0085", "\u00A0", "\u1680", "\u2000", "\u2001", "\u2002", "\u2003", "\u2004",
+      "\u2005", "\u2006", "\u2007", "\u2008", "\u2009", "\u200A", "\u2028", "\u2029",
+      "\u202F", "\u205F", "\u3000"});
+  while (true) {
+    const auto first_non_ascii_space = id.find_first_not_of(ascii_whitespace);
+    if (first_non_ascii_space == std::string_view::npos) return true;
+    id.remove_prefix(first_non_ascii_space);
+    const auto space = std::ranges::find_if(unicode_whitespace,
+        [id](std::string_view character) { return id.starts_with(character); });
+    if (space == unicode_whitespace.end()) return false;
+    id.remove_prefix(space->size());
+  }
+}
 
 CommandError Error(std::string code, std::string message) {
   return {.code = std::move(code),
@@ -112,6 +135,31 @@ std::expected<ControlCommand, CommandError> Parse(std::string_view payload) {
     result.params[0] = *motor_id;
     result.params[1] = *pulse_us;
     result.mavlink_command = kSetMotorPwmUs;
+  } else if (result.command == "set_module_enabled") {
+    if (IsBlankCommandId(result.command_id)) {
+      return std::unexpected(contextual_error("invalid_command_id", "command_id不能全为空白"));
+    }
+    const auto module = parameters.find("module");
+    const auto enabled = parameters.find("enabled");
+    if (parameters.size() != 2 || module == parameters.end() || enabled == parameters.end()) {
+      return std::unexpected(contextual_error(
+          "invalid_parameter", "set_module_enabled只接受module和enabled参数"));
+    }
+    if (!module->is_string()) {
+      return std::unexpected(contextual_error("invalid_parameter", "module必须为字符串"));
+    }
+    if (!enabled->is_boolean()) {
+      return std::unexpected(contextual_error("invalid_parameter", "enabled必须为JSON布尔值"));
+    }
+    const std::string_view module_name = module->get_ref<const std::string&>();
+    const auto wire_id = std::ranges::find(kModuleWireIds, module_name, &ModuleWireId::first);
+    if (wire_id == kModuleWireIds.end()) {
+      return std::unexpected(contextual_error(
+          "invalid_parameter", "module必须为gnss、imu、baro、lora或rid"));
+    }
+    result.params[0] = wire_id->second;
+    result.params[1] = enabled->get<bool>() ? 1.0F : 0.0F;
+    result.mavlink_command = kSetModuleEnabled;
   } else {
     if (!parameters.empty()) {
       return std::unexpected(contextual_error("invalid_parameter", "该命令不接受参数"));
