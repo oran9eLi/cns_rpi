@@ -5,6 +5,8 @@
 
 #include "cellular/cellular_snapshot.hpp"
 #include "payload/json_serializer.hpp"
+#include "protocol/extension_decoder.hpp"
+#include "protocol/telemetry_decoder.hpp"
 
 TEST_CASE("空TelemetryState输出v3骨架和学校信息") {
   state::TelemetryState state{};
@@ -372,6 +374,78 @@ TEST_CASE("pressure字段换算,press_abs/press_diff已是hPa直接透传") {
   CHECK(out["press_diff"].get<double>() == doctest::Approx(0.02));
   CHECK(out["temperature"].get<double>() == doctest::Approx(26.5));
   CHECK(out["temperature_press_diff"].get<double>() == doctest::Approx(26.5));
+}
+
+TEST_CASE("气压计关闭后两种遥测都省略旧读数，开启后等待新采样") {
+  state::StateStore store;
+  const auto send_pressure = [&](std::uint32_t sample_time, float pressure,
+                                 std::int16_t temperature) {
+    mavlink_message_t message{};
+    mavlink_msg_scaled_pressure_pack(42, 193, &message, sample_time, pressure,
+                                     0.0F, temperature, 0);
+    REQUIRE(protocol::DecodeAndStore(message, store));
+  };
+  const auto send_sys_status = [&](std::uint32_t present, std::uint32_t enabled) {
+    mavlink_sys_status_t status{};
+    status.onboard_control_sensors_present = present;
+    status.onboard_control_sensors_enabled = enabled;
+    mavlink_message_t message{};
+    mavlink_msg_sys_status_encode(42, 193, &message, &status);
+    REQUIRE(protocol::DecodeAndStore(message, store));
+  };
+  const auto send_module_status = [&](std::int32_t barometer_state) {
+    mavlink_named_value_int_t status{};
+    std::memcpy(status.name, "MODSTAT0", 8);
+    status.value = barometer_state << 8;
+    mavlink_message_t message{};
+    mavlink_msg_named_value_int_encode(42, 193, &message, &status);
+    REQUIRE(protocol::DecodeExtensionAndStore(message, store));
+  };
+  const auto expect_no_pressure = [&] {
+    const auto snapshot = store.Snapshot();
+    const auto regular = payload::ToJson(snapshot, "NNUTC");
+    CHECK_FALSE(regular.value("telemetry", nlohmann::json::object()).contains("pressure"));
+    CHECK_FALSE(payload::ToRealtimeJson(snapshot, 1)["telemetry"].contains("pressure"));
+  };
+
+  constexpr std::uint32_t barometer = MAV_SYS_STATUS_SENSOR_ABSOLUTE_PRESSURE;
+  send_sys_status(0, 0);
+  send_pressure(1000, 1013.25F, 2650);
+  CHECK(payload::ToJson(store.Snapshot(), "NNUTC")["telemetry"].contains("pressure"));
+  CHECK(payload::ToRealtimeJson(store.Snapshot(), 1)["telemetry"].contains("pressure"));
+
+  SUBCASE("SYS_STATUS确认关闭并重新开启") {
+    send_sys_status(barometer, 0);
+    expect_no_pressure();
+    send_pressure(1000, 1013.25F, 2650);
+    expect_no_pressure();
+    send_sys_status(barometer, barometer);
+  }
+  SUBCASE("MODSTAT0确认关闭并重新开启") {
+    send_module_status(6);
+    expect_no_pressure();
+    send_pressure(1000, 1013.25F, 2650);
+    expect_no_pressure();
+    send_module_status(1);
+  }
+  SUBCASE("任一状态仍报告关闭时不提前恢复") {
+    send_sys_status(barometer, 0);
+    send_module_status(6);
+    send_sys_status(barometer, barometer);
+    send_pressure(1010, 1013.25F, 2650);
+    expect_no_pressure();
+    send_module_status(1);
+  }
+
+  expect_no_pressure();
+  send_pressure(1100, 1008.5F, 2534);
+  for (const auto& frame : {payload::ToJson(store.Snapshot(), "NNUTC"),
+                            payload::ToRealtimeJson(store.Snapshot(), 2)}) {
+    const auto& pressure = frame.at("telemetry").at("pressure");
+    CHECK(pressure.at("time_boot_ms") == 1100);
+    CHECK(pressure.at("press_abs").get<double>() == doctest::Approx(1008.5));
+    CHECK(pressure.at("temperature").get<double>() == doctest::Approx(25.34));
+  }
 }
 
 TEST_CASE("gnss_sat/humidity/motor/lora/remote_id自定义字段") {

@@ -572,8 +572,6 @@ int main(int argc, char** argv) {
     experiment_set_topic.clear();
     experiment_ack_topic.clear();
     offline_payload.clear();
-    control_transaction =
-        control_command::ControlTransaction(kControlAckTimeout);
   };
 
   auto mark_link_disconnected = [&] {
@@ -1348,6 +1346,7 @@ int main(int argc, char** argv) {
           }, **logger);
           if (mqtt_client) {
             active_mqtt_binding = *candidate_binding;
+            control_transaction.SetDeviceScope(active_mqtt_binding->device_id);
             telemetry_publisher.emplace(
                 std::vector<telemetry::ChannelDefinition>{
                     {{"遥测快照通道", telemetry_snapshot_topic,
@@ -1490,6 +1489,10 @@ int main(int argc, char** argv) {
         }
       }
       if (!message) message = mqtt_client->TryPopMessage();
+      if (message && message->retained && message->topic == control_set_topic) {
+        (*logger)->Warn("忽略Broker保留的主控箱控制命令");
+        message.reset();
+      }
       if (message) {
         const auto identity_conflict_now = [&] {
           const auto status = device_session.CurrentOnlineStatus();

@@ -293,18 +293,31 @@ TEST_CASE("不同命令的超时隔离窗口不会互相覆盖") {
   CHECK((*takeoff.ack)["error_code"] == "command_busy");
 }
 
-TEST_CASE("身份作用域重置后不重放旧设备命令") {
+TEST_CASE("同一箱号保留控制回执和隔离期，换箱后清理") {
   ControlTransaction transaction(2s);
   const auto now = ControlTransaction::TimePoint{};
-  REQUIRE(transaction.Submit(Takeoff("same-id"), now).should_send_to_mcu);
-  REQUIRE(transaction.HandleMavlinkAck(control_command::kAutoTakeoff,
+  const ControlCommand module{.command_id = "same-id", .command = "set_module_enabled",
+                              .mavlink_command = control_command::kSetModuleEnabled,
+                              .params = {4.0F, 1.0F}};
+  ControlCommand pending = module;
+  pending.command_id = "pending-id";
+  transaction.SetDeviceScope("box-a");
+  REQUIRE(transaction.Submit(module, now).should_send_to_mcu);
+  REQUIRE(transaction.HandleMavlinkAck(control_command::kSetModuleEnabled,
                                        MAV_RESULT_ACCEPTED, 0, 0, now + 1s) ==
           control_command::MavlinkAckStatus::kFinal);
   transaction.ConfirmAckPublished();
 
-  transaction.ResetIdentityScope();
-  const auto new_identity = transaction.Submit(Takeoff("same-id"), now + 2s);
-  CHECK(new_identity.should_send_to_mcu);
+  REQUIRE(transaction.Submit(pending, now + 2s).should_send_to_mcu);
+  REQUIRE(transaction.CheckTimeout(now + 4s));
+  transaction.SetDeviceScope("box-a");
+  REQUIRE(transaction.PendingAck() != nullptr);
+  CHECK((*transaction.PendingAck())["command_id"] == "pending-id");
+  CHECK(transaction.Submit(module, now + 4s).status == SubmitStatus::kReplayCompleted);
+
+  transaction.SetDeviceScope("box-b");
+  CHECK_FALSE(transaction.HasPending());
+  CHECK(transaction.Submit(module, now + 5s).should_send_to_mcu);
 }
 
 TEST_CASE("完成缓存按容量淘汰最早结果") {

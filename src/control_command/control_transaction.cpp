@@ -153,10 +153,10 @@ bool ControlTransaction::PendingAckIsFinal() const {
   return PendingAck() != nullptr;
 }
 
-void ControlTransaction::ResetIdentityScope() {
-  if (!pending_.empty()) {
-    return;
-  }
+void ControlTransaction::SetDeviceScope(std::string_view device_id) {
+  if (device_id_ == device_id) return;
+  device_id_ = device_id;
+  pending_.clear();
   completed_.clear();
   stale_ack_guards_.clear();
 }

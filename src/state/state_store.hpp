@@ -239,6 +239,9 @@ class StateStore {
   TelemetryState Snapshot() const;
 
  private:
+  bool IsBarometerDisabled() const;
+  void DiscardDisabledBarometerSample();
+
   mutable std::mutex mutex_;
   TelemetryState state_;
 };

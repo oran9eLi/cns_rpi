@@ -30,6 +30,16 @@ int main(int argc, char** argv) {
     std::cout.write(reinterpret_cast<const char*>(bytes), size);
     return 0;
   }
+  if (std::string{argv[1]} == "module-status" && argc == 3) {
+    mavlink_message_t message{};
+    constexpr char name[10] = "MODSTAT0";
+    mavlink_msg_named_value_int_pack(42, 193, &message, 0, name,
+        static_cast<std::int32_t>(std::strtol(argv[2], nullptr, 0)));
+    std::uint8_t bytes[MAVLINK_MAX_PACKET_LEN]{};
+    const auto size = mavlink_msg_to_send_buffer(bytes, &message);
+    std::cout.write(reinterpret_cast<const char*>(bytes), size);
+    return 0;
+  }
   if (std::string{argv[1]} != "decode") {
     mavlink_message_t message{};
     mavlink_msg_command_ack_pack(42, 193, &message,

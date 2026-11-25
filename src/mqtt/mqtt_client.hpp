@@ -43,6 +43,7 @@ struct ClientState;
 struct IncomingMessage {
   std::string topic;
   std::string payload;
+  bool retained = false;
 };
 
 /// MQTT 网络线程与业务主线程之间的固定容量消息队列。

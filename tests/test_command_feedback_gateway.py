@@ -46,6 +46,10 @@ class FeedbackGatewayTest(unittest.TestCase):
             config['rtk_base']['enabled'] = False
             config['gnss']['enabled'] = False
             config['identity']['binding_file'] = str(folder / 'binding.json')
+            (folder / 'binding.json.health.json').write_text(json.dumps({
+                'schema_version': 1, 'device_id': BOX_ID, 'maintenance': False,
+                'failure_ms': [43_200_000] + [0] * 13,
+            }))
             config['mqtt']['connection'].update(host='127.0.0.1', port=port,
                                                 client_id='feedback-gateway-test')
             config['mqtt']['auth'] = {'username': '', 'password': ''}
@@ -86,6 +90,15 @@ class FeedbackGatewayTest(unittest.TestCase):
                         return any(item.get('command_id') == command_id and
                                    item.get('status') == status for item in messages)
 
+                    def send(suffix, request, *, retained=False):
+                        subprocess.run(['mosquitto_pub', '-h', '127.0.0.1', '-p', str(port),
+                            '-q', '2', '-t', PREFIX + suffix, *(['-r'] if retained else []), '-s'],
+                            input=json.dumps(request), text=True, check=True, timeout=3)
+
+                    send('control/set', {'command_id': 'old-retained-module',
+                        'command': 'set_module_enabled',
+                        'parameters': {'module': 'lora', 'enabled': True}}, retained=True)
+
                     def stream():
                         tick = 0
                         while not stopped.is_set():
@@ -113,11 +126,6 @@ class FeedbackGatewayTest(unittest.TestCase):
                               'Gateway did not connect', app_log)
                     time.sleep(0.3)
 
-                    def send(suffix, request):
-                        subprocess.run(['mosquitto_pub', '-h', '127.0.0.1', '-p', str(port),
-                            '-q', '2', '-t', PREFIX + suffix, '-s'], input=json.dumps(request),
-                            text=True, check=True, timeout=3)
-
                     def decoded():
                         with lock:
                             data = bytes(wire)
@@ -134,6 +142,10 @@ class FeedbackGatewayTest(unittest.TestCase):
                               (folder / 'app.log').read_text(),
                               'Unverified-endpoint configuration did not complete', app_log)
                     time.sleep(0.3)
+                    with self.subTest('broker-retained control is ignored'):
+                        self.assertFalse(any(item.get('command_id') == 'old-retained-module'
+                                             for item in messages))
+                        self.assertEqual(decoded(), [])
                     with self.subTest('unverified component must not receive feedback'):
                         self.assertEqual(feedback(), [])
                     with lock:
@@ -357,6 +369,48 @@ class FeedbackGatewayTest(unittest.TestCase):
                     time.sleep(0.3)
                     self.assertEqual(len(feedback()), count,
                                      'Cancelled experiment replay produced a failure prompt')
+
+                    start_control('module-pending-reconnect', 'set_module_enabled',
+                                  {'module': 'gnss', 'enabled': False})
+                    self.wait(lambda: acked('module-pending-reconnect', 'in_progress'),
+                              'Module request was not pending before reconnect', app_log)
+                    connection_count = (folder / 'app.log').read_text().count('MQTT已连接')
+                    status = subprocess.check_output(
+                        [FEEDBACK_FIXTURE, 'module-status', '0x22222226'], timeout=2)
+                    with lock:
+                        os.write(master, status)
+                    self.wait(lambda: (folder / 'app.log').read_text().count('MQTT已连接') >
+                              connection_count, 'Health change did not rebuild MQTT', app_log)
+                    self.wait(lambda: acked('module-pending-reconnect', 'timeout'),
+                              'Pending request did not report unknown execution', app_log)
+
+                    before = decoded()
+                    previous_count = sum(item.get('command_id') == 'module-on'
+                                         for item in messages)
+                    send('control/set', {'command_id': 'module-on', 'command': 'set_module_enabled',
+                                         'parameters': {'module': 'lora', 'enabled': True}})
+                    self.wait(lambda: sum(item.get('command_id') == 'module-on'
+                                          for item in messages) > previous_count,
+                              'Completed request did not reply after reconnect', app_log)
+                    with self.subTest('rebuilt session ignores retained control'):
+                        self.assertFalse(any(item.get('command_id') == 'old-retained-module'
+                                             for item in messages))
+                    with self.subTest('same-device session preserves completed result'):
+                        self.assertEqual([item for item in messages
+                                          if item.get('command_id') == 'module-on'][-1]['status'],
+                                         'accepted')
+                        self.assertEqual(decoded(), before)
+
+                    reply(0, 31015)
+                    send('control/set', {'command_id': 'new-module', 'command': 'set_module_enabled',
+                                         'parameters': {'module': 'baro', 'enabled': False}})
+                    self.wait(lambda: any(item.get('command_id') == 'new-module'
+                                          for item in messages),
+                              'New request did not reply after reconnect', app_log)
+                    with self.subTest('same-device session preserves late-ACK guard'):
+                        ack = next(item for item in messages if item.get('command_id') == 'new-module')
+                        self.assertEqual(ack.get('error_code'), 'command_busy')
+                        self.assertEqual(decoded(), before)
 
                     paused.set()
                     time.sleep(8.8)

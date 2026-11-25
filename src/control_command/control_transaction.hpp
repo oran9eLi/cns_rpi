@@ -4,8 +4,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <deque>
-#include <unordered_map>
 #include <optional>
+#include <string>
+#include <string_view>
+#include <unordered_map>
 
 #include <nlohmann/json.hpp>
 
@@ -58,8 +60,8 @@ class ControlTransaction {
   [[nodiscard]] const nlohmann::json* PendingAck() const;
   [[nodiscard]] bool PendingAckIsFinal() const;
 
-  /** @brief 设备身份切换后清空该身份作用域的幂等与迟到应答状态。 */
-  void ResetIdentityScope();
+  /** @brief 控制事务跟随箱号，同一箱号重建 MQTT 会话时保留事务状态。 */
+  void SetDeviceScope(std::string_view device_id);
 
   /** @brief 确认当前回执已经成功交给 MQTT 客户端。 */
   void ConfirmAckPublished();
@@ -83,6 +85,7 @@ class ControlTransaction {
 
   std::chrono::milliseconds timeout_;
   std::size_t completed_capacity_;
+  std::string device_id_;
   std::deque<PendingCommand> pending_;
   std::unordered_map<std::uint16_t, TimePoint> stale_ack_guards_;
   std::deque<CompletedCommand> completed_;

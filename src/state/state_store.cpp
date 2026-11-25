@@ -6,6 +6,12 @@
 #include "state/state_store.hpp"
 
 namespace state {
+namespace {
+
+constexpr std::size_t kBarometerModuleIndex = 2;
+constexpr std::uint8_t kModuleStateDisabled = 6;
+
+}  // namespace
 
 void StateStore::UpdateControlledDevice(device::Type type,
                                         std::uint8_t system_id,
@@ -49,6 +55,7 @@ void StateStore::UpdateGlobalPositionInt(const mavlink_global_position_int_t& va
 void StateStore::UpdateSysStatus(const mavlink_sys_status_t& value) {
   std::lock_guard<std::mutex> lock(mutex_);
   state_.sys_status = value;
+  DiscardDisabledBarometerSample();
 }
 
 void StateStore::UpdateBatteryStatus(std::uint8_t id, const mavlink_battery_status_t& value) {
@@ -60,7 +67,9 @@ void StateStore::UpdateBatteryStatus(std::uint8_t id, const mavlink_battery_stat
 
 void StateStore::UpdateScaledPressure(const mavlink_scaled_pressure_t& value) {
   std::lock_guard<std::mutex> lock(mutex_);
-  state_.scaled_pressure = value;
+  if (!IsBarometerDisabled()) {
+    state_.scaled_pressure = value;
+  }
 }
 
 void StateStore::UpdateModStatusLow(const std::array<std::uint8_t, 8>& modules0to7) {
@@ -70,6 +79,24 @@ void StateStore::UpdateModStatusLow(const std::array<std::uint8_t, 8>& modules0t
   }
   for (std::size_t i = 0; i < modules0to7.size(); ++i) {
     (*state_.module_status)[i] = modules0to7[i];
+  }
+  DiscardDisabledBarometerSample();
+}
+
+bool StateStore::IsBarometerDisabled() const {
+  if (state_.module_status &&
+      (*state_.module_status)[kBarometerModuleIndex] == kModuleStateDisabled) {
+    return true;
+  }
+  constexpr auto barometer = MAV_SYS_STATUS_SENSOR_ABSOLUTE_PRESSURE;
+  return state_.sys_status &&
+         (state_.sys_status->onboard_control_sensors_present & barometer) != 0 &&
+         (state_.sys_status->onboard_control_sensors_enabled & barometer) == 0;
+}
+
+void StateStore::DiscardDisabledBarometerSample() {
+  if (IsBarometerDisabled()) {
+    state_.scaled_pressure.reset();
   }
 }
 

@@ -91,6 +91,7 @@ void OnMessage(struct mosquitto* /*mosq*/, void* userdata,
       .payload = payload && message->payloadlen > 0
                      ? std::string(payload, static_cast<std::size_t>(message->payloadlen))
                      : std::string{},
+      .retained = message->retain,
   };
   if (!state->incoming_messages.Push(std::move(incoming))) {
     state->logger->Warn("MQTT入站消息队列已满，丢弃新消息");
